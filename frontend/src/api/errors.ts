@@ -88,6 +88,16 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Returns `error` if it is an ApiError, or wraps anything else (a bug, most
+ * likely) as UNKNOWN so the UI can still show it.
+ */
+export function toApiError(error: unknown): ApiError {
+  if (error instanceof ApiError) return error;
+  console.error('Unexpected error', error);
+  return new ApiError('UNKNOWN', 'Something unexpected went wrong.');
+}
+
 /** Whether a parsed JSON value has the `{code, message, hint}` shape. */
 export function isApiErrorBody(value: unknown): value is ApiErrorBody {
   if (typeof value !== 'object' || value === null) return false;

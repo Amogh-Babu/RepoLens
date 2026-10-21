@@ -9,12 +9,14 @@ describe('App routes', () => {
     ).toBeInTheDocument();
   });
 
-  it('renders the analysis page with the analysis ID from the URL', () => {
+  it('renders the analysis page while the analysis loads', () => {
     renderApp('/analysis/abc123');
     expect(
       screen.getByRole('heading', {level: 1, name: 'Analysis'}),
     ).toBeInTheDocument();
-    expect(screen.getByText('abc123')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Loading the analysis…',
+    );
   });
 
   it('renders the not-found page for an unknown route', () => {
