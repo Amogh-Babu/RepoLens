@@ -126,3 +126,87 @@ describe('createAnalysisStore', () => {
     expect(store.getState().cancelling).toBe(false);
   });
 });
+
+describe('createAnalysisStore graph and selection', () => {
+  /** A store for an analysis that has already finished. */
+  async function completedStore() {
+    const client = new MockApiClient({latencyMs: 0, stageDurationMs: 0});
+    const {analysisId} = await client.startAnalysis({
+      url: 'https://github.com/o/flask-auth',
+    });
+    const store = createAnalysisStore(client, analysisId, {
+      pollIntervalMs: POLL_MS,
+    });
+    store.getState().startPolling();
+    await vi.waitFor(() => expect(store.getState().graph).not.toBeNull());
+    return {client, store};
+  }
+
+  it('loads the graph when the analysis completes', async () => {
+    const {store} = await completedStore();
+
+    expect(store.getState().graph?.files.length).toBeGreaterThan(0);
+    expect([...store.getState().expandedDirs].sort()).toEqual(['app', 'tests']);
+  });
+
+  it('selects a file, expands its directories and loads its details', async () => {
+    const {store} = await completedStore();
+
+    store.getState().selectFile('app/auth/service.py');
+
+    expect(store.getState().selectedPath).toBe('app/auth/service.py');
+    expect(store.getState().expandedDirs.has('app/auth')).toBe(true);
+    await vi.waitFor(() =>
+      expect(
+        store.getState().fileDetails['app/auth/service.py']?.importedBy,
+      ).toHaveLength(3),
+    );
+  });
+
+  it('does not refetch a file it already has', async () => {
+    const {client, store} = await completedStore();
+    const getFile = vi.spyOn(client, 'getFile');
+
+    store.getState().selectFile('app/db.py');
+    await vi.waitFor(() =>
+      expect(store.getState().fileDetails['app/db.py']).toBeDefined(),
+    );
+    store.getState().selectFile('app/config.py');
+    store.getState().selectFile('app/db.py');
+
+    expect(getFile.mock.calls.map(call => call[1])).toEqual([
+      'app/db.py',
+      'app/config.py',
+    ]);
+  });
+
+  it('records a file failure for the selected file', async () => {
+    const {store} = await completedStore();
+
+    store.getState().selectFile('missing.py');
+
+    await vi.waitFor(() =>
+      expect(store.getState().fileFailure?.code).toBe('FILE_NOT_FOUND'),
+    );
+  });
+
+  it('clears the selection', async () => {
+    const {store} = await completedStore();
+    store.getState().selectFile('app/db.py');
+
+    store.getState().selectFile(null);
+
+    expect(store.getState().selectedPath).toBeNull();
+  });
+
+  it('expands and collapses directories', async () => {
+    const {store} = await completedStore();
+
+    store.getState().toggleDir('app/auth');
+    expect(store.getState().expandedDirs.has('app/auth')).toBe(true);
+    store.getState().toggleDir('app/auth');
+    expect(store.getState().expandedDirs.has('app/auth')).toBe(false);
+    store.getState().toggleDir('app/auth', false);
+    expect(store.getState().expandedDirs.has('app/auth')).toBe(false);
+  });
+});

@@ -5,6 +5,8 @@ import {describeError} from '../api/describeError.ts';
 import {ApiError, toApiError} from '../api/errors.ts';
 import type {Analysis} from '../api/types.ts';
 import {ErrorBanner} from '../components/ErrorBanner.tsx';
+import {FileDetailPanel} from '../components/FileDetailPanel.tsx';
+import {FileExplorer} from '../components/FileExplorer.tsx';
 import {ProgressIndicator} from '../components/ProgressIndicator.tsx';
 import {SummaryBar} from '../components/SummaryBar.tsx';
 import type {RequestFailure} from '../state/analysisStore.ts';
@@ -53,7 +55,7 @@ function AnalysisSession({
   // not cancel it).
   useEffect(() => {
     store.getState().startPolling();
-    return () => store.getState().stopPolling();
+    return () => store.getState().dispose();
   }, [store]);
 
   return (
@@ -131,14 +133,72 @@ function AnalysisBody({analysis}: {analysis: Analysis}) {
       ) : (
         <>
           <SummaryBar analysis={analysis} summary={analysis.summary} />
-          <section className="analysis__workspace" aria-label="Results">
-            <p>
-              The file explorer, dependency map and search will appear here.
-            </p>
-          </section>
+          <Workspace analysis={analysis} />
         </>
       );
   }
+}
+
+/** File explorer, dependency map and file details for a finished analysis. */
+function Workspace({analysis}: {analysis: Analysis}) {
+  const graph = useAnalysisStore(state => state.graph);
+  const graphFailure = useAnalysisStore(state => state.graphFailure);
+  const loadGraph = useAnalysisStore(state => state.loadGraph);
+  const selectedPath = useAnalysisStore(state => state.selectedPath);
+  const expandedDirs = useAnalysisStore(state => state.expandedDirs);
+  const selectFile = useAnalysisStore(state => state.selectFile);
+  const toggleDir = useAnalysisStore(state => state.toggleDir);
+  const detail = useAnalysisStore(state =>
+    state.selectedPath === null
+      ? null
+      : (state.fileDetails[state.selectedPath] ?? null),
+  );
+  const fileFailure = useAnalysisStore(state => state.fileFailure);
+
+  if (graphFailure !== null) {
+    return <ErrorBanner error={graphFailure.error} onRetry={loadGraph} />;
+  }
+  if (graph === null) {
+    return <p role="status">Loading the files…</p>;
+  }
+
+  return (
+    <div className="workspace">
+      <nav className="workspace__explorer" aria-label="File explorer">
+        <FileExplorer
+          files={graph.files}
+          selectedPath={selectedPath}
+          expandedDirs={expandedDirs}
+          onSelectFile={selectFile}
+          onToggleDir={toggleDir}
+        />
+      </nav>
+
+      <section className="workspace__map" aria-label="Dependency map">
+        <p>The dependency map will appear here.</p>
+      </section>
+
+      <div className="workspace__detail">
+        {selectedPath === null ? (
+          <p className="workspace__hint">
+            Select a file to see its symbols, imports and the files that import
+            it.
+          </p>
+        ) : (
+          <FileDetailPanel
+            path={selectedPath}
+            repoUrl={analysis.repoUrl}
+            sha={analysis.sha}
+            detail={detail}
+            failure={fileFailure}
+            onSelectFile={selectFile}
+            onRetry={() => selectFile(selectedPath)}
+            onClose={() => selectFile(null)}
+          />
+        )}
+      </div>
+    </div>
+  );
 }
 
 function LoadFailure({failure}: {failure: RequestFailure}) {

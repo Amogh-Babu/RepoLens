@@ -1,0 +1,65 @@
+.explorer {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  font-size: 0.875rem;
+}
+
+.explorer__row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-top: 3px;
+  padding-bottom: 3px;
+  padding-right: 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.explorer__row:hover {
+  background: var(--color-hover);
+}
+
+.explorer__row:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+.explorer__row[aria-selected='true'] {
+  background: var(--color-selected);
+  font-weight: 600;
+}
+
+.explorer__icon {
+  flex: none;
+  width: 1em;
+  color: var(--color-muted);
+  text-align: center;
+}
+
+.explorer__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.explorer__row--dir .explorer__name {
+  color: var(--color-muted);
+}
+
+.explorer__badge {
+  flex: none;
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--color-warning);
+  border: 1px solid currentColor;
+}
+
+.explorer__empty {
+  margin: 0;
+  padding: 12px;
+  color: var(--color-muted);
+}
