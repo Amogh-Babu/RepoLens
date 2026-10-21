@@ -1,4 +1,5 @@
-.analysis {
+/* .page.analysis so this wins over the global .page width. */
+.page.analysis {
   display: flex;
   flex-direction: column;
   gap: 20px;
