@@ -44,6 +44,8 @@ export interface AnalysisState {
 
   /** Directories expanded in the file explorer. */
   expandedDirs: ReadonlySet<string>;
+  /** Modules expanded on the dependency map; the rest are collapsed. */
+  expandedModules: ReadonlySet<string>;
 }
 
 export interface AnalysisActions {
@@ -61,6 +63,10 @@ export interface AnalysisActions {
   selectFile(path: string | null): void;
   /** Expands or collapses a directory in the file explorer. */
   toggleDir(path: string, expanded?: boolean): void;
+  /** Expands or collapses a module on the dependency map. */
+  toggleModule(moduleId: string, expanded?: boolean): void;
+  /** Collapses every module on the dependency map. */
+  collapseAllModules(): void;
   /** Stops polling and cancels every in-flight request. */
   dispose(): void;
 }
@@ -76,6 +82,23 @@ export function isInProgress(status: AnalysisStatus): boolean {
   return status === 'queued' || status === 'running';
 }
 
+/** A copy of `set` with `item` added or removed (toggled if undefined). */
+function toggled(
+  set: ReadonlySet<string>,
+  item: string,
+  include?: boolean,
+): ReadonlySet<string> {
+  const shouldInclude = include ?? !set.has(item);
+  if (shouldInclude === set.has(item)) return set;
+  const next = new Set(set);
+  if (shouldInclude) {
+    next.add(item);
+  } else {
+    next.delete(item);
+  }
+  return next;
+}
+
 function failureFrom(error: unknown): RequestFailure | null {
   const apiError = toApiError(error);
   if (apiError.code === 'ABORTED') return null;
@@ -84,7 +107,7 @@ function failureFrom(error: unknown): RequestFailure | null {
 
 /**
  * Creates the client-side state for one analysis: its status, graph, file
- * selection and explorer state. Later PRs add map and search state here.
+ * selection, explorer and map state. Later PRs add search state here.
  */
 export function createAnalysisStore(
   api: ApiClient,
@@ -123,6 +146,10 @@ export function createAnalysisStore(
           graph,
           graphFailure: null,
           expandedDirs: new Set(topLevelDirs(graph.files.map(f => f.path))),
+          // Modules start collapsed, unless there is only one.
+          expandedModules: new Set(
+            graph.modules.length === 1 ? graph.modules.map(m => m.id) : [],
+          ),
         });
       } catch (error: unknown) {
         if (signal.aborted) return;
@@ -157,6 +184,7 @@ export function createAnalysisStore(
       fileDetails: {},
       fileFailure: null,
       expandedDirs: new Set(),
+      expandedModules: new Set(),
 
       startPolling() {
         get().stopPolling();
@@ -200,11 +228,23 @@ export function createAnalysisStore(
           set({selectedPath: null, fileFailure: null});
           return;
         }
-        set(state => ({
-          selectedPath: path,
-          fileFailure: null,
-          expandedDirs: new Set([...state.expandedDirs, ...ancestorDirs(path)]),
-        }));
+        set(state => {
+          const moduleId = state.graph?.files.find(
+            f => f.path === path,
+          )?.module;
+          return {
+            selectedPath: path,
+            fileFailure: null,
+            expandedDirs: new Set([
+              ...state.expandedDirs,
+              ...ancestorDirs(path),
+            ]),
+            expandedModules:
+              moduleId === undefined || state.expandedModules.has(moduleId)
+                ? state.expandedModules
+                : new Set([...state.expandedModules, moduleId]),
+          };
+        });
         if (get().fileDetails[path] === undefined) {
           fileController = new AbortController();
           void fetchFile(path, fileController.signal);
@@ -212,16 +252,19 @@ export function createAnalysisStore(
       },
 
       toggleDir(path, expanded) {
-        set(state => {
-          const next = new Set(state.expandedDirs);
-          const expand = expanded ?? !next.has(path);
-          if (expand) {
-            next.add(path);
-          } else {
-            next.delete(path);
-          }
-          return {expandedDirs: next};
-        });
+        set(state => ({
+          expandedDirs: toggled(state.expandedDirs, path, expanded),
+        }));
+      },
+
+      toggleModule(moduleId, expanded) {
+        set(state => ({
+          expandedModules: toggled(state.expandedModules, moduleId, expanded),
+        }));
+      },
+
+      collapseAllModules() {
+        set({expandedModules: new Set()});
       },
 
       dispose() {

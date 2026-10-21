@@ -167,3 +167,39 @@ describe('AnalysisPage workspace', () => {
     ).toBeInTheDocument();
   });
 });
+
+describe('AnalysisPage map', () => {
+  it('shows the dependency map with collapsed modules', async () => {
+    await renderFinished('flask-auth');
+
+    expect(
+      await screen.findByRole('button', {name: /Module app\/auth, 4 files/}),
+    ).toBeInTheDocument();
+  });
+
+  it('expands the module of a file selected in the explorer', async () => {
+    const user = userEvent.setup();
+    await renderFinished('flask-auth');
+
+    await user.click(await screen.findByRole('treeitem', {name: 'db.py'}));
+
+    expect(
+      await screen.findByRole('button', {name: 'File app/db.py'}),
+    ).toBeInTheDocument();
+  });
+
+  it('switches between the map and the list view', async () => {
+    const user = userEvent.setup();
+    await renderFinished('flask-auth');
+
+    await user.click(await screen.findByRole('button', {name: 'List'}));
+    expect(
+      screen.getByRole('button', {name: /service\.py.*imported by 3/}),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', {name: 'Map'}));
+    expect(
+      await screen.findByRole('button', {name: 'Reset view'}),
+    ).toBeInTheDocument();
+  });
+});
