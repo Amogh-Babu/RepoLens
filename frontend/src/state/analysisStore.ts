@@ -9,16 +9,42 @@ import type {
   AnalysisStatus,
   DependencyGraph,
   FileDetail,
+  RankedFile,
 } from '../api/types.ts';
 import {ancestorDirs, topLevelDirs} from '../utils/fileTree.ts';
 
 /** How often to ask for the status of a running analysis. */
 export const DEFAULT_POLL_INTERVAL_MS = 1_000;
 
+/** How many search results to fetch at a time (Use Case 2, 6a). */
+export const SEARCH_PAGE_SIZE = 20;
+
 /** A request failure, ready to show in an ErrorBanner. */
 export interface RequestFailure {
   code: string;
   error: ErrorDescription;
+}
+
+/** The reading list for the current search. */
+export interface SearchState {
+  /** Query whose results are shown; '' before the first results arrive. */
+  query: string;
+  /** Results loaded so far, in reading order. */
+  results: RankedFile[];
+  /** Total number of matching files, including ones not loaded yet. */
+  total: number;
+  /** Query being fetched (a new search or a retry), if any. */
+  pendingQuery: string | null;
+  /** True while the next page of results is being fetched. */
+  loadingMore: boolean;
+  /**
+   * The last search request that failed. The previous results stay shown
+   * (Use Case 2 exceptions).
+   */
+  failure:
+    | (RequestFailure & {request: 'search'; query: string})
+    | (RequestFailure & {request: 'more'})
+    | null;
 }
 
 export interface AnalysisState {
@@ -46,6 +72,9 @@ export interface AnalysisState {
   expandedDirs: ReadonlySet<string>;
   /** Modules expanded on the dependency map; the rest are collapsed. */
   expandedModules: ReadonlySet<string>;
+
+  /** The current search; null when no search is active. */
+  search: SearchState | null;
 }
 
 export interface AnalysisActions {
@@ -67,6 +96,15 @@ export interface AnalysisActions {
   toggleModule(moduleId: string, expanded?: boolean): void;
   /** Collapses every module on the dependency map. */
   collapseAllModules(): void;
+  /**
+   * Searches for an already trimmed and checked query. A response to an
+   * earlier search that arrives late is ignored.
+   */
+  runSearch(query: string): void;
+  /** Fetches the next page of results for the current search. */
+  loadMoreResults(): void;
+  /** Ends the search: the reading list closes and highlighting is removed. */
+  clearSearch(): void;
   /** Stops polling and cancels every in-flight request. */
   dispose(): void;
 }
@@ -107,7 +145,7 @@ function failureFrom(error: unknown): RequestFailure | null {
 
 /**
  * Creates the client-side state for one analysis: its status, graph, file
- * selection, explorer and map state. Later PRs add search state here.
+ * selection, explorer, map and search state.
  */
 export function createAnalysisStore(
   api: ApiClient,
@@ -119,6 +157,8 @@ export function createAnalysisStore(
   let pollTimer: ReturnType<typeof setTimeout> | null = null;
   let graphController: AbortController | null = null;
   let fileController: AbortController | null = null;
+  let searchController: AbortController | null = null;
+  let moreController: AbortController | null = null;
 
   return createStore<AnalysisState & AnalysisActions>()((set, get) => {
     async function poll(signal: AbortSignal) {
@@ -172,6 +212,87 @@ export function createAnalysisStore(
       }
     }
 
+    async function fetchSearch(query: string, signal: AbortSignal) {
+      try {
+        const response = await api.search(
+          analysisId,
+          {q: query, limit: SEARCH_PAGE_SIZE, offset: 0},
+          {signal},
+        );
+        if (signal.aborted) return;
+        set({
+          search: {
+            query,
+            results: response.results,
+            total: response.total,
+            pendingQuery: null,
+            loadingMore: false,
+            failure: null,
+          },
+        });
+      } catch (error: unknown) {
+        if (signal.aborted) return;
+        const failure = failureFrom(error);
+        const current = get().search;
+        if (failure === null || current === null) return;
+        set({
+          search: {
+            ...current,
+            pendingQuery: null,
+            failure: {...failure, request: 'search', query},
+          },
+        });
+      }
+    }
+
+    async function fetchMore(search: SearchState, signal: AbortSignal) {
+      try {
+        const response = await api.search(
+          analysisId,
+          {
+            q: search.query,
+            limit: SEARCH_PAGE_SIZE,
+            offset: search.results.length,
+          },
+          {signal},
+        );
+        if (signal.aborted) return;
+        const current = get().search;
+        if (current === null) return;
+        const seen = new Set(current.results.map(r => r.path));
+        set({
+          search: {
+            ...current,
+            results: [
+              ...current.results,
+              ...response.results.filter(r => !seen.has(r.path)),
+            ],
+            total: response.total,
+            loadingMore: false,
+          },
+        });
+      } catch (error: unknown) {
+        if (signal.aborted) return;
+        const failure = failureFrom(error);
+        const current = get().search;
+        if (current === null) return;
+        set({
+          search: {
+            ...current,
+            loadingMore: false,
+            failure: failure === null ? null : {...failure, request: 'more'},
+          },
+        });
+      }
+    }
+
+    function abortSearches() {
+      searchController?.abort();
+      searchController = null;
+      moreController?.abort();
+      moreController = null;
+    }
+
     return {
       analysisId,
       analysis: null,
@@ -185,6 +306,7 @@ export function createAnalysisStore(
       fileFailure: null,
       expandedDirs: new Set(),
       expandedModules: new Set(),
+      search: null,
 
       startPolling() {
         get().stopPolling();
@@ -267,7 +389,46 @@ export function createAnalysisStore(
         set({expandedModules: new Set()});
       },
 
+      runSearch(query) {
+        abortSearches();
+        searchController = new AbortController();
+        const current = get().search;
+        set({
+          search: {
+            query: current?.query ?? '',
+            results: current?.results ?? [],
+            total: current?.total ?? 0,
+            pendingQuery: query,
+            loadingMore: false,
+            failure: null,
+          },
+        });
+        void fetchSearch(query, searchController.signal);
+      },
+
+      loadMoreResults() {
+        const search = get().search;
+        if (
+          search === null ||
+          search.loadingMore ||
+          search.pendingQuery !== null ||
+          search.results.length >= search.total
+        ) {
+          return;
+        }
+        moreController?.abort();
+        moreController = new AbortController();
+        set({search: {...search, loadingMore: true, failure: null}});
+        void fetchMore(search, moreController.signal);
+      },
+
+      clearSearch() {
+        abortSearches();
+        set({search: null});
+      },
+
       dispose() {
+        abortSearches();
         get().stopPolling();
         graphController?.abort();
         fileController?.abort();

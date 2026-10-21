@@ -253,3 +253,140 @@ describe('createAnalysisStore map state', () => {
     expect(store.getState().expandedModules.size).toBe(0);
   });
 });
+
+describe('createAnalysisStore search', () => {
+  async function completedStore() {
+    const client = new MockApiClient({latencyMs: 0, stageDurationMs: 0});
+    const {analysisId} = await client.startAnalysis({
+      url: 'https://github.com/o/flask-auth',
+    });
+    const store = createAnalysisStore(client, analysisId);
+    store.getState().startPolling();
+    await vi.waitFor(() => expect(store.getState().graph).not.toBeNull());
+    return {client, store};
+  }
+
+  /** A result page with `count` files named by index. */
+  function page(query: string, count: number, total: number, offset = 0) {
+    return {
+      query,
+      total,
+      results: Array.from({length: count}, (_, i) => ({
+        position: offset + i + 1,
+        path: `${query}/${offset + i}.py`,
+        score: 1,
+        reason: 'r',
+        matches: [],
+      })),
+    };
+  }
+
+  it('loads the first page of results', async () => {
+    const {store} = await completedStore();
+
+    store.getState().runSearch('login');
+    expect(store.getState().search?.pendingQuery).toBe('login');
+
+    await vi.waitFor(() =>
+      expect(store.getState().search?.query).toBe('login'),
+    );
+    const search = store.getState().search;
+    expect(search?.pendingQuery).toBeNull();
+    expect(search?.results[0]?.path).toBe('app/auth/service.py');
+    expect(search?.total).toBe(search?.results.length);
+  });
+
+  it('ignores a late response to an earlier search', async () => {
+    const {client, store} = await completedStore();
+    const answers = new Map<string, (value: unknown) => void>();
+    // A backend that answers even after the request was cancelled.
+    vi.spyOn(client, 'search').mockImplementation(
+      (_id, request) =>
+        new Promise(resolve => {
+          answers.set(request.q, resolve as (value: unknown) => void);
+        }),
+    );
+
+    store.getState().runSearch('first');
+    store.getState().runSearch('second');
+    answers.get('second')?.(page('second', 1, 1));
+    await vi.waitFor(() =>
+      expect(store.getState().search?.query).toBe('second'),
+    );
+    answers.get('first')?.(page('first', 3, 3));
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(store.getState().search?.query).toBe('second');
+    expect(store.getState().search?.results).toHaveLength(1);
+  });
+
+  it('pages through results with Show more', async () => {
+    const {client, store} = await completedStore();
+    const search = vi
+      .spyOn(client, 'search')
+      .mockImplementation((_id, request) =>
+        Promise.resolve(
+          page(
+            request.q,
+            Math.min(20, 45 - (request.offset ?? 0)),
+            45,
+            request.offset,
+          ),
+        ),
+      );
+
+    store.getState().runSearch('auth');
+    await vi.waitFor(() =>
+      expect(store.getState().search?.results).toHaveLength(20),
+    );
+    store.getState().loadMoreResults();
+    await vi.waitFor(() =>
+      expect(store.getState().search?.results).toHaveLength(40),
+    );
+    store.getState().loadMoreResults();
+    await vi.waitFor(() =>
+      expect(store.getState().search?.results).toHaveLength(45),
+    );
+    store.getState().loadMoreResults();
+
+    expect(search.mock.calls.map(call => call[1])).toEqual([
+      {q: 'auth', limit: 20, offset: 0},
+      {q: 'auth', limit: 20, offset: 20},
+      {q: 'auth', limit: 20, offset: 40},
+    ]);
+  });
+
+  it('keeps the previous results when a search fails', async () => {
+    const {client, store} = await completedStore();
+    store.getState().runSearch('login');
+    await vi.waitFor(() =>
+      expect(store.getState().search?.query).toBe('login'),
+    );
+    vi.spyOn(client, 'search').mockRejectedValueOnce(
+      new ApiError('TIMEOUT', 'Too slow.'),
+    );
+
+    store.getState().runSearch('token');
+
+    await vi.waitFor(() =>
+      expect(store.getState().search?.failure).toMatchObject({
+        code: 'TIMEOUT',
+        request: 'search',
+        query: 'token',
+      }),
+    );
+    expect(store.getState().search?.query).toBe('login');
+    expect(store.getState().search?.results.length).toBeGreaterThan(0);
+  });
+
+  it('clears the search', async () => {
+    const {store} = await completedStore();
+    store.getState().runSearch('login');
+
+    store.getState().clearSearch();
+
+    expect(store.getState().search).toBeNull();
+    await new Promise(resolve => setTimeout(resolve, 10));
+    expect(store.getState().search).toBeNull();
+  });
+});

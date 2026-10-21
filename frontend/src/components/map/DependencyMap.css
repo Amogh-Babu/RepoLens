@@ -111,6 +111,10 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 25%, transparent);
 }
 
+.react-flow__node.map-node--match {
+  border: 2px solid var(--color-accent);
+}
+
 .react-flow__node.map-node--related {
   border-color: var(--color-accent);
 }

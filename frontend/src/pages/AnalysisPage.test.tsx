@@ -109,12 +109,21 @@ describe('AnalysisPage', () => {
   it('offers Try again for an unexpected failure and starts a new run', async () => {
     const user = userEvent.setup();
     const client = await renderFinished('crash');
+    const startAnalysis = vi.spyOn(client, 'startAnalysis');
 
     await user.click(await screen.findByRole('button', {name: 'Try again'}));
 
+    expect(startAnalysis).toHaveBeenCalledWith({
+      url: 'https://github.com/someone/crash',
+    });
     // The mock fails this repository every time, so the new run (mock-2)
-    // also ends in the failure banner, but at a new URL.
-    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    // ends in the failure banner too. Query afresh each time: the old
+    // banner is replaced when the page moves to the new run.
+    await vi.waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'The analysis failed',
+      ),
+    );
     expect((await client.getAnalysis('mock-2')).repoUrl).toBe(
       'https://github.com/someone/crash',
     );
@@ -201,5 +210,68 @@ describe('AnalysisPage map', () => {
     expect(
       await screen.findByRole('button', {name: 'Reset view'}),
     ).toBeInTheDocument();
+  });
+});
+
+describe('AnalysisPage search', () => {
+  async function search(query: string) {
+    const user = userEvent.setup();
+    await renderFinished('flask-auth');
+    await user.type(
+      await screen.findByRole('searchbox', {name: 'Search this repository'}),
+      `${query}{Enter}`,
+    );
+    return user;
+  }
+
+  it('shows the reading list in its own tab', async () => {
+    await search('login');
+
+    expect(
+      await screen.findByRole('tab', {name: /Reading list \(\d+\)/}),
+    ).toHaveAttribute('aria-selected', 'true');
+    expect(
+      await screen.findByRole('heading', {name: /Reading order for/}),
+    ).toBeInTheDocument();
+  });
+
+  it('opens an entry and steps through the reading order', async () => {
+    const user = await search('login');
+
+    await user.click(
+      await screen.findByRole('button', {name: /1\. app\/auth\/service\.py/}),
+    );
+    const panel = await screen.findByRole('complementary', {
+      name: 'service.py',
+    });
+    expect(within(panel).getByText(/#1 of \d+ for/)).toBeInTheDocument();
+
+    await user.click(
+      within(panel).getByRole('button', {name: /Next in reading order/}),
+    );
+
+    const next = await screen.findByRole('complementary', {
+      name: /^(?!service\.py)/,
+    });
+    expect(within(next).getByText(/#2 of \d+ for/)).toBeInTheDocument();
+  });
+
+  it('says when nothing matches', async () => {
+    await search('kubernetes');
+
+    expect(await screen.findByText(/No files match/)).toBeInTheDocument();
+  });
+
+  it('closes the reading list when the search is cleared', async () => {
+    const user = await search('login');
+    await screen.findByRole('heading', {name: /Reading order for/});
+
+    await user.click(screen.getByRole('button', {name: 'Clear search'}));
+
+    expect(screen.queryByRole('tab', {name: /Reading list/})).toBeNull();
+    expect(screen.getByRole('tab', {name: 'Files'})).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
   });
 });

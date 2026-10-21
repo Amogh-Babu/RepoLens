@@ -47,6 +47,7 @@ function renderMap(props: Partial<Parameters<typeof DependencyMap>[0]> = {}) {
         graph={GRAPH}
         expandedModules={new Set()}
         selectedPath={null}
+        matchedPaths={null}
         {...handlers}
         {...props}
       />
@@ -112,6 +113,40 @@ describe('DependencyMap', () => {
       'map-node--related',
     );
     expect(nodeOf(/Module app,/)).toHaveClass('map-node--dimmed');
+  });
+
+  it('highlights search matches when nothing is selected', () => {
+    renderMap({
+      expandedModules: new Set(['app/auth']),
+      matchedPaths: new Set(['app/auth/service.py']),
+    });
+
+    expect(nodeOf(/File app\/auth\/service\.py/)).toHaveClass(
+      'map-node--match',
+    );
+    expect(nodeOf(/File app\/auth\/tokens\.py/)).toHaveClass(
+      'map-node--dimmed',
+    );
+    expect(nodeOf(/Module app,/)).toHaveClass('map-node--dimmed');
+  });
+
+  it('marks a collapsed module that contains a match', () => {
+    renderMap({matchedPaths: new Set(['app/auth/tokens.py'])});
+
+    expect(nodeOf(/Module app\/auth,/)).toHaveClass('map-node--match');
+  });
+
+  it('lets the selection take over from search highlighting', () => {
+    renderMap({
+      expandedModules: new Set(['app/auth']),
+      selectedPath: 'app/auth/tokens.py',
+      matchedPaths: new Set(['app/views.py']),
+    });
+
+    expect(nodeOf(/File app\/auth\/tokens\.py/)).toHaveClass(
+      'map-node--selected',
+    );
+    expect(nodeOf(/Module app,/)).not.toHaveClass('map-node--match');
   });
 
   it('collapses every module from the toolbar', async () => {

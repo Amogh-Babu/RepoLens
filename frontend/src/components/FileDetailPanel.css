@@ -125,3 +125,22 @@
   border: 1px solid var(--color-border);
   border-radius: 10px;
 }
+
+.detail__reading {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-accent);
+  border-radius: 6px;
+  background: var(--color-selected);
+}
+
+.detail__reading p {
+  margin: 0;
+}
+
+.detail__reading-position {
+  font-weight: 600;
+}
