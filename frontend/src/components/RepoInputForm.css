@@ -1,0 +1,71 @@
+.repo-form {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) auto;
+  gap: 12px;
+  align-items: start;
+}
+
+.repo-form__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.repo-form__field label {
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.repo-form__field .optional {
+  font-weight: 400;
+  color: var(--color-muted);
+}
+
+.repo-form__field input {
+  width: 100%;
+  font: inherit;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.repo-form__field input:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.repo-form__field input[aria-invalid='true'] {
+  border-color: var(--color-danger);
+}
+
+.repo-form__error,
+.repo-form__note {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.repo-form__error {
+  color: var(--color-danger);
+}
+
+.repo-form__note {
+  color: var(--color-muted);
+}
+
+/* Lines the button up with the inputs, below the labels. */
+.repo-form__submit {
+  margin-top: calc(0.875rem * 1.5 + 6px);
+}
+
+@media (max-width: 640px) {
+  .repo-form {
+    grid-template-columns: 1fr;
+  }
+
+  .repo-form__submit {
+    margin-top: 0;
+  }
+}

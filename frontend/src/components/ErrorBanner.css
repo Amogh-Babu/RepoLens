@@ -1,0 +1,31 @@
+.error-banner {
+  border: 1px solid var(--color-danger-border);
+  border-left-width: 4px;
+  border-radius: 6px;
+  background: var(--color-danger-bg);
+  padding: 12px 16px;
+}
+
+.error-banner p {
+  margin: 0;
+}
+
+.error-banner__title {
+  font-weight: 600;
+}
+
+.error-banner__message {
+  margin-top: 4px;
+}
+
+.error-banner__hint {
+  margin-top: 4px;
+  color: var(--color-muted);
+}
+
+.error-banner__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
