@@ -14,7 +14,7 @@ import {useEffect, useMemo, useState} from 'react';
 import type {DependencyGraph} from '../../api/types.ts';
 import type {MapActions} from './mapActions.ts';
 import {MapActionsContext} from './mapActions.ts';
-import type {MapNode} from './mapLayout.ts';
+import type {MapEdge, MapHighlight, MapNode} from './mapLayout.ts';
 import {
   fileNodeId,
   highlightAround,
@@ -40,6 +40,8 @@ interface DependencyMapProps {
   graph: DependencyGraph;
   expandedModules: ReadonlySet<string>;
   selectedPath: string | null;
+  /** Files matching the current search, or null without a search. */
+  matchedPaths: ReadonlySet<string> | null;
   onSelectFile: (path: string) => void;
   onToggleModule: (moduleId: string, expanded?: boolean) => void;
   onCollapseAll: () => void;
@@ -53,6 +55,8 @@ interface DependencyMapProps {
  * Interactive dependency map (Use Case 3). Modules start collapsed;
  * expanding one shows its files and the imports between them. Selecting a
  * file highlights what it imports and what imports it, and dims the rest.
+ * Without a selection, files matching the search are highlighted instead
+ * (Use Case 2).
  */
 export function DependencyMap(props: DependencyMapProps) {
   return (
@@ -66,6 +70,7 @@ function MapCanvas({
   graph,
   expandedModules,
   selectedPath,
+  matchedPaths,
   onSelectFile,
   onToggleModule,
   onCollapseAll,
@@ -117,6 +122,16 @@ function MapCanvas({
     () => highlightAround(layout.edges, selectedUnit),
     [layout.edges, selectedUnit],
   );
+  // Search matches are highlighted only while nothing is selected.
+  const matchedUnits = useMemo(() => {
+    if (matchedPaths === null || selectedUnit !== null) return null;
+    const units = new Set<string>();
+    for (const path of matchedPaths) {
+      const unit = unitFor(path, moduleOf, expandedModules);
+      if (unit !== null) units.add(unit);
+    }
+    return units;
+  }, [matchedPaths, selectedUnit, moduleOf, expandedModules]);
 
   const displayNodes = useMemo(
     () =>
@@ -130,24 +145,23 @@ function MapCanvas({
           } else {
             className += ' map-node--dimmed';
           }
+        } else if (matchedUnits !== null && node.type !== 'moduleGroup') {
+          className += matchedUnits.has(node.id)
+            ? ' map-node--match'
+            : ' map-node--dimmed';
         }
         return {...node, className};
       }),
-    [nodes, highlight],
+    [nodes, highlight, matchedUnits],
   );
 
   const displayEdges = useMemo(
     () =>
       layout.edges.map(edge => ({
         ...edge,
-        className:
-          highlight.selected === null
-            ? 'map-edge'
-            : highlight.edges.has(edge.id)
-              ? 'map-edge map-edge--highlighted'
-              : 'map-edge map-edge--dimmed',
+        className: edgeClass(edge, highlight, matchedUnits),
       })),
-    [layout.edges, highlight],
+    [layout.edges, highlight, matchedUnits],
   );
 
   // Bring the selected file into view, e.g. when chosen in the explorer.
@@ -224,4 +238,22 @@ function MapCanvas({
       </div>
     </MapActionsContext>
   );
+}
+
+function edgeClass(
+  edge: MapEdge,
+  highlight: MapHighlight,
+  matchedUnits: ReadonlySet<string> | null,
+): string {
+  if (highlight.selected !== null) {
+    return highlight.edges.has(edge.id)
+      ? 'map-edge map-edge--highlighted'
+      : 'map-edge map-edge--dimmed';
+  }
+  if (matchedUnits !== null) {
+    return matchedUnits.has(edge.source) && matchedUnits.has(edge.target)
+      ? 'map-edge map-edge--highlighted'
+      : 'map-edge map-edge--dimmed';
+  }
+  return 'map-edge';
 }

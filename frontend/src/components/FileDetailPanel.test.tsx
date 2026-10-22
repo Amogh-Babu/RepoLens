@@ -181,6 +181,44 @@ describe('FileDetailPanel', () => {
     expect(onRetry).toHaveBeenCalled();
   });
 
+  it('shows the reading order and moves to the next file', async () => {
+    const user = userEvent.setup();
+    const onNext = vi.fn();
+    renderPanel({
+      readingOrder: {
+        query: 'login',
+        position: 2,
+        total: 5,
+        reason: 'Defines authenticate',
+        onNext,
+      },
+    });
+
+    const section = screen.getByRole('region', {name: 'Reading order'});
+    expect(section).toHaveTextContent('#2 of 5 for “login”');
+    expect(section).toHaveTextContent('Defines authenticate');
+    await user.click(
+      within(section).getByRole('button', {name: /Next in reading order/}),
+    );
+    expect(onNext).toHaveBeenCalled();
+  });
+
+  it('disables Next at the end of the reading order', () => {
+    renderPanel({
+      readingOrder: {
+        query: 'login',
+        position: 5,
+        total: 5,
+        reason: 'r',
+        onNext: null,
+      },
+    });
+
+    expect(
+      screen.getByRole('button', {name: /Next in reading order/}),
+    ).toBeDisabled();
+  });
+
   it('closes', async () => {
     const user = userEvent.setup();
     const {onClose} = renderPanel();

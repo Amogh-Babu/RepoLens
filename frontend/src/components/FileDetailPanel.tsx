@@ -1,5 +1,6 @@
 import type {ReactNode} from 'react';
 import {useId} from 'react';
+import {encodeFilePath} from '../api/client.ts';
 import type {FileDetail, ImportInfo, SymbolKind} from '../api/types.ts';
 import type {RequestFailure} from '../state/analysisStore.ts';
 import {ErrorBanner} from './ErrorBanner.tsx';
@@ -16,6 +17,18 @@ interface FileDetailPanelProps {
   onSelectFile: (path: string) => void;
   onRetry: () => void;
   onClose: () => void;
+  /** Set when the file is in the current reading list (Use Case 3, 3b). */
+  readingOrder?: ReadingOrderInfo | null;
+}
+
+/** Where the selected file sits in the current reading list. */
+export interface ReadingOrderInfo {
+  query: string;
+  position: number;
+  total: number;
+  reason: string;
+  /** Selects the next file in the reading order; null at the end. */
+  onNext: (() => void) | null;
 }
 
 const KIND_LABELS: Record<SymbolKind, string> = {
@@ -37,9 +50,11 @@ export function FileDetailPanel({
   onSelectFile,
   onRetry,
   onClose,
+  readingOrder = null,
 }: FileDetailPanelProps) {
   const headingId = useId();
-  const sourceUrl = detail?.sourceUrl ?? `${repoUrl}/blob/${sha}/${path}`;
+  const sourceUrl =
+    detail?.sourceUrl ?? `${repoUrl}/blob/${sha}/${encodeFilePath(path)}`;
   const name = path.slice(path.lastIndexOf('/') + 1);
 
   return (
@@ -55,6 +70,24 @@ export function FileDetailPanel({
           ✕
         </button>
       </div>
+
+      {readingOrder !== null && (
+        <section className="detail__reading" aria-label="Reading order">
+          <p className="detail__reading-position">
+            #{readingOrder.position} of {readingOrder.total} for “
+            {readingOrder.query}”
+          </p>
+          <p className="detail__muted">{readingOrder.reason}</p>
+          <button
+            type="button"
+            className="button"
+            onClick={readingOrder.onNext ?? undefined}
+            disabled={readingOrder.onNext === null}
+          >
+            Next in reading order →
+          </button>
+        </section>
+      )}
 
       {/* Always shown, so the file can be found even if the link breaks. */}
       <dl className="detail__facts">
