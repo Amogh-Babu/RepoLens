@@ -1,4 +1,4 @@
-import {screen} from '@testing-library/react';
+import {screen, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {MockApiClient} from '../api/mock/mockClient.ts';
 import type {Analysis} from '../api/types.ts';
@@ -127,6 +127,43 @@ describe('AnalysisPage', () => {
     expect(alert).toHaveTextContent('Analysis not found');
     expect(
       screen.getByRole('link', {name: 'Analyze a repository'}),
+    ).toBeInTheDocument();
+  });
+});
+
+describe('AnalysisPage workspace', () => {
+  it('opens a file from the explorer and follows its imports', async () => {
+    const user = userEvent.setup();
+    await renderFinished('flask-auth');
+
+    await user.click(await screen.findByRole('treeitem', {name: 'auth/'}));
+    await user.click(screen.getByRole('treeitem', {name: 'service.py'}));
+
+    const panel = await screen.findByRole('complementary', {
+      name: 'service.py',
+    });
+    expect(
+      await within(panel).findByRole('link', {name: 'authenticate'}),
+    ).toBeInTheDocument();
+
+    await user.click(
+      within(panel).getByRole('button', {name: 'app/models/user.py'}),
+    );
+
+    expect(
+      await screen.findByRole('complementary', {name: 'user.py'}),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('treeitem', {name: 'user.py'})).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+  });
+
+  it('prompts the user to select a file', async () => {
+    await renderFinished('flask-auth');
+
+    expect(
+      await screen.findByText(/Select a file to see its symbols/),
     ).toBeInTheDocument();
   });
 });

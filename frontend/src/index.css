@@ -9,6 +9,10 @@
   --color-danger: #cf222e;
   --color-danger-bg: #ffebe9;
   --color-danger-border: #ff8182;
+  --color-warning: #9a6700;
+  --color-warning-bg: #fff8c5;
+  --color-hover: #eef1f4;
+  --color-selected: #ddf4ff;
 
   color-scheme: light dark;
   font-family:
@@ -34,6 +38,10 @@
     --color-danger: #f85149;
     --color-danger-bg: #25171c;
     --color-danger-border: #8e1519;
+    --color-warning: #d29922;
+    --color-warning-bg: #272115;
+    --color-hover: #1f2630;
+    --color-selected: #1a2f4b;
   }
 }
 
