@@ -22,9 +22,11 @@ describe('LandingPage', () => {
     await analyze('https://github.com/someone/flask-auth');
 
     expect(
-      await screen.findByRole('heading', {level: 1, name: 'Analysis'}),
+      await screen.findByRole('heading', {
+        level: 1,
+        name: 'someone/flask-auth',
+      }),
     ).toBeInTheDocument();
-    expect(screen.getByText('mock-1')).toBeInTheDocument();
   });
 
   it('sends the normalized URL and ref to the backend', async () => {
@@ -84,7 +86,10 @@ describe('LandingPage', () => {
       expect.anything(),
     );
     expect(
-      await screen.findByRole('heading', {level: 1, name: 'Analysis'}),
+      await screen.findByRole('heading', {
+        level: 1,
+        name: 'someone/flask-auth',
+      }),
     ).toBeInTheDocument();
   });
 

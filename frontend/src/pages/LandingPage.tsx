@@ -3,7 +3,7 @@ import {useNavigate} from 'react-router';
 import {useApiClient} from '../api/apiClientContext.ts';
 import type {ErrorDescription} from '../api/describeError.ts';
 import {describeError} from '../api/describeError.ts';
-import {ApiError} from '../api/errors.ts';
+import {toApiError} from '../api/errors.ts';
 import {ErrorBanner} from '../components/ErrorBanner.tsx';
 import type {RepoInputValue} from '../components/RepoInputForm.tsx';
 import {RepoInputForm} from '../components/RepoInputForm.tsx';
@@ -44,10 +44,7 @@ export function LandingPage() {
       );
       void navigate(`/analysis/${encodeURIComponent(analysisId)}`);
     } catch (error: unknown) {
-      const apiError =
-        error instanceof ApiError
-          ? error
-          : new ApiError('UNKNOWN', 'Something unexpected went wrong.');
+      const apiError = toApiError(error);
       if (apiError.code !== 'ABORTED') {
         setFailure({
           error: describeError(apiError),
