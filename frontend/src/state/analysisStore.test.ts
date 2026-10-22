@@ -210,3 +210,46 @@ describe('createAnalysisStore graph and selection', () => {
     expect(store.getState().expandedDirs.has('app/auth')).toBe(false);
   });
 });
+
+describe('createAnalysisStore map state', () => {
+  async function completedStore() {
+    const client = new MockApiClient({latencyMs: 0, stageDurationMs: 0});
+    const {analysisId} = await client.startAnalysis({
+      url: 'https://github.com/o/flask-auth',
+    });
+    const store = createAnalysisStore(client, analysisId);
+    store.getState().startPolling();
+    await vi.waitFor(() => expect(store.getState().graph).not.toBeNull());
+    return store;
+  }
+
+  it('starts with every module collapsed', async () => {
+    const store = await completedStore();
+
+    expect(store.getState().expandedModules.size).toBe(0);
+  });
+
+  it("expands the selected file's module", async () => {
+    const store = await completedStore();
+
+    store.getState().selectFile('app/auth/tokens.py');
+
+    expect([...store.getState().expandedModules]).toEqual(['app/auth']);
+  });
+
+  it('toggles modules and collapses them all', async () => {
+    const store = await completedStore();
+
+    store.getState().toggleModule('app');
+    store.getState().toggleModule('tests', true);
+    expect([...store.getState().expandedModules].sort()).toEqual([
+      'app',
+      'tests',
+    ]);
+    store.getState().toggleModule('app');
+    expect([...store.getState().expandedModules]).toEqual(['tests']);
+
+    store.getState().collapseAllModules();
+    expect(store.getState().expandedModules.size).toBe(0);
+  });
+});
