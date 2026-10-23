@@ -133,3 +133,24 @@
   overflow: auto;
   padding: 8px;
 }
+
+.workspace__expired {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--color-warning);
+  border-left-width: 4px;
+  border-radius: 6px;
+  background: var(--color-warning-bg);
+}
+
+.workspace__expired p {
+  margin: 0;
+}
+
+.workspace__expired-title {
+  font-weight: 600;
+}

@@ -12,6 +12,8 @@ interface SearchBarProps {
   active: boolean;
   /** True while results for a new query are loading. */
   searching: boolean;
+  /** True when searching is not possible, e.g. the analysis expired. */
+  disabled?: boolean;
 }
 
 /**
@@ -23,6 +25,7 @@ export function SearchBar({
   onClear,
   active,
   searching,
+  disabled = false,
 }: SearchBarProps) {
   const inputId = useId();
   const hintId = useId();
@@ -57,7 +60,12 @@ export function SearchBar({
           type="search"
           autoComplete="off"
           spellCheck={false}
-          placeholder="Search for a feature, file or function, e.g. login"
+          placeholder={
+            disabled
+              ? 'Re-analyze the repository to search again'
+              : 'Search for a feature, file or function, e.g. login'
+          }
+          disabled={disabled}
           value={value}
           onChange={event => {
             setValue(event.target.value);
@@ -68,7 +76,7 @@ export function SearchBar({
           aria-invalid={hint !== null}
           aria-describedby={hint !== null ? hintId : undefined}
         />
-        {(value !== '' || active) && (
+        {(value !== '' || active) && !disabled && (
           <button
             type="button"
             className="search-bar__clear"
@@ -82,7 +90,7 @@ export function SearchBar({
       <button
         type="submit"
         className="button button--primary"
-        disabled={searching}
+        disabled={searching || disabled}
       >
         {searching ? 'Searching…' : 'Search'}
       </button>

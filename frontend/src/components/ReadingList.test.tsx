@@ -106,6 +106,14 @@ describe('ReadingList', () => {
     expect(onLoadMore).toHaveBeenCalled();
   });
 
+  it('announces how many files matched', () => {
+    renderList(searchState({total: 34}));
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      '34 files match “login”.',
+    );
+  });
+
   it('suggests what to try when nothing matches', () => {
     renderList(searchState({query: 'kubernetes', results: [], total: 0}));
 

@@ -390,3 +390,87 @@ describe('createAnalysisStore search', () => {
     expect(store.getState().search).toBeNull();
   });
 });
+
+describe('createAnalysisStore expiry', () => {
+  async function completedStore(repo = 'flask-auth') {
+    const client = new MockApiClient({latencyMs: 0, stageDurationMs: 0});
+    const {analysisId} = await client.startAnalysis({
+      url: `https://github.com/o/${repo}`,
+    });
+    const store = createAnalysisStore(client, analysisId);
+    store.getState().startPolling();
+    await vi.waitFor(() =>
+      expect(store.getState().analysis?.status).toBe('completed'),
+    );
+    return {client, store};
+  }
+
+  it('marks the analysis expired when a request reports it', async () => {
+    const {client, store} = await completedStore();
+    await vi.waitFor(() => expect(store.getState().graph).not.toBeNull());
+    vi.spyOn(client, 'search').mockRejectedValue(
+      new ApiError('ANALYSIS_EXPIRED', 'Gone.', null, 410),
+    );
+
+    store.getState().runSearch('login');
+
+    await vi.waitFor(() => expect(store.getState().expired).toBe(true));
+    // Shown as expiry, not as a search failure.
+    expect(store.getState().search?.failure).toBeNull();
+    expect(store.getState().search?.pendingQuery).toBeNull();
+  });
+
+  it('marks the analysis expired when the graph is already gone', async () => {
+    const {store} = await completedStore('expired-repo');
+
+    await vi.waitFor(() => expect(store.getState().expired).toBe(true));
+    expect(store.getState().graph).toBeNull();
+    expect(store.getState().graphFailure).toBeNull();
+  });
+
+  it('expires when the cache entry runs out', async () => {
+    const client = new MockApiClient({latencyMs: 0, stageDurationMs: 0});
+    const {analysisId} = await client.startAnalysis({
+      url: 'https://github.com/o/flask-auth',
+    });
+    const original = client.getAnalysis.bind(client);
+    vi.spyOn(client, 'getAnalysis').mockImplementation(async (...args) => ({
+      ...(await original(...args)),
+      expiresAt: new Date(Date.now() + 50).toISOString(),
+    }));
+    const store = createAnalysisStore(client, analysisId);
+
+    store.getState().startPolling();
+    await vi.waitFor(() =>
+      expect(store.getState().analysis?.status).toBe('completed'),
+    );
+    expect(store.getState().expired).toBe(false);
+
+    await vi.waitFor(() => expect(store.getState().expired).toBe(true));
+    store.getState().dispose();
+  });
+
+  it('becomes read-only once expired', async () => {
+    const {client, store} = await completedStore();
+    await vi.waitFor(() => expect(store.getState().graph).not.toBeNull());
+    store.getState().selectFile('app/db.py');
+    await vi.waitFor(() =>
+      expect(store.getState().fileDetails['app/db.py']).toBeDefined(),
+    );
+    vi.spyOn(client, 'getFile').mockRejectedValue(
+      new ApiError('ANALYSIS_EXPIRED', 'Gone.', null, 410),
+    );
+    store.getState().selectFile('app/config.py');
+    await vi.waitFor(() => expect(store.getState().expired).toBe(true));
+    const search = vi.spyOn(client, 'search');
+
+    store.getState().runSearch('login');
+    store.getState().selectFile('app/routes.py');
+    expect(search).not.toHaveBeenCalled();
+    expect(store.getState().selectedPath).toBe('app/config.py');
+
+    // Files already loaded can still be opened.
+    store.getState().selectFile('app/db.py');
+    expect(store.getState().selectedPath).toBe('app/db.py');
+  });
+});

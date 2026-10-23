@@ -1,11 +1,12 @@
 import {useEffect, useState} from 'react';
-import {Link, useNavigate, useParams} from 'react-router';
+import {Link, useParams} from 'react-router';
 import {useApiClient} from '../api/apiClientContext.ts';
 import {describeError} from '../api/describeError.ts';
-import {ApiError, toApiError} from '../api/errors.ts';
+import {ApiError} from '../api/errors.ts';
 import type {Analysis} from '../api/types.ts';
 import {ErrorBanner} from '../components/ErrorBanner.tsx';
 import {ProgressIndicator} from '../components/ProgressIndicator.tsx';
+import {ReanalyzeButton} from '../components/ReanalyzeButton.tsx';
 import {SummaryBar} from '../components/SummaryBar.tsx';
 import {Workspace} from '../components/Workspace.tsx';
 import type {RequestFailure} from '../state/analysisStore.ts';
@@ -14,6 +15,7 @@ import {
   AnalysisStoreContext,
   useAnalysisStore,
 } from '../state/analysisStoreContext.ts';
+import {useDocumentTitle} from '../utils/useDocumentTitle.ts';
 import './AnalysisPage.css';
 
 interface AnalysisPageProps {
@@ -66,10 +68,11 @@ function AnalysisSession({
 
 function AnalysisContent() {
   const analysis = useAnalysisStore(state => state.analysis);
+  useDocumentTitle(analysis === null ? 'Analysis' : repoName(analysis.repoUrl));
   const loadFailure = useAnalysisStore(state => state.loadFailure);
 
   return (
-    <main className="page analysis">
+    <main className="page analysis" id="main" tabIndex={-1}>
       <header className="analysis__header">
         <Link to="/" className="analysis__back">
           ← Analyze another repository
@@ -166,51 +169,6 @@ function FailedAnalysis({analysis}: {analysis: Analysis}) {
         Analyze another repository
       </Link>
     </ErrorBanner>
-  );
-}
-
-/** Starts a new analysis of the same repository and ref. */
-function ReanalyzeButton({
-  analysis,
-  label,
-}: {
-  analysis: Analysis;
-  label: string;
-}) {
-  const api = useApiClient();
-  const navigate = useNavigate();
-  const [starting, setStarting] = useState(false);
-  const [failure, setFailure] = useState<RequestFailure | null>(null);
-
-  async function reanalyze() {
-    setStarting(true);
-    setFailure(null);
-    try {
-      const {analysisId} = await api.startAnalysis(
-        analysis.ref === null
-          ? {url: analysis.repoUrl}
-          : {url: analysis.repoUrl, ref: analysis.ref},
-      );
-      void navigate(`/analysis/${encodeURIComponent(analysisId)}`);
-    } catch (error: unknown) {
-      const apiError = toApiError(error);
-      setFailure({code: apiError.code, error: describeError(apiError)});
-      setStarting(false);
-    }
-  }
-
-  return (
-    <>
-      <button
-        type="button"
-        className="button button--primary"
-        onClick={() => void reanalyze()}
-        disabled={starting}
-      >
-        {starting ? 'Starting…' : label}
-      </button>
-      {failure !== null && <ErrorBanner error={failure.error} />}
-    </>
   );
 }
 

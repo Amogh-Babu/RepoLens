@@ -37,11 +37,19 @@ export function ReadingList({
 
   return (
     <div className="reading-list">
-      {pendingQuery !== null && (
-        <p role="status" className="reading-list__status">
-          Searching for “{pendingQuery}”…
-        </p>
-      )}
+      {/* Announces progress and the result count to screen readers. */}
+      <p
+        role="status"
+        className={
+          pendingQuery !== null ? 'reading-list__status' : 'visually-hidden'
+        }
+      >
+        {pendingQuery !== null
+          ? `Searching for “${pendingQuery}”…`
+          : hasResults
+            ? `${total} ${total === 1 ? 'file matches' : 'files match'} “${query}”.`
+            : ''}
+      </p>
       {failure?.request === 'search' && (
         <ErrorBanner error={failure.error} onRetry={onRetry} />
       )}

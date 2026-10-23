@@ -8,6 +8,7 @@ import {ErrorBanner} from '../components/ErrorBanner.tsx';
 import type {RepoInputValue} from '../components/RepoInputForm.tsx';
 import {RepoInputForm} from '../components/RepoInputForm.tsx';
 import type {RepoTarget} from '../utils/repoInput.ts';
+import {useDocumentTitle} from '../utils/useDocumentTitle.ts';
 import './LandingPage.css';
 
 interface FailedStart {
@@ -20,6 +21,7 @@ interface FailedStart {
 export function LandingPage() {
   const api = useApiClient();
   const navigate = useNavigate();
+  useDocumentTitle(null);
   const [input, setInput] = useState<RepoInputValue>({url: '', ref: ''});
   const [submitting, setSubmitting] = useState(false);
   const [failure, setFailure] = useState<FailedStart | null>(null);
@@ -66,7 +68,7 @@ export function LandingPage() {
   }
 
   return (
-    <main className="page landing">
+    <main className="page landing" id="main" tabIndex={-1}>
       <header className="landing__intro">
         <h1>RepoLens</h1>
         <p className="lede">
