@@ -75,6 +75,13 @@ export interface AnalysisState {
 
   /** The current search; null when no search is active. */
   search: SearchState | null;
+
+  /**
+   * True once the cached analysis has expired (24 hours after it was
+   * created). What is on screen stays, but nothing new can be loaded until
+   * the repository is analyzed again (Use Cases 2-4).
+   */
+  expired: boolean;
 }
 
 export interface AnalysisActions {
@@ -113,7 +120,12 @@ export type AnalysisStore = StoreApi<AnalysisState & AnalysisActions>;
 
 export interface AnalysisStoreOptions {
   pollIntervalMs?: number;
+  /** Clock, replaceable for tests. */
+  now?: () => number;
 }
+
+/** setTimeout cannot wait longer than this (about 24.8 days). */
+const MAX_TIMEOUT_MS = 2 ** 31 - 1;
 
 /** Whether the analysis is still in progress and worth polling. */
 export function isInProgress(status: AnalysisStatus): boolean {
@@ -153,12 +165,14 @@ export function createAnalysisStore(
   options: AnalysisStoreOptions = {},
 ): AnalysisStore {
   const pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
+  const now = options.now ?? Date.now;
   let pollController: AbortController | null = null;
   let pollTimer: ReturnType<typeof setTimeout> | null = null;
   let graphController: AbortController | null = null;
   let fileController: AbortController | null = null;
   let searchController: AbortController | null = null;
   let moreController: AbortController | null = null;
+  let expiryTimer: ReturnType<typeof setTimeout> | null = null;
 
   return createStore<AnalysisState & AnalysisActions>()((set, get) => {
     async function poll(signal: AbortSignal) {
@@ -168,8 +182,9 @@ export function createAnalysisStore(
         set({analysis, loadFailure: null});
         if (isInProgress(analysis.status)) {
           pollTimer = setTimeout(() => void poll(signal), pollIntervalMs);
-        } else if (analysis.status === 'completed' && get().graph === null) {
-          get().loadGraph();
+        } else if (analysis.status === 'completed') {
+          scheduleExpiry(analysis.expiresAt);
+          if (get().graph === null) get().loadGraph();
         }
       } catch (error: unknown) {
         if (signal.aborted) return;
@@ -194,6 +209,7 @@ export function createAnalysisStore(
       } catch (error: unknown) {
         if (signal.aborted) return;
         const failure = failureFrom(error);
+        if (expiredBy(failure)) return;
         if (failure !== null) set({graphFailure: failure});
       }
     }
@@ -208,6 +224,7 @@ export function createAnalysisStore(
       } catch (error: unknown) {
         if (signal.aborted) return;
         const failure = failureFrom(error);
+        if (expiredBy(failure)) return;
         if (failure !== null) set({fileFailure: failure});
       }
     }
@@ -233,6 +250,7 @@ export function createAnalysisStore(
       } catch (error: unknown) {
         if (signal.aborted) return;
         const failure = failureFrom(error);
+        if (expiredBy(failure)) return;
         const current = get().search;
         if (failure === null || current === null) return;
         set({
@@ -274,6 +292,7 @@ export function createAnalysisStore(
       } catch (error: unknown) {
         if (signal.aborted) return;
         const failure = failureFrom(error);
+        if (expiredBy(failure)) return;
         const current = get().search;
         if (current === null) return;
         set({
@@ -283,6 +302,48 @@ export function createAnalysisStore(
             failure: failure === null ? null : {...failure, request: 'more'},
           },
         });
+      }
+    }
+
+    /** Marks the analysis expired if `failure` says so. */
+    function expiredBy(failure: RequestFailure | null): boolean {
+      if (failure?.code !== 'ANALYSIS_EXPIRED') return false;
+      markExpired();
+      return true;
+    }
+
+    function markExpired() {
+      abortSearches();
+      fileController?.abort();
+      fileController = null;
+      set(state => ({
+        expired: true,
+        fileFailure: null,
+        search:
+          state.search === null
+            ? null
+            : {
+                ...state.search,
+                pendingQuery: null,
+                loadingMore: false,
+                failure: null,
+              },
+      }));
+    }
+
+    /** Marks the analysis expired when its cache entry runs out. */
+    function scheduleExpiry(expiresAt: string) {
+      if (expiryTimer !== null) clearTimeout(expiryTimer);
+      expiryTimer = null;
+      const remaining = Date.parse(expiresAt) - now();
+      if (Number.isNaN(remaining)) return;
+      if (remaining <= 0) {
+        markExpired();
+      } else {
+        expiryTimer = setTimeout(
+          markExpired,
+          Math.min(remaining, MAX_TIMEOUT_MS),
+        );
       }
     }
 
@@ -307,6 +368,7 @@ export function createAnalysisStore(
       expandedDirs: new Set(),
       expandedModules: new Set(),
       search: null,
+      expired: false,
 
       startPolling() {
         get().stopPolling();
@@ -350,6 +412,8 @@ export function createAnalysisStore(
           set({selectedPath: null, fileFailure: null});
           return;
         }
+        // Once expired, only files whose details are already here can open.
+        if (get().expired && get().fileDetails[path] === undefined) return;
         set(state => {
           const moduleId = state.graph?.files.find(
             f => f.path === path,
@@ -390,6 +454,7 @@ export function createAnalysisStore(
       },
 
       runSearch(query) {
+        if (get().expired) return;
         abortSearches();
         searchController = new AbortController();
         const current = get().search;
@@ -409,6 +474,7 @@ export function createAnalysisStore(
       loadMoreResults() {
         const search = get().search;
         if (
+          get().expired ||
           search === null ||
           search.loadingMore ||
           search.pendingQuery !== null ||
@@ -429,6 +495,7 @@ export function createAnalysisStore(
 
       dispose() {
         abortSearches();
+        if (expiryTimer !== null) clearTimeout(expiryTimer);
         get().stopPolling();
         graphController?.abort();
         fileController?.abort();

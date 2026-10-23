@@ -275,3 +275,61 @@ describe('AnalysisPage search', () => {
     );
   });
 });
+
+describe('AnalysisPage expiry', () => {
+  it('offers Re-analyze when the analysis has already expired', async () => {
+    await renderFinished('expired-repo');
+
+    const banner = await screen.findByRole('alert');
+    expect(banner).toHaveTextContent('This analysis has expired');
+    expect(
+      within(banner).getByRole('button', {name: 'Re-analyze'}),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps the workspace visible but read-only after it expires', async () => {
+    const client = new MockApiClient({latencyMs: 0, stageDurationMs: 0});
+    const {analysisId} = await client.startAnalysis({
+      url: 'https://github.com/someone/flask-auth',
+    });
+    const original = client.getAnalysis.bind(client);
+    vi.spyOn(client, 'getAnalysis').mockImplementation(async (...args) => ({
+      ...(await original(...args)),
+      expiresAt: new Date(Date.now() - 1000).toISOString(),
+    }));
+    renderApp(`/analysis/${analysisId}`, client);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'This analysis has expired',
+    );
+    expect(
+      await screen.findByRole('treeitem', {name: 'auth/'}),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('searchbox', {name: 'Search this repository'}),
+    ).toBeDisabled();
+    expect(screen.getByRole('button', {name: 'Search'})).toBeDisabled();
+  });
+
+  it('starts a new analysis of the same repository from the banner', async () => {
+    const user = userEvent.setup();
+    const client = await renderFinished('expired-repo');
+    const startAnalysis = vi.spyOn(client, 'startAnalysis');
+
+    await user.click(await screen.findByRole('button', {name: 'Re-analyze'}));
+
+    expect(startAnalysis).toHaveBeenCalledWith({
+      url: 'https://github.com/someone/expired-repo',
+    });
+  });
+});
+
+describe('AnalysisPage titles', () => {
+  it('names the tab after the repository', async () => {
+    await renderFinished('flask-auth');
+
+    await vi.waitFor(() =>
+      expect(document.title).toBe('someone/flask-auth · RepoLens'),
+    );
+  });
+});

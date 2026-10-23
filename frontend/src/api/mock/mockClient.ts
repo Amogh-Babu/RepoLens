@@ -19,6 +19,8 @@ import type {FixtureFile, FixtureRepo} from './fixtureRepo.ts';
 import {FLASK_AUTH_REPO} from './fixtureRepo.ts';
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+/** How long 'expires-soon' stays available after it completes. */
+const SHORT_TTL_MS = 20_000;
 const MAX_QUERY_LENGTH = 200;
 const DEFAULT_PAGE_SIZE = 20;
 const GITHUB_URL = /^https:\/\/github\.com\/([^/\s]+)\/([^/\s]+)$/;
@@ -124,6 +126,7 @@ interface MockAnalysis {
  * - empty-repo, no-python, huge-repo, crash: fail partway through analysis
  * - cached: completes immediately, marked as loaded from the cache
  * - expired-repo: completes, then every later request is ANALYSIS_EXPIRED
+ * - expires-soon: completes, then expires 20 seconds later
  *
  * A ref named "missing-ref" fails with REF_NOT_FOUND.
  */
@@ -351,7 +354,10 @@ export class MockApiClient implements ApiClient {
   /** Finds an analysis that can serve graph, file and search requests. */
   private findCompleted(analysisId: string): MockAnalysis {
     const analysis = this.find(analysisId);
-    if (analysis.repoName === 'expired-repo') {
+    if (
+      analysis.repoName === 'expired-repo' ||
+      this.now() >= this.expiresAt(analysis)
+    ) {
       throw new ApiError(
         'ANALYSIS_EXPIRED',
         'This analysis is no longer available.',
@@ -370,6 +376,14 @@ export class MockApiClient implements ApiClient {
     return analysis;
   }
 
+  private expiresAt(analysis: MockAnalysis): number {
+    return analysis.repoName === 'expires-soon'
+      ? analysis.startedAt +
+          this.stageDurationMs * ANALYSIS_STAGES.length +
+          SHORT_TTL_MS
+      : analysis.startedAt + CACHE_TTL_MS;
+  }
+
   /** Computes the current status of an analysis from the elapsed time. */
   private describe(analysis: MockAnalysis): Analysis {
     const base = {
@@ -379,7 +393,7 @@ export class MockApiClient implements ApiClient {
       sha: analysis.sha,
       fromCache: analysis.fromCache,
       createdAt: new Date(analysis.startedAt).toISOString(),
-      expiresAt: new Date(analysis.startedAt + CACHE_TTL_MS).toISOString(),
+      expiresAt: new Date(this.expiresAt(analysis)).toISOString(),
     };
     if (analysis.cancelled) {
       return {

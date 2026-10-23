@@ -62,3 +62,8 @@
   font-size: 0.875rem;
   color: var(--color-danger);
 }
+
+.search-bar__field input:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}

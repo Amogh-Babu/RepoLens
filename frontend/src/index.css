@@ -130,3 +130,25 @@ code {
   background: transparent;
   border-color: transparent;
 }
+
+/* Hidden until focused with the keyboard. */
+.skip-link {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 100;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--color-accent);
+  color: var(--color-accent-text);
+  transform: translateY(-200%);
+}
+
+.skip-link:focus {
+  transform: none;
+}
+
+/* Focused programmatically after navigation; no ring needed. */
+main:focus {
+  outline: none;
+}

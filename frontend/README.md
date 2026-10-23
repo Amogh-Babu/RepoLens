@@ -102,6 +102,7 @@ The mock client serves a small hand-written Flask app with a login feature
 | `crash`         | Fails while parsing with `ANALYSIS_FAILED`          |
 | `cached`        | Completes immediately, marked as from the cache     |
 | `expired-repo`  | Completes, then every request is `ANALYSIS_EXPIRED` |
+| `expires-soon`  | Completes, then expires 20 seconds later            |
 
 A ref named `missing-ref` fails with `REF_NOT_FOUND`.
 

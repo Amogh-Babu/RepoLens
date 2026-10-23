@@ -11,6 +11,7 @@ import {FileExplorer} from './FileExplorer.tsx';
 import {ListFallback} from './map/ListFallback.tsx';
 import {MapErrorBoundary} from './map/MapErrorBoundary.tsx';
 import {ReadingList} from './ReadingList.tsx';
+import {ReanalyzeButton} from './ReanalyzeButton.tsx';
 import {SearchBar} from './SearchBar.tsx';
 import './Workspace.css';
 
@@ -42,6 +43,7 @@ export function Workspace({analysis}: {analysis: Analysis}) {
   const search = useAnalysisStore(state => state.search);
   const runSearch = useAnalysisStore(state => state.runSearch);
   const clearSearch = useAnalysisStore(state => state.clearSearch);
+  const expired = useAnalysisStore(state => state.expired);
   const [tab, setTab] = useState<SidebarTab>('files');
 
   const sourceUrlFor = useCallback(
@@ -58,17 +60,21 @@ export function Workspace({analysis}: {analysis: Analysis}) {
   );
   const readingOrder = readingOrderFor(search, selectedPath, selectFile);
 
+  const expiredBanner = expired && <ExpiredBanner analysis={analysis} />;
+
   if (graphFailure !== null) {
     return <ErrorBanner error={graphFailure.error} onRetry={loadGraph} />;
   }
   if (graph === null) {
-    return <p role="status">Loading the files…</p>;
+    return expiredBanner || <p role="status">Loading the files…</p>;
   }
 
   return (
     <div className="workspace-area">
+      {expiredBanner}
       <SearchBar
         active={search !== null}
+        disabled={expired}
         searching={search?.pendingQuery != null}
         onSearch={query => {
           setTab('reading');
@@ -116,6 +122,26 @@ export function Workspace({analysis}: {analysis: Analysis}) {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Shown once the cached analysis has expired (Use Cases 2-4): what is on
+ * screen stays for reference, and Re-analyze starts over with the same URL
+ * and ref.
+ */
+function ExpiredBanner({analysis}: {analysis: Analysis}) {
+  return (
+    <div className="workspace__expired" role="alert">
+      <div>
+        <p className="workspace__expired-title">This analysis has expired</p>
+        <p>
+          Results are kept for 24 hours. You can still look at what is on
+          screen, but searching and opening new files need a fresh analysis.
+        </p>
+      </div>
+      <ReanalyzeButton analysis={analysis} label="Re-analyze" />
     </div>
   );
 }
