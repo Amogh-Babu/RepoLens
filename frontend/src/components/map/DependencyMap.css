@@ -1,0 +1,143 @@
+.map {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.map__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.map__toolbar .button {
+  padding: 4px 10px;
+  font-size: 0.875rem;
+}
+
+.map__legend {
+  font-size: 0.75rem;
+  color: var(--color-muted);
+}
+
+.map__canvas {
+  flex: 1;
+  min-height: 0;
+}
+
+.map .react-flow {
+  --xy-background-color: var(--color-bg);
+}
+
+/* Nodes. React Flow wraps each custom node in .react-flow__node. */
+.react-flow__node.map-node {
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  transition: opacity 120ms ease;
+}
+
+.react-flow__node.map-node--module {
+  background: var(--color-surface);
+}
+
+.react-flow__node.map-node--moduleGroup {
+  border-style: dashed;
+  background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+}
+
+.map-node__body {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 4px 10px;
+  border: none;
+  border-radius: inherit;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 0.8125rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.map-node__body:focus-visible,
+.map-group__header:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.map-node__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.map-node__meta {
+  font-size: 0.75rem;
+  color: var(--color-muted);
+}
+
+.map-node__badge {
+  font-size: 0.6875rem;
+  color: var(--color-warning);
+}
+
+.map-group__header {
+  position: absolute;
+  top: 2px;
+  left: 6px;
+  padding: 0 4px;
+  border: none;
+  background: none;
+  color: var(--color-muted);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.react-flow__node.map-node--selected {
+  border: 2px solid var(--color-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 25%, transparent);
+}
+
+.react-flow__node.map-node--match {
+  border: 2px solid var(--color-accent);
+}
+
+.react-flow__node.map-node--related {
+  border-color: var(--color-accent);
+}
+
+.react-flow__node.map-node--dimmed {
+  opacity: 0.3;
+}
+
+.map .react-flow__handle {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Edges. */
+.react-flow__edge.map-edge path.react-flow__edge-path {
+  stroke: var(--color-muted);
+}
+
+.react-flow__edge.map-edge--highlighted path.react-flow__edge-path {
+  stroke: var(--color-accent);
+  stroke-width: 2;
+}
+
+.react-flow__edge.map-edge--dimmed {
+  opacity: 0.15;
+}

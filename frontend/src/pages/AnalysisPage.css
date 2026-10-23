@@ -1,0 +1,43 @@
+/* .page.analysis so this wins over the global .page width. */
+.page.analysis {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 1440px;
+  padding-top: 24px;
+}
+
+.analysis__header h1 {
+  margin: 8px 0 4px;
+  font-size: 1.75rem;
+  overflow-wrap: anywhere;
+}
+
+.analysis__header > a:not(.analysis__back) {
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.analysis__back {
+  font-size: 0.875rem;
+}
+
+.analysis__ended {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.analysis__ended p {
+  margin: 0;
+}
+
+a.button {
+  display: inline-block;
+  text-decoration: none;
+}
+
+.workspace__loading {
+  padding: 16px;
+}

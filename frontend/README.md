@@ -49,12 +49,61 @@ frontend/
 │   ├── test/         test setup
 │   ├── App.tsx       routes
 │   └── main.tsx      entry point
+├── .env.example      environment variables (copy to .env.local)
 ├── eslint.config.js
 ├── .prettierrc.json
-└── vite.config.ts    Vite and Vitest config
+└── vite.config.ts    Vite and Vitest config, dev server proxy
 ```
 
 Tests live next to the code they test, named `*.test.ts` or `*.test.tsx`.
+
+## Backend API
+
+All backend calls go through the `ApiClient` interface in
+[`src/api/client.ts`](src/api/client.ts). Response types are in
+[`src/api/types.ts`](src/api/types.ts) and error codes in
+[`src/api/errors.ts`](src/api/errors.ts). Every method rejects only with
+`ApiError` (`code`, `message`, `hint`), including network failures
+(`NETWORK_ERROR`), timeouts (`TIMEOUT`, 5 s for search and 10 s for
+everything else) and cancels (`ABORTED`).
+
+There are two implementations, chosen by `VITE_API_MODE`:
+
+| Mode             | Client          | Use it for                                            |
+| ---------------- | --------------- | ----------------------------------------------------- |
+| `mock` (default) | `MockApiClient` | Building the UI without a backend                     |
+| `http`           | `HttpApiClient` | Talking to the FastAPI backend at `VITE_API_BASE_URL` |
+
+To use the real backend, create `frontend/.env.local`:
+
+```bash
+VITE_API_MODE=http
+VITE_API_BASE_URL=/api
+API_PROXY_TARGET=http://localhost:8000
+```
+
+The dev server forwards `/api/...` to `API_PROXY_TARGET` with the `/api`
+prefix removed, so the browser never makes a cross-origin request.
+
+### Mock data
+
+The mock client serves a small hand-written Flask app with a login feature
+([`src/api/mock/fixtureRepo.ts`](src/api/mock/fixtureRepo.ts)) under any
+`https://github.com/<owner>/<repo>` URL. Each pipeline stage takes about
+0.6 s. These repository names trigger the error paths from the use cases:
+
+| Repository name | Result                                              |
+| --------------- | --------------------------------------------------- |
+| `private-repo`  | `REPO_NOT_FOUND` when starting                      |
+| `rate-limited`  | `RATE_LIMITED` when starting                        |
+| `empty-repo`    | Fails while downloading with `REPO_EMPTY`           |
+| `no-python`     | Fails while filtering with `NO_PYTHON_FILES`        |
+| `huge-repo`     | Fails while filtering with `TOO_MANY_FILES`         |
+| `crash`         | Fails while parsing with `ANALYSIS_FAILED`          |
+| `cached`        | Completes immediately, marked as from the cache     |
+| `expired-repo`  | Completes, then every request is `ANALYSIS_EXPIRED` |
+
+A ref named `missing-ref` fails with `REF_NOT_FOUND`.
 
 ## Routes
 

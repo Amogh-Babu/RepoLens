@@ -1,33 +1,26 @@
-import {render, screen} from '@testing-library/react';
-import {MemoryRouter} from 'react-router';
-import {App} from './App.tsx';
-
-function renderAt(path: string) {
-  render(
-    <MemoryRouter initialEntries={[path]}>
-      <App />
-    </MemoryRouter>,
-  );
-}
+import {screen} from '@testing-library/react';
+import {renderApp} from './test/renderApp.tsx';
 
 describe('App routes', () => {
   it('renders the landing page at /', () => {
-    renderAt('/');
+    renderApp('/');
     expect(
       screen.getByRole('heading', {level: 1, name: 'RepoLens'}),
     ).toBeInTheDocument();
   });
 
-  it('renders the analysis page with the analysis ID from the URL', () => {
-    renderAt('/analysis/abc123');
+  it('renders the analysis page while the analysis loads', () => {
+    renderApp('/analysis/abc123');
     expect(
       screen.getByRole('heading', {level: 1, name: 'Analysis'}),
     ).toBeInTheDocument();
-    expect(screen.getByText('abc123')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Loading the analysis…',
+    );
   });
 
   it('renders the not-found page for an unknown route', () => {
-    renderAt('/does-not-exist');
+    renderApp('/does-not-exist');
     expect(
       screen.getByRole('heading', {level: 1, name: 'Page not found'}),
     ).toBeInTheDocument();

@@ -1,0 +1,146 @@
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  font-size: 0.875rem;
+}
+
+.detail__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.detail__header h2 {
+  margin: 0;
+  font-size: 1.125rem;
+  overflow-wrap: anywhere;
+}
+
+.detail__close {
+  padding: 2px 8px;
+}
+
+.detail__facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0;
+}
+
+.detail__facts > div {
+  display: contents;
+}
+
+.detail__facts dt {
+  color: var(--color-muted);
+}
+
+.detail__facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.detail__source {
+  align-self: flex-start;
+}
+
+.detail__warning {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning);
+}
+
+.detail__muted {
+  margin: 0;
+  color: var(--color-muted);
+}
+
+.detail__section h3 {
+  margin: 0 0 6px;
+  font-size: 0.875rem;
+}
+
+.detail__count {
+  font-weight: 400;
+  color: var(--color-muted);
+}
+
+.detail__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.detail__list li {
+  overflow-wrap: anywhere;
+}
+
+.detail__kind {
+  display: inline-block;
+  min-width: 3.5em;
+  margin-right: 6px;
+  font-size: 0.75rem;
+  color: var(--color-muted);
+}
+
+.detail__file-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-accent);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.detail__file-link:hover {
+  text-decoration: underline;
+}
+
+.detail__file-link:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.detail__tags {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.detail__tags li {
+  padding: 1px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+}
+
+.detail__reading {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-accent);
+  border-radius: 6px;
+  background: var(--color-selected);
+}
+
+.detail__reading p {
+  margin: 0;
+}
+
+.detail__reading-position {
+  font-weight: 600;
+}
