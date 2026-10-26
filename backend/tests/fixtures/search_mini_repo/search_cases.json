@@ -1,0 +1,37 @@
+[
+  {
+    "query": "authentication",
+    "expected_paths": [
+      "app/authentication/__init__.py",
+      "app/users/repository.py",
+      "app/authentication/service.py",
+      "app/authentication/routes.py"
+    ]
+  },
+  {
+    "query": "login",
+    "expected_paths": [
+      "app/authentication/service.py",
+      "app/authentication/routes.py"
+    ]
+  },
+  {
+    "query": "account",
+    "expected_paths": [
+      "app/users/repository.py",
+      "app/authentication/service.py",
+      "app/authentication/routes.py"
+    ]
+  },
+  {
+    "query": "billing",
+    "expected_paths": [
+      "app/billing/service.py",
+      "app/billing/__init__.py"
+    ]
+  },
+  {
+    "query": "feature-not-present",
+    "expected_paths": []
+  }
+]
