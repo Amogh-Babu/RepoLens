@@ -1,5 +1,46 @@
 # Backend
 
+## Graph Schema and Storage (`repolens.graph`)
+
+`repolens.graph` persists and queries repository dependency graphs in SQLite (`repolens.graph.schema` and `repolens.graph.store.SqliteGraphStore`), keyed by `analysis_id`.
+
+### SQLite Tables
+- **`analyses`**:
+  - `id` (`TEXT PRIMARY KEY`): unique analysis identifier.
+  - `repo` (`TEXT NOT NULL`), `ref` (`TEXT`), `sha` (`TEXT NOT NULL`): normalized GitHub repository URL, optional requested ref, and resolved commit SHA.
+  - `status` (`TEXT NOT NULL`), `stage` (`TEXT`), `from_cache` (`INTEGER NOT NULL DEFAULT 0`): lifecycle state (`queued`, `running`, `completed`, `failed`, `cancelled`) and active pipeline stage.
+  - `created_at` (`REAL NOT NULL`), `expires_at` (`REAL NOT NULL`): POSIX timestamps (24-hour TTL by default).
+  - `analyzed_count`, `excluded_count`, `unparsed_count` (`INTEGER NOT NULL DEFAULT 0`): summary file counts.
+  - `error_code`, `error_message`, `error_hint` (`TEXT`): structured failure metadata when `status = 'failed'`.
+- **`files`**:
+  - `id` (`INTEGER PRIMARY KEY AUTOINCREMENT`), `analysis_id` (`TEXT NOT NULL REFERENCES analyses(id) ON DELETE CASCADE`), `path` (`TEXT NOT NULL`), `module` (`TEXT NOT NULL`), `parsed` (`INTEGER NOT NULL DEFAULT 1`), `line_count` (`INTEGER NOT NULL DEFAULT 0`), `UNIQUE (analysis_id, path)`.
+- **`symbols`**:
+  - `id` (`INTEGER PRIMARY KEY AUTOINCREMENT`), `file_id` (`INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE`), `name` (`TEXT NOT NULL`), `kind` (`TEXT NOT NULL`: `function`, `class`, `variable`), `line` (`INTEGER NOT NULL`).
+- **`imports`**:
+  - `id` (`INTEGER PRIMARY KEY AUTOINCREMENT`), `file_id` (`INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE`), `raw_name` (`TEXT NOT NULL`), `kind` (`TEXT NOT NULL`: `internal`, `external`, `unresolved`), `target_file_id` (`INTEGER REFERENCES files(id) ON DELETE SET NULL`), `target_package` (`TEXT`).
+- **`comments`**:
+  - `id` (`INTEGER PRIMARY KEY AUTOINCREMENT`), `file_id` (`INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE`), `line` (`INTEGER NOT NULL`), `text` (`TEXT NOT NULL`).
+
+All child tables cascade on `DELETE FROM analyses`, and indexes (`idx_analyses_repo_sha`, `idx_files_analysis_id`, `idx_symbols_file_id`, `idx_imports_file_id`, `idx_imports_target_file_id`, `idx_comments_file_id`) accelerate neighbor lookups and cache checks.
+
+```python
+from repolens.graph import AnalysisRecord, AnalyzedFile, SqliteGraphStore
+from repolens.search import SearchService
+
+store = SqliteGraphStore("repolens.db")
+store.save(
+    AnalysisRecord(
+        analysis_id="analysis-1",
+        repo="https://github.com/owner/repo",
+        sha="0123456789abcdef0123456789abcdef01234567",
+        files=(AnalyzedFile(path="app/main.py", line_count=20),),
+    )
+)
+graph = store.get_graph("analysis-1")
+detail = store.get_file("analysis-1", "app/main.py")
+results = SearchService(store).search("analysis-1", "main")
+```
+
 ## Search and Ranking
 
 `repolens.search.SearchService` accepts the user's query and an `analysis_id`.
@@ -39,19 +80,20 @@ hint}` shape. A missing or expired analysis returns `ANALYSIS_UNAVAILABLE`
 with a re-analysis hint. Request validation is scoped to the search route and
 does not override the host app's other API errors.
 
-The production GraphStore adapter should implement the `SearchIndex`
-protocol by returning `SearchDocument` records for exactly the requested
-analysis ID, and raise `AnalysisUnavailableError` when that analysis is
-missing or expired. Only that adapter should know database-specific schemas.
-The API host supplies its configured service:
+The production GraphStore adapter (`SqliteGraphStore`) implements the `SearchIndex`
+protocol by returning `SearchDocument` records for the requested
+analysis ID, and raising `AnalysisUnavailableError` when that analysis is
+missing, expired, or not yet completed.
 
 ```python
 from fastapi import FastAPI
 from repolens.api.search import install_search_api
+from repolens.graph import SqliteGraphStore
 from repolens.search import SearchService
 
 app = FastAPI()
-install_search_api(app, SearchService(graph_search_index))
+store = SqliteGraphStore("repolens.db")
+install_search_api(app, SearchService(store))
 ```
 
 ## Local Search Demo
@@ -102,8 +144,3 @@ To add a test, create `tests/test_<feature>.py` and write functions named
 classes also run under pytest unchanged. The Backend GitHub Actions workflow
 runs the whole suite on Python 3.11, 3.12, and 3.13 for every pull request that
 touches `backend/`.
-
-The production GraphStore adapter and the main application/analysis routes are
-separate team components. When available, wire the production `SearchIndex`
-into `SearchService`, then mount it with `install_search_api`; the fixture
-adapter can be removed from the runtime demo without changing either service.
