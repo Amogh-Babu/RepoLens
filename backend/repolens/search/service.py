@@ -1,3 +1,4 @@
+import heapq
 import re
 from collections.abc import Iterable
 
@@ -77,7 +78,7 @@ class SearchService:
                 )
             )
 
-        ordered = sorted(ranked, key=lambda result: (-result.score, result.path.casefold()))
+        ordered = self._reading_order(ranked, candidates)
         page_results = tuple(ordered[offset : offset + limit])
         return SearchPage(
             results=page_results,
@@ -86,6 +87,61 @@ class SearchService:
             limit=limit,
             has_more=offset + len(page_results) < len(ordered),
         )
+
+    @staticmethod
+    def _reading_order(
+        ranked: list[RankedFile],
+        candidates: list[tuple[SearchDocument, tuple[MatchEvidence, ...], float]],
+    ) -> list[RankedFile]:
+        results_by_path = {result.path: result for result in ranked}
+        dependents: dict[str, set[str]] = {path: set() for path in results_by_path}
+        prerequisite_count = {path: 0 for path in results_by_path}
+
+        for document, _, _ in candidates:
+            dependency_path = document.path
+            for dependent_path in document.depended_on_by:
+                if dependent_path not in results_by_path:
+                    continue
+                if dependent_path in dependents[dependency_path]:
+                    continue
+                dependents[dependency_path].add(dependent_path)
+                prerequisite_count[dependent_path] += 1
+
+        ready: list[tuple[float, str, str]] = []
+        for path, count in prerequisite_count.items():
+            if count == 0:
+                result = results_by_path[path]
+                heapq.heappush(ready, (-result.score, path.casefold(), path))
+
+        ordered: list[RankedFile] = []
+        ordered_paths: set[str] = set()
+        while len(ordered) < len(ranked):
+            if not ready:
+                remaining_paths = set(results_by_path).difference(ordered_paths)
+                cycle_break = min(
+                    remaining_paths,
+                    key=lambda path: (-results_by_path[path].score, path.casefold()),
+                )
+                result = results_by_path[cycle_break]
+                heapq.heappush(ready, (-result.score, cycle_break.casefold(), cycle_break))
+
+            _, _, path = heapq.heappop(ready)
+            if path in ordered_paths:
+                continue
+            ordered.append(results_by_path[path])
+            ordered_paths.add(path)
+            for dependent_path in dependents[path]:
+                if dependent_path in ordered_paths:
+                    continue
+                prerequisite_count[dependent_path] -= 1
+                if prerequisite_count[dependent_path] == 0:
+                    result = results_by_path[dependent_path]
+                    heapq.heappush(
+                        ready,
+                        (-result.score, dependent_path.casefold(), dependent_path),
+                    )
+
+        return ordered
 
     @staticmethod
     def _validate_pagination(offset: int, limit: int) -> None:

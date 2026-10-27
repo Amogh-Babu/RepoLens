@@ -1,5 +1,5 @@
 from repolens.search.models import RankedFile, SearchDocument, SearchPage
-from repolens.search.ports import SearchIndex
+from repolens.search.ports import AnalysisUnavailableError, SearchIndex
 from repolens.search.service import (
 	PaginationValidationError,
 	QueryValidationError,
@@ -7,6 +7,7 @@ from repolens.search.service import (
 )
 
 __all__ = [
+	"AnalysisUnavailableError",
 	"PaginationValidationError",
 	"QueryValidationError",
 	"RankedFile",

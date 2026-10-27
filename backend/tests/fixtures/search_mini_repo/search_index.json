@@ -1,0 +1,67 @@
+{
+  "analysis_id": "mini-repo-fixture",
+  "documents": [
+    {
+      "path": "app/__init__.py",
+      "symbols": [],
+      "references": [],
+      "comments": [],
+      "depended_on_by": []
+    },
+    {
+      "path": "app/authentication/__init__.py",
+      "symbols": [],
+      "references": [],
+      "comments": [],
+      "depended_on_by": []
+    },
+    {
+      "path": "app/users/__init__.py",
+      "symbols": [],
+      "references": [],
+      "comments": [],
+      "depended_on_by": []
+    },
+    {
+      "path": "app/billing/__init__.py",
+      "symbols": [],
+      "references": [],
+      "comments": [],
+      "depended_on_by": []
+    },
+    {
+      "path": "app/authentication/routes.py",
+      "symbols": ["post_login"],
+      "references": [
+        "app.authentication.service.login_user",
+        "app.users.repository.find_account"
+      ],
+      "comments": ["Authentication request handlers for the web application."],
+      "depended_on_by": []
+    },
+    {
+      "path": "app/authentication/service.py",
+      "symbols": ["login_user", "verify_password"],
+      "references": ["app.users.repository.find_account"],
+      "comments": ["Authenticate account credentials and verify the submitted password."],
+      "depended_on_by": ["app/authentication/routes.py"]
+    },
+    {
+      "path": "app/users/repository.py",
+      "symbols": ["find_account"],
+      "references": [],
+      "comments": ["User account lookup used by authentication routes and services."],
+      "depended_on_by": [
+        "app/authentication/routes.py",
+        "app/authentication/service.py"
+      ]
+    },
+    {
+      "path": "app/billing/service.py",
+      "symbols": ["calculate_invoice"],
+      "references": [],
+      "comments": ["Calculate invoice totals and format billing summaries."],
+      "depended_on_by": []
+    }
+  ]
+}

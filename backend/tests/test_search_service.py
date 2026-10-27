@@ -71,6 +71,20 @@ class SearchServiceTest(unittest.TestCase):
 
         self.assertEqual(["alpha/auth.py", "zeta/auth.py"], [result.path for result in page.results])
 
+    def test_dependency_cycles_have_deterministic_order(self) -> None:
+        documents = [
+            SearchDocument(path="alpha/cycle.py", depended_on_by=("zeta/cycle.py",)),
+            SearchDocument(path="zeta/cycle.py", depended_on_by=("alpha/cycle.py",)),
+        ]
+        service = SearchService(InMemorySearchIndex({"analysis-1": documents}))
+
+        first_result = service.search("analysis-1", "cycle")
+        second_result = service.search("analysis-1", "cycle")
+
+        expected_paths = ["alpha/cycle.py", "zeta/cycle.py"]
+        self.assertEqual(expected_paths, [result.path for result in first_result.results])
+        self.assertEqual(first_result, second_result)
+
     def test_rejects_empty_and_overlong_queries(self) -> None:
         for query in ("  \n", "x" * 201):
             with self.subTest(query_length=len(query)):

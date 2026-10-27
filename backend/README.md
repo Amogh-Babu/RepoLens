@@ -1,40 +1,87 @@
 # Backend
 
-## Search service
+## Search and Ranking
 
-The Week 3 search component is implemented in `repolens.search`. It reads
-normalized `SearchDocument` records through the `SearchIndex` protocol, keyed
-by `analysis_id`, and returns a paginated `SearchPage`. This isolates ranking
-from the graph database and HTTP framework. The record fields (`path`,
-`symbols`, `references`, and `comments`) are language-neutral; an analyzer or
-graph adapter for another language can map its extracted data into the same
-contract.
+`repolens.search.SearchService` accepts the user's query and an `analysis_id`.
+It asks an injected `SearchIndex` for normalized records, checks each path,
+symbol, reference (such as an import), and comment for query terms, ranks the
+matches using textual evidence and dependency relationships, and returns a
+page of files with evidence and explanations. The query is not inferred by
+the service; the API caller passes it from the search box.
+
+The search records are language-neutral. An analyzer and graph adapter for
+another language can map its paths, symbols, references, comments, and
+dependency relationships to the same `SearchDocument` without changing
+ranking. Search only reads the index; it does not download, parse, or execute
+the source repository.
+
+Reading order respects matched dependency edges: when one matched file
+depends on another matched file, the dependency comes first. Among files whose
+order is not constrained by dependencies, query relevance and then
+case-insensitive path determine order. Cycles are handled deterministically.
+The baseline field weights are 8 for paths, 6 for symbols, 4 for references,
+and 2 for comments per matched term, plus 3 per distinct matched query term.
+An additional 1.5 points per matching dependent breaks ties and informs the
+reason; dependency order itself is enforced separately.
+
+Queries are case-insensitive substring matches over distinct word terms and
+are limited to 200 characters. Whitespace-only queries are rejected. The
+default page size is 20 and the maximum is 100. Reasons are single-line and
+cite up to two matching values; the full match list is returned separately.
+
+## Search API
+
+`repolens.api.search.install_search_api(app, search_service)` mounts
+`GET /analyses/{analysis_id}/search?q=...&offset=0&limit=20`. A successful
+response contains `results` (path, score, reason, and match evidence), `total`,
+`offset`, `limit`, and `has_more`. Errors use the pitch's `{code, message,
+hint}` shape. A missing or expired analysis returns `ANALYSIS_UNAVAILABLE`
+with a re-analysis hint. Request validation is scoped to the search route and
+does not override the host app's other API errors.
+
+The production GraphStore adapter should implement the `SearchIndex`
+protocol by returning `SearchDocument` records for exactly the requested
+analysis ID, and raise `AnalysisUnavailableError` when that analysis is
+missing or expired. Only that adapter should know database-specific schemas.
+The API host supplies its configured service:
 
 ```python
-from repolens.search import SearchDocument, SearchService
+from fastapi import FastAPI
+from repolens.api.search import install_search_api
+from repolens.search import SearchService
 
-class GraphSearchIndex:
-	def get_search_documents(self, analysis_id: str):
-		# Adapt the graph store's file, symbol, reference, and comment rows.
-		...
-
-results = SearchService(GraphSearchIndex()).search("analysis-id", "login")
-for result in results.results:
-	print(result.path, result.reason)
+app = FastAPI()
+install_search_api(app, SearchService(graph_search_index))
 ```
 
-Queries are case-insensitive, split into distinct word terms, and limited to
-200 characters. Whitespace-only queries raise `QueryValidationError`. The
-default page contains 20 results; `offset` and `limit` support subsequent
-pages, with a maximum page size of 100. Matches are found in filenames,
-symbols, references (including language-specific imports), and comments. The
-baseline score weights those fields 8, 6, 4, and 2 points per matched term,
-respectively, adds 3 points per distinct matched query term, and adds 1.5
-points for each other matching file that depends on the candidate. Results
-sort by descending score, then by case-insensitive path. Each result's
-single-line reason names up to two matching values and notes matching
-dependents. The page reports the total match count and whether more results
-are available.
+## Local Search Demo
+
+The mini repository fixture contains authentication, user-account, and
+billing files, a hand-annotated `search_index.json`, and expected reading
+orders for representative queries. Its Python source is not executed. The
+fixture index is a stand-in for the future analyzer/graph adapter, so this
+demo exercises real HTTP/API/search behavior but does not ingest a Git repo.
+
+Install backend and development dependencies from the repository root:
+
+```bash
+python3 -m pip install -r backend/requirements-dev.txt
+```
+
+Start the demo server:
+
+```bash
+PYTHONPATH=backend python3 -m uvicorn examples.search_demo:app --app-dir backend --reload
+```
+
+Search the mini repository in another terminal:
+
+```bash
+curl 'http://127.0.0.1:8000/analyses/mini-repo-fixture/search?q=authentication'
+```
+
+The fixture queries and expected orders are in
+`backend/tests/fixtures/search_mini_repo/search_cases.json`.
 
 ## Tests
 
@@ -56,8 +103,7 @@ classes also run under pytest unchanged. The Backend GitHub Actions workflow
 runs the whole suite on Python 3.11, 3.12, and 3.13 for every pull request that
 touches `backend/`.
 
-The HTTP search route and production graph-store adapter are not yet
-implemented. The API route should validate the analysis ID and query, call
-`SearchService.search(analysis_id, query, offset, limit)`, and serialize the
-`SearchPage`. The graph-store adapter should implement `SearchIndex` without
-exposing database-specific records to the search service.
+The production GraphStore adapter and the main application/analysis routes are
+separate team components. When available, wire the production `SearchIndex`
+into `SearchService`, then mount it with `install_search_api`; the fixture
+adapter can be removed from the runtime demo without changing either service.
