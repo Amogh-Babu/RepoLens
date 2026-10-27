@@ -62,7 +62,7 @@ orders for representative queries. Its Python source is not executed. The
 fixture index is a stand-in for the future analyzer/graph adapter, so this
 demo exercises real HTTP/API/search behavior but does not ingest a Git repo.
 
-Install the backend and development dependencies from the repository root:
+Install backend and development dependencies from the repository root:
 
 ```bash
 python3 -m pip install -r backend/requirements-dev.txt
@@ -85,11 +85,23 @@ The fixture queries and expected orders are in
 
 ## Tests
 
-Run all search service, fixture, and HTTP API tests from the repository root:
+Backend tests use [pytest](https://docs.pytest.org/). From `backend/`:
 
 ```bash
-PYTHONPATH=backend python3 -m unittest discover -s backend/tests -v
+python -m pip install -r requirements-dev.txt
+python -m pytest
 ```
+
+`pyproject.toml` puts `backend/` on the import path and points pytest at
+`tests/`, so no `PYTHONPATH` is needed. Run one file with
+`python -m pytest tests/test_search_scoring.py` or one test with `-k <name>`.
+
+To add a test, create `tests/test_<feature>.py` and write functions named
+`test_*` that use plain `assert`. Shared fixtures live in `tests/conftest.py`;
+`test_search_scoring.py` is a short example. Existing `unittest.TestCase`
+classes also run under pytest unchanged. The Backend GitHub Actions workflow
+runs the whole suite on Python 3.11, 3.12, and 3.13 for every pull request that
+touches `backend/`.
 
 The production GraphStore adapter and the main application/analysis routes are
 separate team components. When available, wire the production `SearchIndex`
