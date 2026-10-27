@@ -1,0 +1,3 @@
+# Test and tooling dependencies. Install with:
+#   python -m pip install -r backend/requirements-dev.txt
+pytest==9.0.3
