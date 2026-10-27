@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
 
+from repolens.api.app import create_app
 from repolens.api.search import install_search_api
 from repolens.graph import (
     AnalysisRecord,
@@ -114,3 +115,32 @@ def test_search_endpoint_backed_by_sqlite_graph_store() -> None:
         "app/authentication/routes.py",
     ]
 
+    # 2. Unified FastAPI app via create_app
+    unified_client = TestClient(create_app(store))
+    contract_res = unified_client.get(
+        f"/analyses/{analysis_id}/search",
+        params={"q": "login"},
+    )
+    assert contract_res.status_code == 200
+    payload = contract_res.json()
+    assert payload["query"] == "login"
+    assert payload["total"] == 2
+    assert [r["position"] for r in payload["results"]] == [1, 2]
+    assert [r["path"] for r in payload["results"]] == [
+        "app/authentication/service.py",
+        "app/authentication/routes.py",
+    ]
+    # Symbol match includes 1-based line number from SqliteGraphStore
+    first_matches = payload["results"][0]["matches"]
+    assert any(
+        m["kind"] == "symbol" and m["text"] == "login_user" and m["line"] == 1
+        for m in first_matches
+    )
+    # Reference match maps to 'import' for the frontend contract
+    second_matches = payload["results"][1]["matches"]
+    assert any(
+        m["kind"] == "import"
+        and m["text"] == "app.authentication.service.login_user"
+        and m["line"] is None
+        for m in second_matches
+    )
