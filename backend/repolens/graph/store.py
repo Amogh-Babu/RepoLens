@@ -109,9 +109,51 @@ def normalize_repo_url(repo: str) -> str:
     return normalized_repo
 
 
-def _default_module(path: str, explicit_module: str = "") -> str:
-    return explicit_module.strip() or "."
+def build_github_source_url(
+    repo: str,
+    sha: str,
+    path: str,
+    line: int | None = None,
+) -> str:
+    """Build a pinned GitHub blob URL for a file or symbol line."""
+    normalized_repo = normalize_repo_url(repo)
+    clean_path = path.lstrip("/")
+    url = f"{normalized_repo}/blob/{sha}/{clean_path}"
+    if line is not None and line > 0:
+        url = f"{url}#L{line}"
+    return url
 
+
+def infer_module_id(path: str, explicit_module: str = "") -> str:
+    """Infer a module directory ID from a file path if none is provided.
+
+    Matches the frontend contract where root files use '.' and nested files use
+    their directory path (e.g. 'app/auth').
+    """
+    if explicit_module.strip():
+        return explicit_module.strip()
+    clean = path.strip("/")
+    slash_index = clean.rfind("/")
+    if slash_index == -1:
+        return "."
+    return clean[:slash_index]
+
+
+def infer_module_display_name(module_id: str) -> str:
+    """Infer a human-readable module display name from a module ID."""
+    cleaned = module_id.strip().strip("/")
+    if cleaned in ("", ".", "(root)", "root"):
+        return "(root)"
+    if "/" in cleaned:
+        return cleaned.rsplit("/", 1)[-1]
+    if "." in cleaned:
+        return cleaned.rsplit(".", 1)[-1]
+    return cleaned
+
+
+def infer_module_name(path: str, explicit_module: str = "") -> str:
+    """Alias for infer_module_id for backward compatibility."""
+    return infer_module_id(path, explicit_module)
 
 
 def _to_iso8601(timestamp: float) -> str:
@@ -193,7 +235,7 @@ class SqliteGraphStore:
 
             path_to_file_id: dict[str, int] = {}
             for file_rec in analysis.files:
-                module_id = _default_module(file_rec.path, file_rec.module)
+                module_id = infer_module_id(file_rec.path, file_rec.module)
                 cursor = self._conn.execute(
                     """
                     INSERT INTO files (
@@ -376,7 +418,7 @@ class SqliteGraphStore:
         modules = tuple(
             ModuleGroup(
                 id=mod,
-                name=mod,
+                name=infer_module_display_name(mod),
                 file_paths=tuple(paths),
             )
             for mod, paths in module_to_paths.items()
@@ -452,7 +494,9 @@ class SqliteGraphStore:
                 name=str(row["name"]),
                 kind=row["kind"],
                 line=int(row["line"]),
-                source_url="",
+                source_url=build_github_source_url(
+                    repo, sha, file_path, int(row["line"])
+                ),
             )
             for row in symbol_rows
         )
@@ -542,7 +586,7 @@ class SqliteGraphStore:
             module=str(file_row["module"]),
             parsed=parsed,
             line_count=int(file_row["line_count"]),
-            source_url="",
+            source_url=build_github_source_url(repo, sha, file_path),
             symbols=symbols,
             imports=tuple(imports),
             internal_imports=tuple(internal_imports),
