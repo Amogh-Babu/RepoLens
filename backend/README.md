@@ -41,6 +41,22 @@ detail = store.get_file("analysis-1", "app/main.py")
 results = SearchService(store).search("analysis-1", "main")
 ```
 
+## FastAPI Application and Endpoints (`repolens.api`)
+
+`repolens.api.app.create_app(store, runner)` creates the unified FastAPI application whose OpenAPI schema matches `frontend/src/api/types.ts`:
+- `POST /analyses` — Validates the GitHub URL, reuses a non-expired cached analysis for `(repo, sha)` or starts a new analysis, returning `{analysisId, sha, status}`.
+- `GET /analyses/{analysis_id}` — Returns lifecycle status, active stage, summary counts, cache flag, ISO-8601 timestamps, and any structured error.
+- `DELETE /analyses/{analysis_id}` — Cancels a queued or running analysis (`204 No Content`).
+- `GET /analyses/{analysis_id}/graph` — Returns `{modules, files, edges}` for the interactive dependency map (`repolens.graph.endpoints`).
+- `GET /analyses/{analysis_id}/files/{file_path:path}` — Returns `{path, module, parsed, lineCount, symbols, imports, importedBy, sourceUrl}` with pinned GitHub blob and `#L<line>` URLs.
+- `GET /analyses/{analysis_id}/search` — Queries `SearchService(store)` and returns ranked files with 1-based reading-order `position` and match line numbers.
+
+Run the main backend server locally from the repository root:
+
+```bash
+PYTHONPATH=backend python3 -m uvicorn repolens.api.app:app --app-dir backend --reload
+```
+
 ## Search and Ranking
 
 `repolens.search.SearchService` accepts the user's query and an `analysis_id`.

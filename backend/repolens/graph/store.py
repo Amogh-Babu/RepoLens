@@ -595,6 +595,110 @@ class SqliteGraphStore:
             imported_by=imported_by,
         )
 
+    def get_search_documents(self, analysis_id: str) -> list[SearchDocument]:
+        """Return SearchDocument records for SearchService.
+
+        Raises AnalysisUnavailableError (via AnalysisNotFoundError,
+        AnalysisExpiredError, or AnalysisNotReadyError) if the analysis is
+        unavailable.
+        """
+        self._get_valid_analysis_row(analysis_id, require_completed=True)
+
+        file_rows = self._conn.execute(
+            """
+            SELECT id, path
+            FROM files
+            WHERE analysis_id = ?
+            ORDER BY path ASC;
+            """,
+            (analysis_id,),
+        ).fetchall()
+
+        documents: list[SearchDocument] = []
+        for file_row in file_rows:
+            file_id = int(file_row["id"])
+            path = str(file_row["path"])
+
+            symbols = tuple(
+                str(r["name"])
+                for r in self._conn.execute(
+                    "SELECT name FROM symbols WHERE file_id = ? ORDER BY id ASC;",
+                    (file_id,),
+                ).fetchall()
+            )
+            references = tuple(
+                str(r["raw_name"])
+                for r in self._conn.execute(
+                    "SELECT raw_name FROM imports WHERE file_id = ? ORDER BY id ASC;",
+                    (file_id,),
+                ).fetchall()
+            )
+            comments = tuple(
+                str(r["text"])
+                for r in self._conn.execute(
+                    "SELECT text FROM comments WHERE file_id = ? ORDER BY line ASC;",
+                    (file_id,),
+                ).fetchall()
+            )
+            depended_on_by = tuple(
+                str(r["importer_path"])
+                for r in self._conn.execute(
+                    """
+                    SELECT DISTINCT f.path AS importer_path
+                    FROM imports i
+                    JOIN files f ON i.file_id = f.id
+                    WHERE i.target_file_id = ? AND i.kind = 'internal' AND f.parsed = 1
+                    ORDER BY f.path ASC;
+                    """,
+                    (file_id,),
+                ).fetchall()
+            )
+
+            documents.append(
+                SearchDocument(
+                    path=path,
+                    symbols=symbols,
+                    references=references,
+                    comments=comments,
+                    depended_on_by=depended_on_by,
+                )
+            )
+
+        return documents
+
+    def get_file_match_lines(
+        self,
+        analysis_id: str,
+        path: str,
+    ) -> dict[tuple[str, str], int]:
+        """Return 1-based line numbers for symbols and comments in a file."""
+        file_row = self._conn.execute(
+            "SELECT id FROM files WHERE analysis_id = ? AND path = ?;",
+            (analysis_id, path),
+        ).fetchone()
+        if file_row is None:
+            return {}
+
+        file_id = int(file_row["id"])
+        lines: dict[tuple[str, str], int] = {}
+        for row in self._conn.execute(
+            "SELECT name, line FROM symbols WHERE file_id = ? ORDER BY line ASC;",
+            (file_id,),
+        ).fetchall():
+            key = ("symbol", str(row["name"]))
+            if key not in lines:
+                lines[key] = int(row["line"])
+
+        for row in self._conn.execute(
+            "SELECT text, line FROM comments WHERE file_id = ? ORDER BY line ASC;",
+            (file_id,),
+        ).fetchall():
+            key = ("comment", str(row["text"]))
+            if key not in lines:
+                lines[key] = int(row["line"])
+
+        return lines
+
     def evict_expired(self, now: float | None = None) -> int:
         """Delete analyses whose expires_at timestamp has passed."""
         cutoff = now if now is not None else time.time()
