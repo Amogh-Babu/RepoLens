@@ -1,5 +1,14 @@
 """RepoLens dependency graph storage and query package."""
 
+from repolens.graph.endpoints import (
+    DependencyGraphResponse,
+    FileDetailResponse,
+    create_graph_router,
+    get_file_detail_response,
+    get_graph_response,
+    serialize_file_detail,
+    serialize_graph,
+)
 from repolens.graph.models import (
     AnalysisCounts,
     AnalysisErrorRecord,
@@ -30,6 +39,10 @@ from repolens.graph.store import (
     FileNotFoundInAnalysisError,
     GraphStoreError,
     SqliteGraphStore,
+    build_github_source_url,
+    infer_module_display_name,
+    infer_module_id,
+    infer_module_name,
     normalize_repo_url,
 )
 
@@ -45,8 +58,10 @@ __all__ = [
     "AnalyzedFile",
     "CommentRecord",
     "DependencyGraph",
+    "DependencyGraphResponse",
     "ExternalImportDetail",
     "FileDetail",
+    "FileDetailResponse",
     "FileNotFoundInAnalysisError",
     "GraphEdge",
     "GraphNode",
@@ -61,6 +76,15 @@ __all__ = [
     "SymbolDetail",
     "SymbolKind",
     "SymbolRecord",
+    "build_github_source_url",
+    "create_graph_router",
+    "get_file_detail_response",
+    "get_graph_response",
+    "infer_module_display_name",
+    "infer_module_id",
+    "infer_module_name",
     "init_schema",
     "normalize_repo_url",
+    "serialize_file_detail",
+    "serialize_graph",
 ]

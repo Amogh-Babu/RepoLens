@@ -1,4 +1,4 @@
-"""Unit tests for the SQLite graph schema and SqliteGraphStore (#23)."""
+"""Unit tests for the SQLite graph schema and SqliteGraphStore (#23, #35)."""
 
 import time
 import pytest
@@ -16,6 +16,9 @@ from repolens.graph import (
     ImportRecord,
     SqliteGraphStore,
     SymbolRecord,
+    build_github_source_url,
+    infer_module_display_name,
+    infer_module_id,
 )
 
 
@@ -38,7 +41,6 @@ def _sample_analysis(
         files=(
             AnalyzedFile(
                 path="manage.py",
-                module=".",
                 parsed=True,
                 line_count=20,
                 symbols=(SymbolRecord(name="main", kind="function", line=5),),
@@ -58,7 +60,6 @@ def _sample_analysis(
             ),
             AnalyzedFile(
                 path="app/service.py",
-                module="app",
                 parsed=True,
                 line_count=45,
                 symbols=(
@@ -75,7 +76,6 @@ def _sample_analysis(
             ),
             AnalyzedFile(
                 path="app/broken.py",
-                module="app",
                 parsed=False,
                 line_count=12,
                 symbols=(),
@@ -99,7 +99,12 @@ def test_save_and_load_graph_round_trip() -> None:
     assert graph.analysis_id == "analysis-1"
     assert graph.repo == "https://github.com/octocat/hello-world"
     assert graph.sha == "0123456789abcdef0123456789abcdef01234567"
+
     assert len(graph.files) == 3
+    assert [(m.id, m.name, m.file_paths) for m in graph.modules] == [
+        (".", "(root)", ("manage.py",)),
+        ("app", "app", ("app/service.py", "app/broken.py")),
+    ]
 
     # Only parsed internal imports become edges
     assert len(graph.edges) == 1
@@ -113,10 +118,16 @@ def test_save_and_load_file_detail_and_reverse_importers() -> None:
 
     manage = store.get_file("analysis-1", "manage.py")
     assert manage.path == "manage.py"
+    assert manage.module == "."
     assert manage.parsed is True
     assert manage.line_count == 20
+    assert (
+        manage.source_url
+        == "https://github.com/octocat/hello-world/blob/0123456789abcdef0123456789abcdef01234567/manage.py"
+    )
     assert len(manage.symbols) == 1
     assert manage.symbols[0].name == "main"
+    assert manage.symbols[0].source_url.endswith("/manage.py#L5")
     assert len(manage.internal_imports) == 1
     assert manage.internal_imports[0].target_path == "app/service.py"
     assert len(manage.external_imports) == 1
@@ -125,6 +136,7 @@ def test_save_and_load_file_detail_and_reverse_importers() -> None:
     service = store.get_file("analysis-1", "app/service.py")
     assert service.imported_by == ("manage.py",)
     assert service.unresolved_imports == ("dynamic.plugin",)
+    # Symbols ordered by line ASC
     assert [s.name for s in service.symbols] == ["DEFAULT_TIMEOUT", "AuthService"]
 
 
@@ -210,3 +222,14 @@ def test_not_ready_and_failed_analysis_lifecycle() -> None:
         "message": "Repository is empty.",
         "hint": None,
     }
+
+
+def test_module_and_github_url_helpers() -> None:
+    assert infer_module_id("manage.py") == "."
+    assert infer_module_display_name(".") == "(root)"
+    assert infer_module_id("app/auth/views.py") == "app/auth"
+    assert infer_module_display_name("app/auth") == "auth"
+    assert (
+        build_github_source_url("octocat/hello-world", "abc1234", "/app/main.py", 42)
+        == "https://github.com/octocat/hello-world/blob/abc1234/app/main.py#L42"
+    )
