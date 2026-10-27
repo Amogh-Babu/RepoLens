@@ -30,6 +30,10 @@ from repolens.graph.store import (
     FileNotFoundInAnalysisError,
     GraphStoreError,
     SqliteGraphStore,
+    build_github_source_url,
+    infer_module_display_name,
+    infer_module_id,
+    infer_module_name,
     normalize_repo_url,
 )
 
@@ -61,6 +65,10 @@ __all__ = [
     "SymbolDetail",
     "SymbolKind",
     "SymbolRecord",
+    "build_github_source_url",
+    "infer_module_display_name",
+    "infer_module_id",
+    "infer_module_name",
     "init_schema",
     "normalize_repo_url",
 ]
