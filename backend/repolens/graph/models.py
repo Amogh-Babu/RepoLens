@@ -28,12 +28,25 @@ class SymbolRecord:
 
 @dataclass(frozen=True)
 class ImportRecord:
-    """An import extracted and classified from a source file."""
+    """An import extracted and classified from a source file.
+
+    `raw_name` is the reference as written, so it collapses the names taken by
+    a `from` import: `from . import config` renders as `"."` and
+    `from app.services import billing` as `"app.services"`. `level` and
+    `symbols` keep the relative-import depth and those imported names, which
+    is what lets the classifier resolve `config` to `app/config.py` and
+    `billing` to either `app/services/billing.py` or a name re-exported by
+    `app/services/__init__.py`. Only `kind`, `target_path`, and
+    `target_package` are persisted; the classifier fills them in before the
+    storing stage.
+    """
 
     raw_name: str
     kind: ImportKind
     target_path: str | None = None
     target_package: str | None = None
+    level: int = 0
+    symbols: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

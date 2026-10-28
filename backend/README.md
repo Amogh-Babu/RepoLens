@@ -51,6 +51,89 @@ Errors are `IngestionError` subclasses carrying the API's
 Injecting an `ArchiveFetcher` (`GitHubSource(fetcher=...)`) swaps the transport,
 which is how the tests exercise downloads without touching the network.
 
+## Source Analysis (`repolens.analysis`)
+
+`repolens.analysis` reads a repository tree and reports the imports and
+top-level symbols of every file it can analyze. Source is parsed with the
+standard library `ast` module only; analyzed files are never imported,
+executed, or evaluated.
+
+### LanguageAnalyzer
+
+`repolens.analysis.ports.LanguageAnalyzer` is the per-language interface:
+`language`, `file_extensions`, `supports(path)`, and
+`analyze(path, source) -> ParsedFile`. `PythonAnalyzer` implements it for
+`.py` and `.pyi` files. `AnalysisService` picks an analyzer by file path, so
+adding a second language means registering another analyzer
+(`AnalysisService((PythonAnalyzer(), TypeScriptAnalyzer()))`) rather than
+changing the service, the graph store, or search.
+
+### Reported Data
+- **`ParsedFile`**: `path` (POSIX, relative to the repository root),
+  `language`, `parsed`, `line_count`, `imports`, `symbols`, and an `error`
+  when the file did not parse.
+- **`ParsedImport`**: `module`, `form` (`import` or `from`), `level` (0 for an
+  absolute import, otherwise the relative-import depth), the `symbols` taken
+  from the module (`'*'` for a star import), and the `line` of the first
+  import of that module. `raw_name` renders the reference as written, such as
+  `os.path` or `..config`. Imports inside functions and classes are reported
+  too, and repeated imports of one module are merged into a single record.
+- **`ParsedSymbol`**: `name`, `kind` (`function`, `class`, or `variable`), and
+  `line`. Only module-level declarations are reported; methods and nested
+  definitions belong to their enclosing symbol. Declarations guarded by
+  module-level control flow bind module-level names, so an `if TYPE_CHECKING:`
+  class, a `try`/`except ImportError` fallback, and a platform- or
+  version-gated definition are all reported, each once at the line of its
+  first branch.
+- **`RepositoryAnalysis`**: every analyzed `ParsedFile` sorted by path, plus
+  `skipped_paths` for files no registered analyzer supports.
+
+A file with a syntax error, invalid UTF-8, or a read error is reported with
+`parsed=False` and a `ParseError` instead of raising, so one bad file never
+hides the rest of the repository. Tree walks skip `.git`, `.hg`, `.svn`, and
+`__pycache__`, and do not follow symlinks; the full exclusion rules (vendored
+code, generated files, size limits) belong to the ingestion filter.
+
+`repolens.analysis.adapter` maps results onto the graph store's records:
+`to_analyzed_file`, `to_analyzed_files`, and `to_analysis_counts`. Imports are
+stored with their written name and the `unresolved` kind, because deciding
+whether a name points at another file in the repository or at an external
+package needs the whole file list; the import classifier assigns the final
+`internal` or `external` kind and target path.
+
+Each `ImportRecord` also carries the imported names and the relative-import
+depth (`symbols` and `level`). `raw_name` renders a reference as written, so
+by itself it collapses `from . import config` to `"."` and
+`from app.services import billing` to `"app.services"` — neither of which
+tells the classifier to resolve `app/config.py` or
+`app/services/billing.py`. Keeping the names also preserves the ambiguity the
+classifier has to settle: `billing` may be the `app/services/billing.py`
+module or a name re-exported by `app/services/__init__.py`. These two fields
+hand parsing off to classifying in memory; the pipeline classifies before it
+stores, so the `imports` table persists only the resolved kind and target.
+
+```python
+from repolens.analysis import AnalysisService, to_analysis_counts, to_analyzed_files
+from repolens.graph import AnalysisRecord, SqliteGraphStore
+
+analysis = AnalysisService().analyze_repository("/tmp/checkout")
+for file in analysis.files:
+    print(file.path, [i.raw_name for i in file.imports], [s.name for s in file.symbols])
+
+SqliteGraphStore("repolens.db").save(
+    AnalysisRecord(
+        analysis_id="analysis-1",
+        repo="https://github.com/owner/repo",
+        sha="0123456789abcdef0123456789abcdef01234567",
+        counts=to_analysis_counts(analysis),
+        files=to_analyzed_files(analysis),
+    )
+)
+```
+
+The mini repository used by the analyzer tests is
+`tests/fixtures/analysis_mini_repo/`; its README lists the cases it covers.
+
 ## Graph Schema and Storage (`repolens.graph`)
 
 `repolens.graph` persists and queries repository dependency graphs in SQLite (`repolens.graph.schema` and `repolens.graph.store.SqliteGraphStore`), keyed by `analysis_id`.
