@@ -1,5 +1,56 @@
 # Backend
 
+## Repository Ingestion (`repolens.ingestion`)
+
+`repolens.ingestion.GitHubSource` implements the `RepoSource` port: it
+downloads one archive for a (repository URL, commit SHA) pair and extracts it
+to a snapshot directory. Nothing from the repository is ever imported,
+executed, or evaluated — archive members are written to disk as bytes.
+
+```python
+from pathlib import Path
+
+from repolens.ingestion import GitHubSource
+
+snapshot = GitHubSource().fetch_snapshot(
+    "https://github.com/octocat/Hello-World",
+    "7fd1a60b01f91b314f59955a4e4d4e80d8edf11d",
+    Path("/tmp/repolens/snapshot"),
+)
+# Snapshot(repo=..., sha=..., root='/tmp/repolens/snapshot', files=('README',))
+```
+
+### Validation and Safety Rules
+- **URLs** (`repolens.ingestion.urls.parse_repo_url`) must be `https://github.com/<owner>/<repo>`
+  (`www.github.com` and a trailing `.git` are accepted). Non-https schemes,
+  other hosts, embedded credentials, ports, queries, fragments, and deep links
+  such as `/tree/<ref>` are rejected before any network call.
+- **Commit SHAs** (`normalize_commit_sha`) must be a full 40-character hex SHA,
+  so a snapshot is always reproducible; branches and tags are resolved earlier
+  in the pipeline.
+- **Downloads** (`HttpsArchiveFetcher`) only open https URLs on the
+  `codeload.github.com` allowlist, validate redirect targets against the same
+  allowlist, apply a timeout, and abort once the body passes
+  `ArchiveLimits.max_archive_bytes`.
+- **Extraction** (`extract_zip_archive`) validates every member before writing
+  one byte: absolute paths, Windows separators and drive letters, `..`
+  traversal (zip slip), symlinks, device nodes, and encrypted entries are
+  refused, and the resolved path is re-checked against the snapshot root. The
+  shared `<repo>-<sha>/` wrapper directory GitHub adds is stripped.
+- **Limits** (`ArchiveLimits`) cap the compressed download, the extracted byte
+  total, the file count, and the request timeout.
+- **Failures** leave nothing behind: the downloaded archive is always deleted,
+  a partial snapshot is discarded, and extracting over a non-empty directory is
+  refused.
+
+Errors are `IngestionError` subclasses carrying the API's
+`{code, message, hint}` shape via `to_dict()`: `INVALID_URL`,
+`UNSUPPORTED_HOST`, `INVALID_SHA`, `DOWNLOAD_FAILED`, `ARCHIVE_TOO_LARGE`,
+`INVALID_ARCHIVE`, `UNSAFE_ARCHIVE`, and `DESTINATION_NOT_EMPTY`.
+
+Injecting an `ArchiveFetcher` (`GitHubSource(fetcher=...)`) swaps the transport,
+which is how the tests exercise downloads without touching the network.
+
 ## Source Analysis (`repolens.analysis`)
 
 `repolens.analysis` reads a repository tree and reports the imports and
