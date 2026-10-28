@@ -1,6 +1,7 @@
 """Python `LanguageAnalyzer` built on the standard library `ast` module."""
 
 import ast
+from collections.abc import Iterator
 
 from repolens.analysis.models import (
     ImportForm,
@@ -14,6 +15,10 @@ from repolens.graph.models import SymbolKind
 
 PYTHON_LANGUAGE = "python"
 PYTHON_FILE_EXTENSIONS = (".py", ".pyi")
+
+# Function and class bodies are separate scopes: the names they bind belong to
+# the function or class, not to the module.
+_SCOPE_BOUNDARIES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
 
 
 class PythonAnalyzer:
@@ -128,6 +133,11 @@ def _merge_import(
 def _extract_top_level_symbols(tree: ast.Module) -> tuple[ParsedSymbol, ...]:
     """Collect the functions, classes, and variables declared at module level.
 
+    Declarations guarded by module-level control flow are module-level too, so
+    an `if TYPE_CHECKING:` class, a `try`/`except ImportError` fallback, and a
+    platform- or version-gated definition are all reported. A name declared in
+    more than one branch is reported once, at the line of its first branch.
+
     Methods and nested definitions belong to their enclosing symbol and are not
     reported separately.
     """
@@ -140,7 +150,7 @@ def _extract_top_level_symbols(tree: ast.Module) -> tuple[ParsedSymbol, ...]:
         seen.add((name, kind))
         symbols.append(ParsedSymbol(name=name, kind=kind, line=line))
 
-    for node in tree.body:
+    for node in _module_scope_statements(tree.body):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             add(node.name, "function", node.lineno)
         elif isinstance(node, ast.ClassDef):
@@ -154,6 +164,36 @@ def _extract_top_level_symbols(tree: ast.Module) -> tuple[ParsedSymbol, ...]:
                 add(name, "variable", node.lineno)
 
     return tuple(symbols)
+
+
+def _module_scope_statements(body: list[ast.stmt]) -> Iterator[ast.stmt]:
+    """Yield every statement that binds names in the module namespace.
+
+    Control-flow suites run in the scope that contains them, so `if`, `try`,
+    `for`, `while`, `with`, and `match` statements are followed into their
+    bodies and into their `else`, `except`, and `finally` branches. Traversal
+    stops at function and class definitions: those are yielded, because they
+    declare a name, but their bodies are not entered.
+
+    Statements come out in source order, so a name declared in several branches
+    keeps the line of the first one.
+    """
+    for statement in body:
+        yield statement
+        if isinstance(statement, _SCOPE_BOUNDARIES):
+            continue
+        yield from _module_scope_statements(_nested_statements(statement))
+
+
+def _nested_statements(statement: ast.stmt) -> list[ast.stmt]:
+    """Return the statements a control-flow statement runs in the same scope."""
+    nested: list[ast.stmt] = []
+    for child in ast.iter_child_nodes(statement):
+        if isinstance(child, ast.stmt):
+            nested.append(child)
+        elif isinstance(child, (ast.ExceptHandler, ast.match_case)):
+            nested.extend(child.body)
+    return nested
 
 
 def _assigned_names(target: ast.expr) -> tuple[str, ...]:

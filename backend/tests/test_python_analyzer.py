@@ -225,6 +225,128 @@ def test_methods_and_nested_definitions_are_not_top_level_symbols() -> None:
     ) == [("Calculator", "class", 1), ("outer", "function", 13)]
 
 
+def test_optional_dependency_imports_report_both_branches() -> None:
+    parsed = _analyze(
+        """
+        try:
+            import ujson as json_backend
+        except ImportError:
+            import json as json_backend
+
+            LEGACY_JSON = True
+        """
+    )
+
+    assert [imported.raw_name for imported in parsed.imports] == ["ujson", "json"]
+    assert [(symbol.name, symbol.kind, symbol.line) for symbol in parsed.symbols] == [
+        ("LEGACY_JSON", "variable", 6),
+    ]
+
+
+def test_type_checking_imports_and_declarations_are_reported() -> None:
+    parsed = _analyze(
+        """
+        from typing import TYPE_CHECKING
+
+        if TYPE_CHECKING:
+            from app.config import Settings
+
+            class SettingsLike:
+                tax_rate: float
+        """
+    )
+
+    assert [imported.raw_name for imported in parsed.imports] == [
+        "typing",
+        "app.config",
+    ]
+    assert [(symbol.name, symbol.kind, symbol.line) for symbol in parsed.symbols] == [
+        ("SettingsLike", "class", 6),
+    ]
+
+
+def test_declarations_guarded_by_module_level_control_flow_are_reported() -> None:
+    assert _symbols(
+        """
+        import sys
+
+        if sys.version_info >= (3, 12):
+            ENCODING = "utf-8"
+        else:
+            ENCODING = "utf8"
+
+        try:
+            RATE = 0.1
+        except ValueError:
+            RATE = 0.0
+        finally:
+            CHECKED = True
+
+        for _name in ("a",):
+            LAST_NAME = _name
+
+        while False:
+            UNREACHABLE = True
+
+        with open("mini.toml") as handle:
+            class Config:
+                pass
+
+        match sys.platform:
+            case "linux":
+                PLATFORM = "linux"
+            case _:
+                PLATFORM = "other"
+        """
+    ) == [
+        ("ENCODING", "variable", 4),
+        ("RATE", "variable", 9),
+        ("CHECKED", "variable", 13),
+        ("LAST_NAME", "variable", 16),
+        ("UNREACHABLE", "variable", 19),
+        ("Config", "class", 22),
+        ("PLATFORM", "variable", 27),
+    ]
+
+
+def test_a_conditional_definition_is_reported_once_at_its_first_branch() -> None:
+    assert _symbols(
+        """
+        import sys
+
+        if sys.platform == "win32":
+
+            def cache_directory() -> str:
+                return "C:/Users/mini/cache"
+
+        else:
+
+            def cache_directory() -> str:
+                return "/var/cache/mini"
+        """
+    ) == [("cache_directory", "function", 5)]
+
+
+def test_control_flow_traversal_still_stops_at_function_and_class_scopes() -> None:
+    assert _symbols(
+        """
+        import sys
+
+        if sys.platform == "linux":
+
+            def configure() -> None:
+                TIMEOUT = 30
+
+                if TIMEOUT:
+                    RETRIES = 2
+
+            class Runner:
+                if sys.platform == "linux":
+                    attribute = 1
+        """
+    ) == [("configure", "function", 5), ("Runner", "class", 11)]
+
+
 def test_attribute_and_subscript_assignments_declare_no_symbol() -> None:
     assert _symbols(
         """

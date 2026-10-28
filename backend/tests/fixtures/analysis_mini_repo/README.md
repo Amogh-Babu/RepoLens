@@ -10,7 +10,11 @@ The tree deliberately covers:
 - relative imports at one and two levels, including `from .. import config`
   (`app/services/__init__.py`, `app/services/billing.py`)
 - a star import (`app/__init__.py`)
-- an import inside a function body (`app/main.py`)
+- an import inside a function body (`app/main.py`, `app/compat.py`)
+- module-level declarations guarded by control flow (`app/compat.py`): an
+  optional-dependency `try`/`except ImportError` import, an `if TYPE_CHECKING`
+  import and class, a version-gated assignment, and a platform-gated function
+  defined in both branches
 - top-level functions, async functions, classes, and variables, with methods
   and nested definitions left out of the top-level symbol list
 - a file that does not parse (`app/services/broken.py`)

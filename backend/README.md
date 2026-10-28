@@ -29,7 +29,11 @@ changing the service, the graph store, or search.
   too, and repeated imports of one module are merged into a single record.
 - **`ParsedSymbol`**: `name`, `kind` (`function`, `class`, or `variable`), and
   `line`. Only module-level declarations are reported; methods and nested
-  definitions belong to their enclosing symbol.
+  definitions belong to their enclosing symbol. Declarations guarded by
+  module-level control flow bind module-level names, so an `if TYPE_CHECKING:`
+  class, a `try`/`except ImportError` fallback, and a platform- or
+  version-gated definition are all reported, each once at the line of its
+  first branch.
 - **`RepositoryAnalysis`**: every analyzed `ParsedFile` sorted by path, plus
   `skipped_paths` for files no registered analyzer supports.
 

@@ -13,6 +13,7 @@ from analysis_fixture import FIXTURE_ROOT, analyze_fixture
 
 EXPECTED_IMPORTS: dict[str, list[str]] = {
     "app/__init__.py": [".", ".services"],
+    "app/compat.py": ["sys", "typing", "app.config", "ujson", "json"],
     "app/config.py": ["dataclasses"],
     "app/main.py": [
         "argparse",
@@ -28,6 +29,14 @@ EXPECTED_IMPORTS: dict[str, list[str]] = {
 
 EXPECTED_SYMBOLS: dict[str, list[tuple[str, str]]] = {
     "app/__init__.py": [],
+    "app/compat.py": [
+        ("SettingsLike", "class"),
+        ("LEGACY_JSON", "variable"),
+        ("DEFAULT_ENCODING", "variable"),
+        ("cache_directory", "function"),
+        ("JsonCodec", "class"),
+        ("load_settings", "function"),
+    ],
     "app/config.py": [
         ("DEFAULT_TIMEOUT", "variable"),
         ("RETRY_LIMIT", "variable"),
@@ -94,6 +103,32 @@ def test_relative_imports_keep_the_depth_the_resolver_needs() -> None:
         "..": (2, None, ("config",)),
         "..config": (2, "config", ("DEFAULT_TIMEOUT",)),
     }
+
+
+def test_conditional_module_level_declarations_are_reported() -> None:
+    compat = analyze_fixture().get("app/compat.py")
+    assert compat is not None
+
+    # The optional-dependency fallback: both branches' modules are reported.
+    json_imports = [
+        imported.raw_name
+        for imported in compat.imports
+        if "json" in imported.raw_name
+    ]
+    assert json_imports == ["ujson", "json"]
+    # The typing-only import, merged with the same module imported in a function.
+    type_checking_import = next(
+        imported for imported in compat.imports if imported.raw_name == "app.config"
+    )
+    assert type_checking_import.symbols == ("Settings",)
+    assert type_checking_import.line == 7
+
+    declared = {symbol.name: symbol.kind for symbol in compat.symbols}
+    assert declared["SettingsLike"] == "class"  # declared under if TYPE_CHECKING
+    assert declared["LEGACY_JSON"] == "variable"  # declared in an except handler
+    assert declared["DEFAULT_ENCODING"] == "variable"  # version-gated assignment
+    assert declared["cache_directory"] == "function"  # defined in both branches
+    assert "encode" not in declared  # a method, not a module-level symbol
 
 
 def test_the_unparsable_file_does_not_hide_the_rest_of_the_repository() -> None:

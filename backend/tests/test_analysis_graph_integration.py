@@ -60,6 +60,7 @@ def test_the_graph_store_groups_analyzed_files_into_modules() -> None:
 
     assert [node.path for node in graph.files] == [
         "app/__init__.py",
+        "app/compat.py",
         "app/config.py",
         "app/main.py",
         "app/services/__init__.py",
@@ -106,7 +107,7 @@ def test_the_unparsed_file_is_stored_and_counted() -> None:
     assert broken.imports == ()
 
     summary = store.get_summary("analysis-1")
-    assert summary["counts"] == {"analyzed": 6, "excluded": 2, "unparsed": 1}
+    assert summary["counts"] == {"analyzed": 7, "excluded": 2, "unparsed": 1}
 
 
 def test_search_finds_analyzed_files_by_symbol_and_import_name() -> None:
