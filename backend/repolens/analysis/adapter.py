@@ -21,7 +21,12 @@ def to_analyzed_file(parsed: ParsedFile) -> AnalyzedFile:
     `unresolved`: deciding whether a name points at another file in the
     repository or at an external package needs the whole file list, so the
     import classifier assigns the final `internal` or `external` kind and the
-    target path. `module` is left empty for the store to infer from the path.
+    target path. The imported names and the relative-import depth are carried
+    over as well, because `raw_name` on its own collapses
+    `from . import config` to `"."` and `from app.services import billing` to
+    `"app.services"`, leaving the classifier no way to reach `app/config.py`
+    or `app/services/billing.py`. `module` is left empty for the store to
+    infer from the path.
     """
     return AnalyzedFile(
         path=parsed.path,
@@ -32,7 +37,12 @@ def to_analyzed_file(parsed: ParsedFile) -> AnalyzedFile:
             for symbol in parsed.symbols
         ),
         imports=tuple(
-            ImportRecord(raw_name=imported.raw_name, kind="unresolved")
+            ImportRecord(
+                raw_name=imported.raw_name,
+                kind="unresolved",
+                level=imported.level,
+                symbols=imported.symbols,
+            )
             for imported in parsed.imports
         ),
     )

@@ -118,3 +118,78 @@ def test_search_finds_analyzed_files_by_symbol_and_import_name() -> None:
 
     by_import = service.search("analysis-1", "dataclasses")
     assert [result.path for result in by_import.results] == ["app/config.py"]
+
+
+def test_storable_imports_keep_the_names_and_depth_the_classifier_needs() -> None:
+    """`from . import config` must stay resolvable after conversion.
+
+    `raw_name` alone collapses `from . import config` to `"."` and
+    `from app.services import billing` to `"app.services"`, which is not
+    enough for the classifier to find `app/config.py` or
+    `app/services/billing.py`. The storable record therefore carries the
+    imported names and the relative-import depth.
+    """
+    analysis = analyze_fixture()
+    package = analysis.get("app/__init__.py")
+    assert package is not None
+
+    analyzed = to_analyzed_file(package)
+
+    assert [
+        (imported.raw_name, imported.level, imported.symbols)
+        for imported in analyzed.imports
+    ] == [
+        (".", 1, ("config",)),
+        (".services", 1, ("*",)),
+    ]
+
+
+def test_storable_imports_keep_names_for_absolute_from_imports() -> None:
+    analysis = analyze_fixture()
+    main = analysis.get("app/main.py")
+    assert main is not None
+
+    analyzed = to_analyzed_file(main)
+
+    assert [
+        (imported.raw_name, imported.level, imported.symbols)
+        for imported in analyzed.imports
+    ] == [
+        ("argparse", 0, ()),
+        ("os.path", 0, ()),
+        ("app.config", 0, ("DEFAULT_TIMEOUT", "Settings")),
+        ("app.services.billing", 0, ("InvoiceCalculator",)),
+        ("app.services", 0, ("billing",)),
+    ]
+
+
+def test_storable_imports_keep_depth_for_parent_relative_imports() -> None:
+    analysis = analyze_fixture()
+    billing = analysis.get("app/services/billing.py")
+    assert billing is not None
+
+    analyzed = to_analyzed_file(billing)
+
+    assert [
+        (imported.raw_name, imported.level, imported.symbols)
+        for imported in analyzed.imports
+    ] == [
+        ("decimal", 0, ("Decimal",)),
+        ("..", 2, ("config",)),
+        ("..config", 2, ("DEFAULT_TIMEOUT",)),
+    ]
+
+
+def test_classifier_metadata_is_in_memory_only_and_not_persisted() -> None:
+    """`level` and `symbols` hand parsing off to classifying, not to SQLite.
+
+    The pipeline classifies before it stores, so the `imports` table keeps
+    only the resolved kind and target. Reading a file back therefore reports
+    the defaults, and a classifier must run on the converted records rather
+    than on rows loaded from the store.
+    """
+    detail = _saved_store().get_file("analysis-1", "app/__init__.py")
+
+    assert [imported.raw_name for imported in detail.imports] == [".", ".services"]
+    assert [imported.level for imported in detail.imports] == [0, 0]
+    assert [imported.symbols for imported in detail.imports] == [(), ()]

@@ -101,6 +101,17 @@ whether a name points at another file in the repository or at an external
 package needs the whole file list; the import classifier assigns the final
 `internal` or `external` kind and target path.
 
+Each `ImportRecord` also carries the imported names and the relative-import
+depth (`symbols` and `level`). `raw_name` renders a reference as written, so
+by itself it collapses `from . import config` to `"."` and
+`from app.services import billing` to `"app.services"` — neither of which
+tells the classifier to resolve `app/config.py` or
+`app/services/billing.py`. Keeping the names also preserves the ambiguity the
+classifier has to settle: `billing` may be the `app/services/billing.py`
+module or a name re-exported by `app/services/__init__.py`. These two fields
+hand parsing off to classifying in memory; the pipeline classifies before it
+stores, so the `imports` table persists only the resolved kind and target.
+
 ```python
 from repolens.analysis import AnalysisService, to_analysis_counts, to_analyzed_files
 from repolens.graph import AnalysisRecord, SqliteGraphStore
