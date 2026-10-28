@@ -23,7 +23,6 @@ VALID_SHA = "0123456789abcdef0123456789abcdef01234567"
         "https://github.com/octocat/hello-world/",
         "https://github.com/octocat/hello-world.git",
         "https://www.github.com/octocat/hello-world",
-        "https://github.com:443/octocat/hello-world",
         "  https://github.com/octocat/hello-world  ",
         "https://GitHub.com/octocat/hello-world",
     ],
@@ -73,6 +72,23 @@ def test_parse_repo_url_rejects_invalid_urls(raw_url: str) -> None:
     assert excinfo.value.code == "INVALID_URL"
     assert excinfo.value.message
     assert excinfo.value.hint
+
+
+@pytest.mark.parametrize(
+    "raw_url",
+    [
+        "https://github.com:443/octocat/hello-world",
+        "https://github.com:8443/octocat/hello-world",
+        "https://github.com:0/octocat/hello-world",
+    ],
+)
+def test_parse_repo_url_rejects_explicit_ports(raw_url: str) -> None:
+    """Only the documented https://github.com/<owner>/<repo> form is accepted."""
+    with pytest.raises(InvalidRepoUrlError) as excinfo:
+        parse_repo_url(raw_url)
+
+    assert excinfo.value.code == "INVALID_URL"
+    assert "port" in excinfo.value.message.lower()
 
 
 @pytest.mark.parametrize(

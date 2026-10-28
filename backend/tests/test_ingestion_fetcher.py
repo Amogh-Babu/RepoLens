@@ -95,6 +95,8 @@ def test_uses_the_configured_timeout(tmp_path: Path) -> None:
         "https://github.com/octocat/hello-world/archive/main.zip",
         "file:///etc/passwd",
         "https://user:token@codeload.github.com/o/r/zip/main",
+        "https://codeload.github.com:443/o/r/zip/main",
+        "https://codeload.github.com:8443/o/r/zip/main",
     ],
 )
 def test_refuses_urls_off_the_archive_host_allowlist_without_opening_them(

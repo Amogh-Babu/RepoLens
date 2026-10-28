@@ -40,8 +40,8 @@ def parse_repo_url(raw_url: str) -> RepoCoordinate:
 
     Raises:
       UnsupportedHostError: The URL is well-formed but not on GitHub.
-      InvalidRepoUrlError: The URL is empty, not https, carries credentials or
-        a query, or does not point at a repository root.
+      InvalidRepoUrlError: The URL is empty, not https, carries credentials, a
+        port or a query, or does not point at a repository root.
     """
     trimmed = raw_url.strip()
     if not trimmed:
@@ -71,7 +71,7 @@ def parse_repo_url(raw_url: str) -> RepoCoordinate:
         raise InvalidRepoUrlError(
             message="This is not a valid repository URL.", hint=_URL_HINT
         ) from None
-    if port not in (None, 443):
+    if port is not None:
         raise InvalidRepoUrlError(
             message="Repository URLs must not include a port.", hint=_URL_HINT
         )
@@ -154,7 +154,11 @@ def build_archive_url(coordinate: RepoCoordinate, sha: str) -> str:
 
 
 def is_allowed_archive_url(url: str) -> bool:
-    """Return whether a URL is an https URL on the archive host allowlist."""
+    """Return whether a URL is an https URL on the archive host allowlist.
+
+    Mirrors ``parse_repo_url``: credentials and explicit ports are refused, so
+    only the plain ``https://<allowlisted host>/...`` form is downloadable.
+    """
     parts = urlsplit(url)
     if parts.scheme.lower() != "https":
         return False
@@ -164,6 +168,6 @@ def is_allowed_archive_url(url: str) -> bool:
         port = parts.port
     except ValueError:
         return False
-    if port not in (None, 443):
+    if port is not None:
         return False
     return (parts.hostname or "").lower() in ALLOWED_ARCHIVE_HOSTS
