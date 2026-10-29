@@ -1,12 +1,18 @@
 """SQLite implementation of the RepoLens graph store."""
 
 from collections import defaultdict
+from collections.abc import Callable
 from datetime import datetime, timezone
+import functools
 import sqlite3
+import threading
 import time
+from typing import Concatenate, ParamSpec, TypeVar
 
 from repolens.graph.models import (
+    AnalysisErrorRecord,
     AnalysisRecord,
+    AnalysisStage,
     DependencyGraph,
     ExternalImportDetail,
     FileDetail,
@@ -24,6 +30,11 @@ from repolens.search.ports import AnalysisUnavailableError
 
 
 DEFAULT_TTL_SECONDS = 24 * 60 * 60
+
+_ACTIVE_STATUSES = ("queued", "running")
+
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
 
 
 class GraphStoreError(LookupError):
@@ -165,11 +176,30 @@ def _to_iso8601(timestamp: float) -> str:
     )
 
 
+def _locked(
+    method: Callable[Concatenate["SqliteGraphStore", _P], _R],
+) -> Callable[Concatenate["SqliteGraphStore", _P], _R]:
+    """Run a store method while holding the store's connection lock."""
+
+    @functools.wraps(method)
+    def wrapper(self: "SqliteGraphStore", *args: _P.args, **kwargs: _P.kwargs) -> _R:
+        with self._lock:
+            return method(self, *args, **kwargs)
+
+    return wrapper
+
+
 class SqliteGraphStore:
-    """SQLite-backed store for repository dependency graphs."""
+    """SQLite-backed store for repository dependency graphs.
+
+    One connection is shared by request handlers and background analysis
+    threads, so every public method holds a lock: a reader never sees a
+    half-written analysis, and two writers never interleave transactions.
+    """
 
     def __init__(self, db_path: str = ":memory:") -> None:
         self._db_path = db_path
+        self._lock = threading.RLock()
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         init_schema(self._conn)
@@ -178,6 +208,7 @@ class SqliteGraphStore:
         """Close the underlying SQLite connection."""
         self._conn.close()
 
+    @_locked
     def save(self, analysis: AnalysisRecord) -> None:
         """Save an entire repository analysis in one atomic transaction."""
         now = time.time()
@@ -306,6 +337,7 @@ class SqliteGraphStore:
                         import_rows,
                     )
 
+    @_locked
     def find_cached_analysis(
         self,
         repo: str,
@@ -325,6 +357,7 @@ class SqliteGraphStore:
             (repo_url, sha, cutoff),
         ).fetchone()
 
+    @_locked
     def cancel_analysis(self, analysis_id: str) -> None:
         """Cancel a queued or running analysis."""
         row = self._get_valid_analysis_row(analysis_id, require_completed=False)
@@ -335,6 +368,59 @@ class SqliteGraphStore:
                     (analysis_id,),
                 )
 
+    @_locked
+    def update_stage(self, analysis_id: str, stage: AnalysisStage) -> bool:
+        """Mark an active analysis as running at `stage`.
+
+        Returns False, changing nothing, when the analysis is no longer queued
+        or running (for example, it was cancelled), so the pipeline can stop.
+        """
+        with self._conn:
+            cursor = self._conn.execute(
+                """
+                UPDATE analyses SET status = 'running', stage = ?
+                WHERE id = ? AND status IN ('queued', 'running');
+                """,
+                (stage, analysis_id),
+            )
+        return cursor.rowcount == 1
+
+    @_locked
+    def fail_analysis(self, analysis_id: str, error: AnalysisErrorRecord) -> bool:
+        """Mark an active analysis as failed with a structured error.
+
+        Returns False, changing nothing, when the analysis is no longer active.
+        """
+        with self._conn:
+            cursor = self._conn.execute(
+                """
+                UPDATE analyses
+                SET status = 'failed', stage = NULL,
+                    error_code = ?, error_message = ?, error_hint = ?
+                WHERE id = ? AND status IN ('queued', 'running');
+                """,
+                (error.code, error.message, error.hint, analysis_id),
+            )
+        return cursor.rowcount == 1
+
+    @_locked
+    def complete_analysis(self, analysis: AnalysisRecord) -> bool:
+        """Replace an active analysis with its finished result.
+
+        Checking and saving happen under one lock, so a cancel that arrives
+        while the pipeline runs is never overwritten. Returns False, saving
+        nothing, when the analysis is no longer active.
+        """
+        row = self._conn.execute(
+            "SELECT status FROM analyses WHERE id = ?;",
+            (analysis.analysis_id,),
+        ).fetchone()
+        if row is None or str(row["status"]) not in _ACTIVE_STATUSES:
+            return False
+        self.save(analysis)
+        return True
+
+    @_locked
     def get_analysis(self, analysis_id: str) -> dict[str, object]:
         """Return the Analysis response payload matching GET /analyses/{id}."""
         row = self._get_valid_analysis_row(analysis_id, require_completed=False)
@@ -371,6 +457,7 @@ class SqliteGraphStore:
             "error": error,
         }
 
+    @_locked
     def get_summary(self, analysis_id: str) -> dict[str, object]:
         """Return analysis status and summary counts for GET /analyses/{id}."""
         row = self._get_valid_analysis_row(analysis_id, require_completed=False)
@@ -383,6 +470,7 @@ class SqliteGraphStore:
         }
         return payload
 
+    @_locked
     def get_graph(self, analysis_id: str) -> DependencyGraph:
         """Return module groups, file nodes, and internal dependency edges."""
         analysis_row = self._get_valid_analysis_row(
@@ -454,6 +542,7 @@ class SqliteGraphStore:
             edges=edges,
         )
 
+    @_locked
     def get_file(self, analysis_id: str, path: str) -> FileDetail:
         """Return detailed metadata, symbols, imports, and importers for one file."""
         analysis_row = self._get_valid_analysis_row(
@@ -595,6 +684,7 @@ class SqliteGraphStore:
             imported_by=imported_by,
         )
 
+    @_locked
     def get_search_documents(self, analysis_id: str) -> list[SearchDocument]:
         """Return SearchDocument records for SearchService.
 
@@ -666,6 +756,7 @@ class SqliteGraphStore:
 
         return documents
 
+    @_locked
     def get_file_match_lines(
         self,
         analysis_id: str,
@@ -699,6 +790,7 @@ class SqliteGraphStore:
 
         return lines
 
+    @_locked
     def evict_expired(self, now: float | None = None) -> int:
         """Delete analyses whose expires_at timestamp has passed."""
         cutoff = now if now is not None else time.time()

@@ -10,15 +10,22 @@ from repolens.ingestion.errors import (
     ArchiveFormatError,
     ArchiveTooLargeError,
     DestinationNotEmptyError,
+    GitHubUnavailableError,
     IngestionError,
     InvalidCommitShaError,
     InvalidRepoUrlError,
+    NoPythonFilesError,
+    RateLimitedError,
+    RefNotFoundError,
+    RepoEmptyError,
+    RepoNotFoundError,
     UnsafeArchiveError,
     UnsupportedHostError,
 )
 from repolens.ingestion.fetcher import HttpsArchiveFetcher
 from repolens.ingestion.models import ArchiveLimits, RepoCoordinate, Snapshot
 from repolens.ingestion.ports import ArchiveFetcher, RepoSource, UrlOpener
+from repolens.ingestion.resolver import GitHubRefResolver
 from repolens.ingestion.source import GitHubSource
 from repolens.ingestion.urls import (
     ALLOWED_ARCHIVE_HOSTS,
@@ -40,12 +47,19 @@ __all__ = [
     "ArchiveLimits",
     "ArchiveTooLargeError",
     "DestinationNotEmptyError",
+    "GitHubRefResolver",
     "GitHubSource",
+    "GitHubUnavailableError",
     "HttpsArchiveFetcher",
     "IngestionError",
     "InvalidCommitShaError",
     "InvalidRepoUrlError",
+    "NoPythonFilesError",
+    "RateLimitedError",
+    "RefNotFoundError",
     "RepoCoordinate",
+    "RepoEmptyError",
+    "RepoNotFoundError",
     "RepoSource",
     "Snapshot",
     "UnsafeArchiveError",
