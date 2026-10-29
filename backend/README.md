@@ -38,7 +38,9 @@ snapshot = GitHubSource().fetch_snapshot(
   refused, and the resolved path is re-checked against the snapshot root. The
   shared `<repo>-<sha>/` wrapper directory GitHub adds is stripped.
 - **Limits** (`ArchiveLimits`) cap the compressed download, the extracted byte
-  total, the file count, and the request timeout.
+  total, the file count, and the request timeout, plus the reviewable source a
+  snapshot may yield: `max_file_bytes` per file, and `max_analyzable_bytes` and
+  `max_analyzable_file_count` for the repository.
 - **Failures** leave nothing behind: the downloaded archive is always deleted,
   a partial snapshot is discarded, and extracting over a non-empty directory is
   refused.
@@ -46,10 +48,78 @@ snapshot = GitHubSource().fetch_snapshot(
 Errors are `IngestionError` subclasses carrying the API's
 `{code, message, hint}` shape via `to_dict()`: `INVALID_URL`,
 `UNSUPPORTED_HOST`, `INVALID_SHA`, `DOWNLOAD_FAILED`, `ARCHIVE_TOO_LARGE`,
-`INVALID_ARCHIVE`, `UNSAFE_ARCHIVE`, and `DESTINATION_NOT_EMPTY`.
+`INVALID_ARCHIVE`, `UNSAFE_ARCHIVE`, `DESTINATION_NOT_EMPTY`,
+`FILE_TOO_LARGE`, and `REPOSITORY_TOO_LARGE`.
 
 Injecting an `ArchiveFetcher` (`GitHubSource(fetcher=...)`) swaps the transport,
 which is how the tests exercise downloads without touching the network.
+
+### Vendored, Generated, and Oversized Files
+
+`repolens.ingestion.SourceFileFilter` implements the `FileFilter` port and
+decides which extracted files are the repository's own reviewable source.
+Checked-in dependencies, build output, and generated bindings would otherwise
+fill the dependency graph and the search index with results nobody is looking
+for. Decisions are made from a repository-relative path and a file size only;
+no file is opened, imported, executed, or evaluated.
+
+- **Vendored** (`vendored`): `node_modules`, `vendor`, `vendored`,
+  `third_party`, `site-packages`, `bower_components`, `.venv`, `Pods`, and the
+  rest of `VENDORED_DIRECTORY_NAMES`, matched case-insensitively against every
+  path component.
+- **Generated** (`generated`): build and artifact directories
+  (`build`, `dist`, `target`, `coverage`, `__generated__`, `*.egg-info`), lock
+  files and manifests (`package-lock.json`, `yarn.lock`, `poetry.lock`,
+  `Cargo.lock`, `go.sum`), and generated or minified file names
+  (`*_pb2.py`, `*.pb.go`, `*.generated.ts`, `*_generated.py`, `*.min.js`,
+  `*.js.map`, `*.pyc`).
+- **Tool and version-control state** (`metadata`): `.git`, `.hg`, `.svn`,
+  `__pycache__`, `.mypy_cache`, `.tox`, and similar.
+- **Oversized** (`too_large`): a file past `ArchiveLimits.max_file_bytes`
+  (2 MiB by default) is excluded. `require_file_within_limits` raises
+  `FileTooLargeError` (`FILE_TOO_LARGE`) instead, for a caller that asked for
+  one named file and needs to be told why it is not analyzed.
+- **Oversized repositories**: `require_repository_within_limits(count, bytes)`
+  raises `RepositoryTooLargeError` (`REPOSITORY_TOO_LARGE`) once the files
+  being kept pass `max_analyzable_bytes` (128 MiB) or
+  `max_analyzable_file_count` (20,000). It is the single enforcement point:
+  `filter_files` and `filter_snapshot` call it while filtering a snapshot's
+  file list, and `AnalysisService.analyze_repository` calls it with its running
+  totals as it walks a checkout, so both paths reject an oversized repository
+  rather than analyzing it. Filtered and unsupported files are not counted, so
+  vendored code cannot push a small repository over the limit, and the check
+  stops early instead of measuring the whole tree.
+
+The `FileFilter` port is three methods: `exclusion_for(path, size_bytes)`
+returns a `FileExclusion` (`path`, `reason`, `detail`) or `None`,
+`directory_exclusion_for(path)` lets a tree walk prune a vendored directory
+instead of visiting every file in it, and
+`require_repository_within_limits(count, bytes)` applies the repository caps.
+`filter_snapshot(snapshot)` returns a `FilterReport` with `analyzable_paths`,
+`analyzable_bytes`, and every exclusion. `extra_excluded_directories` and
+`extra_excluded_suffixes` add rules without subclassing.
+
+`AnalysisService(file_filter=...)` consumes the port, so excluded files are
+never read or handed to a `LanguageAnalyzer`; they are reported in
+`RepositoryAnalysis.skipped_paths`, which is also what the graph store's
+`excluded_count` records. `analyze_repository` also enforces the repository
+caps through the port as it walks, so an oversized checkout raises
+`RepositoryTooLargeError` instead of being analyzed in full. The default
+service uses `SourceFileFilter()`.
+
+```python
+from repolens.analysis import AnalysisService
+from repolens.ingestion import ArchiveLimits, SourceFileFilter
+
+file_filter = SourceFileFilter(ArchiveLimits(max_file_bytes=512 * 1024))
+report = file_filter.filter_snapshot(snapshot)
+# FilterReport(analyzable_paths=('app/main.py', ...), exclusions=(...))
+
+analysis = AnalysisService(file_filter=file_filter).analyze_repository(snapshot.root)
+```
+
+The mini repository used by the filter tests is
+`tests/fixtures/filter_mini_repo/`; its README lists the cases it covers.
 
 ## Source Analysis (`repolens.analysis`)
 

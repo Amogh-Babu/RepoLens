@@ -11,6 +11,7 @@ from repolens.analysis.models import (
 )
 from repolens.analysis.ports import LanguageAnalyzer
 from repolens.analysis.python_analyzer import PythonAnalyzer
+from repolens.ingestion import FileFilter, SourceFileFilter
 
 
 # Directories that never hold reviewable source. Full exclusion rules (vendored
@@ -35,15 +36,27 @@ class AnalysisService:
     and parsed; they are never imported, executed, or evaluated.
     """
 
-    def __init__(self, analyzers: Iterable[LanguageAnalyzer] | None = None) -> None:
+    def __init__(
+        self,
+        analyzers: Iterable[LanguageAnalyzer] | None = None,
+        file_filter: FileFilter | None = None,
+    ) -> None:
         self._analyzers: tuple[LanguageAnalyzer, ...] = (
             tuple(analyzers) if analyzers is not None else (PythonAnalyzer(),)
+        )
+        self._file_filter: FileFilter = (
+            file_filter if file_filter is not None else SourceFileFilter()
         )
 
     @property
     def analyzers(self) -> tuple[LanguageAnalyzer, ...]:
         """Return the registered analyzers in match order."""
         return self._analyzers
+
+    @property
+    def file_filter(self) -> FileFilter:
+        """Return the filter that decides which files are analyzed."""
+        return self._file_filter
 
     @property
     def languages(self) -> tuple[str, ...]:
@@ -103,23 +116,42 @@ class AnalysisService:
         """Analyze every supported file under `root`, keyed by relative path.
 
         Paths are POSIX-style and relative to `root`, matching the graph store
-        and the frontend file explorer. Files no analyzer supports are listed in
-        `skipped_paths`. Results are sorted by path so analyses are repeatable.
+        and the frontend file explorer. Files no analyzer supports, and files
+        the `FileFilter` excludes as vendored, generated, or oversized, are
+        listed in `skipped_paths` and never read or parsed. Results are sorted
+        by path so analyses are repeatable.
 
-        Raises NotADirectoryError if `root` is not an existing directory, so a
-        bad checkout path cannot look like an empty repository.
+        The filter's repository-wide caps are checked against the files that
+        are actually analyzed, before each one is parsed, so a repository with
+        too much source is rejected partway through rather than analyzed in
+        full. Excluded and unsupported files do not count toward those caps.
+
+        Raises:
+          NotADirectoryError: `root` is not an existing directory, so a bad
+            checkout path cannot look like an empty repository.
+          RepositoryTooLargeError: The analyzable source passes the filter's
+            `max_analyzable_file_count` or `max_analyzable_bytes` cap.
         """
         root_path = Path(root)
         if not root_path.is_dir():
             raise NotADirectoryError(f"Not a repository directory: {root_path}")
         analyzed: list[ParsedFile] = []
         skipped: list[str] = []
+        analyzable_bytes = 0
 
-        for file_path, repo_path in _walk_files(root_path):
-            if self.supports(repo_path):
-                analyzed.append(self.analyze_file(file_path, repo_path))
-            else:
+        for file_path, repo_path in _walk_files(root_path, self._file_filter):
+            if not self.supports(repo_path):
                 skipped.append(repo_path)
+                continue
+            size_bytes = _file_size(file_path)
+            if self._file_filter.exclusion_for(repo_path, size_bytes) is not None:
+                skipped.append(repo_path)
+                continue
+            analyzable_bytes += size_bytes or 0
+            self._file_filter.require_repository_within_limits(
+                len(analyzed) + 1, analyzable_bytes
+            )
+            analyzed.append(self.analyze_file(file_path, repo_path))
 
         analyzed.sort(key=lambda parsed: parsed.path)
         skipped.sort()
@@ -130,18 +162,35 @@ class AnalysisService:
         )
 
 
-def _walk_files(root: Path) -> Iterator[tuple[Path, str]]:
+def _walk_files(root: Path, file_filter: FileFilter) -> Iterator[tuple[Path, str]]:
     """Yield each regular file under `root` as (full path, relative POSIX path).
 
     Symlinks are not followed, so an analysis cannot escape the directory it
-    was given or loop on a cyclic link.
+    was given or loop on a cyclic link. Directories the filter excludes, such
+    as a vendored dependency tree, are pruned instead of walked, so their files
+    are not reported one by one.
     """
     for directory, subdirectories, file_names in os.walk(root):
+        relative_directory = Path(directory).relative_to(root)
         subdirectories[:] = sorted(
-            name for name in subdirectories if name not in SKIPPED_DIRECTORY_NAMES
+            name
+            for name in subdirectories
+            if name not in SKIPPED_DIRECTORY_NAMES
+            and file_filter.directory_exclusion_for(
+                (relative_directory / name).as_posix()
+            )
+            is None
         )
         for file_name in sorted(file_names):
             file_path = Path(directory) / file_name
             if file_path.is_symlink() or not file_path.is_file():
                 continue
             yield file_path, file_path.relative_to(root).as_posix()
+
+
+def _file_size(file_path: Path) -> int | None:
+    """Return a file's size in bytes, or None when it cannot be measured."""
+    try:
+        return file_path.stat().st_size
+    except OSError:
+        return None
