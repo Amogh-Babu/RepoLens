@@ -19,10 +19,10 @@ def to_analyzed_file(parsed: ParsedFile) -> AnalyzedFile:
 
     Imports keep the name written in the source and are reported as
     `unresolved`: deciding whether a name points at another file in the
-    repository or at an external package needs the whole file list, so the
-    import classifier assigns the final `internal` or `external` kind and the
-    target path. The imported names and the relative-import depth are carried
-    over as well, because `raw_name` on its own collapses
+    repository or at an external package needs the whole file list, so
+    `repolens.analysis.classifier` assigns the final `internal` or `external`
+    kind and the target path. The imported names and the relative-import
+    depth are carried over as well, because `raw_name` on its own collapses
     `from . import config` to `"."` and `from app.services import billing` to
     `"app.services"`, leaving the classifier no way to reach `app/config.py`
     or `app/services/billing.py`. `module` is left empty for the store to
