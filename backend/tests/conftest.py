@@ -11,6 +11,11 @@ import pytest
 from repolens.search import SearchDocument, SearchService
 
 
+# Fixture repositories hold Python files that look like tests (and one that
+# does not even parse). They are analyzed as data, never collected or run.
+collect_ignore = ["fixtures"]
+
+
 class InMemorySearchIndex:
     """A `SearchIndex` backed by a dict, so tests need no graph store."""
 

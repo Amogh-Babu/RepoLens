@@ -41,7 +41,9 @@ RepoLens is a web-based code exploration platform designed to help developers on
 GitHub Actions runs both suites automatically. The workflows live in
 `.github/workflows/`:
 
-* `backend.yml` runs pytest on Python 3.11, 3.12, and 3.13.
+* `backend.yml` runs pytest on Python 3.11, 3.12, and 3.13, plus an
+  end-to-end job that runs the whole pipeline on a hand-written reference
+  repository and compares the results with its expected output.
 * `frontend.yml` runs ESLint, Prettier, the TypeScript typecheck, Vitest, and
   the production build.
 
