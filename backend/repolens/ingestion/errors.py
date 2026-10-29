@@ -146,3 +146,43 @@ class DestinationNotEmptyError(IngestionError):
             hint="Extract each snapshot into a fresh directory.",
             status_code=500,
         )
+
+
+class FileTooLargeError(IngestionError):
+    """Raised when one requested file is larger than the per-file cap.
+
+    The snapshot filter skips oversized files rather than failing, so this is
+    for callers that asked for one named file and need to be told why it is not
+    analyzed.
+    """
+
+    def __init__(self, path: str, size_bytes: int, max_bytes: int) -> None:
+        super().__init__(
+            code="FILE_TOO_LARGE",
+            message=(
+                f"'{path}' is {size_bytes} bytes, more than the "
+                f"{max_bytes} byte per-file limit."
+            ),
+            hint="Large data and generated files are not analyzed.",
+            status_code=413,
+        )
+        self.path = path
+        self.size_bytes = size_bytes
+        self.max_bytes = max_bytes
+
+
+class RepositoryTooLargeError(IngestionError):
+    """Raised when a snapshot's reviewable source exceeds the repository caps.
+
+    Vendored and generated files are filtered out before these caps are
+    applied, so this reports the size of the code RepoLens would analyze, not
+    the size of the download.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(
+            code="REPOSITORY_TOO_LARGE",
+            message=message,
+            hint="Analyze a smaller repository.",
+            status_code=413,
+        )
