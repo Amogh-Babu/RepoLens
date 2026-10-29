@@ -77,6 +77,78 @@ class InvalidCommitShaError(IngestionError):
         self.raw_sha = raw_sha
 
 
+class RepoNotFoundError(IngestionError):
+    """Raised when GitHub has no public repository at the given URL."""
+
+    def __init__(self, slug: str) -> None:
+        super().__init__(
+            code="REPO_NOT_FOUND",
+            message=f"Could not find a public repository at github.com/{slug}.",
+            hint="Check the URL. Private repositories are not supported.",
+            status_code=404,
+        )
+
+
+class RepoEmptyError(IngestionError):
+    """Raised when a repository has no commits or no files to analyze."""
+
+    def __init__(self, slug: str) -> None:
+        super().__init__(
+            code="REPO_EMPTY",
+            message=f"The repository github.com/{slug} is empty.",
+            hint="Analyze a repository that has at least one commit.",
+            status_code=422,
+        )
+
+
+class NoPythonFilesError(IngestionError):
+    """Raised when a snapshot contains no files RepoLens can analyze."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code="NO_PYTHON_FILES",
+            message="This repository has no Python files to analyze.",
+            hint="RepoLens currently supports Python repositories only.",
+            status_code=422,
+        )
+
+
+class RefNotFoundError(IngestionError):
+    """Raised when a branch, tag, or commit does not exist in the repository."""
+
+    def __init__(self, ref: str) -> None:
+        super().__init__(
+            code="REF_NOT_FOUND",
+            message=f"The branch, tag, or commit '{ref}' does not exist.",
+            hint="Leave the ref empty to use the default branch.",
+            status_code=404,
+        )
+
+
+class RateLimitedError(IngestionError):
+    """Raised when GitHub refuses a request because of its rate limit."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code="RATE_LIMITED",
+            message="GitHub is rate-limiting RepoLens right now.",
+            hint="Wait a few minutes and try again.",
+            status_code=429,
+        )
+
+
+class GitHubUnavailableError(IngestionError):
+    """Raised when GitHub cannot be reached or answers with a server error."""
+
+    def __init__(self, message: str = "GitHub could not be reached.") -> None:
+        super().__init__(
+            code="GITHUB_UNAVAILABLE",
+            message=message,
+            hint="Wait a moment and try again.",
+            status_code=502,
+        )
+
+
 class ArchiveDownloadError(IngestionError):
     """Raised when the archive cannot be downloaded from the Git host."""
 
