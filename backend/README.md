@@ -79,16 +79,22 @@ no file is opened, imported, executed, or evaluated.
   (2 MiB by default) is excluded. `require_file_within_limits` raises
   `FileTooLargeError` (`FILE_TOO_LARGE`) instead, for a caller that asked for
   one named file and needs to be told why it is not analyzed.
-- **Oversized repositories**: `filter_files` and `filter_snapshot` raise
-  `RepositoryTooLargeError` (`REPOSITORY_TOO_LARGE`) as soon as the files they
-  keep pass `max_analyzable_bytes` (128 MiB) or `max_analyzable_file_count`
-  (20,000). Filtered files are not counted, so vendored code cannot push a
-  small repository over the limit, and the check stops early instead of
-  measuring the whole tree.
+- **Oversized repositories**: `require_repository_within_limits(count, bytes)`
+  raises `RepositoryTooLargeError` (`REPOSITORY_TOO_LARGE`) once the files
+  being kept pass `max_analyzable_bytes` (128 MiB) or
+  `max_analyzable_file_count` (20,000). It is the single enforcement point:
+  `filter_files` and `filter_snapshot` call it while filtering a snapshot's
+  file list, and `AnalysisService.analyze_repository` calls it with its running
+  totals as it walks a checkout, so both paths reject an oversized repository
+  rather than analyzing it. Filtered and unsupported files are not counted, so
+  vendored code cannot push a small repository over the limit, and the check
+  stops early instead of measuring the whole tree.
 
-`exclusion_for(path, size_bytes)` returns a `FileExclusion`
-(`path`, `reason`, `detail`) or `None`, `directory_exclusion_for(path)` lets a
-tree walk prune a vendored directory instead of visiting every file in it, and
+The `FileFilter` port is three methods: `exclusion_for(path, size_bytes)`
+returns a `FileExclusion` (`path`, `reason`, `detail`) or `None`,
+`directory_exclusion_for(path)` lets a tree walk prune a vendored directory
+instead of visiting every file in it, and
+`require_repository_within_limits(count, bytes)` applies the repository caps.
 `filter_snapshot(snapshot)` returns a `FilterReport` with `analyzable_paths`,
 `analyzable_bytes`, and every exclusion. `extra_excluded_directories` and
 `extra_excluded_suffixes` add rules without subclassing.
@@ -96,7 +102,10 @@ tree walk prune a vendored directory instead of visiting every file in it, and
 `AnalysisService(file_filter=...)` consumes the port, so excluded files are
 never read or handed to a `LanguageAnalyzer`; they are reported in
 `RepositoryAnalysis.skipped_paths`, which is also what the graph store's
-`excluded_count` records. The default service uses `SourceFileFilter()`.
+`excluded_count` records. `analyze_repository` also enforces the repository
+caps through the port as it walks, so an oversized checkout raises
+`RepositoryTooLargeError` instead of being analyzed in full. The default
+service uses `SourceFileFilter()`.
 
 ```python
 from repolens.analysis import AnalysisService

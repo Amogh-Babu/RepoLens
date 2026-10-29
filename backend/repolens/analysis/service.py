@@ -121,22 +121,37 @@ class AnalysisService:
         listed in `skipped_paths` and never read or parsed. Results are sorted
         by path so analyses are repeatable.
 
-        Raises NotADirectoryError if `root` is not an existing directory, so a
-        bad checkout path cannot look like an empty repository.
+        The filter's repository-wide caps are checked against the files that
+        are actually analyzed, before each one is parsed, so a repository with
+        too much source is rejected partway through rather than analyzed in
+        full. Excluded and unsupported files do not count toward those caps.
+
+        Raises:
+          NotADirectoryError: `root` is not an existing directory, so a bad
+            checkout path cannot look like an empty repository.
+          RepositoryTooLargeError: The analyzable source passes the filter's
+            `max_analyzable_file_count` or `max_analyzable_bytes` cap.
         """
         root_path = Path(root)
         if not root_path.is_dir():
             raise NotADirectoryError(f"Not a repository directory: {root_path}")
         analyzed: list[ParsedFile] = []
         skipped: list[str] = []
+        analyzable_bytes = 0
 
         for file_path, repo_path in _walk_files(root_path, self._file_filter):
             if not self.supports(repo_path):
                 skipped.append(repo_path)
-            elif self._file_filter.exclusion_for(repo_path, _file_size(file_path)):
+                continue
+            size_bytes = _file_size(file_path)
+            if self._file_filter.exclusion_for(repo_path, size_bytes) is not None:
                 skipped.append(repo_path)
-            else:
-                analyzed.append(self.analyze_file(file_path, repo_path))
+                continue
+            analyzable_bytes += size_bytes or 0
+            self._file_filter.require_repository_within_limits(
+                len(analyzed) + 1, analyzable_bytes
+            )
+            analyzed.append(self.analyze_file(file_path, repo_path))
 
         analyzed.sort(key=lambda parsed: parsed.path)
         skipped.sort()

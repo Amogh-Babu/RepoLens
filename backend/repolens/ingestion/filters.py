@@ -309,7 +309,9 @@ class SourceFileFilter:
                 continue
             analyzable.append(path)
             analyzable_bytes += size_bytes
-            self._require_repository_within_limits(len(analyzable), analyzable_bytes)
+            self.require_repository_within_limits(
+                len(analyzable), analyzable_bytes
+            )
 
         return FilterReport(
             analyzable_paths=tuple(analyzable),
@@ -329,10 +331,23 @@ class SourceFileFilter:
         """
         return self.filter_files(_sized_paths(Path(snapshot.root), snapshot.files))
 
-    def _require_repository_within_limits(
+    def require_repository_within_limits(
         self, analyzable_count: int, analyzable_bytes: int
     ) -> None:
-        """Raise once the analyzable source passes a repository-wide cap."""
+        """Raise once a repository's analyzable source passes a repository cap.
+
+        Callers that analyze a tree file by file, rather than filtering a
+        snapshot's file list up front, call this with their running totals so
+        an oversized repository is rejected partway through instead of
+        analyzed in full.
+
+        Args:
+          analyzable_count: Number of files kept for analysis so far.
+          analyzable_bytes: Total bytes of those files.
+
+        Raises:
+          RepositoryTooLargeError: Either total passed its cap.
+        """
         if analyzable_count > self._limits.max_analyzable_file_count:
             raise RepositoryTooLargeError(
                 "This repository has more than "
