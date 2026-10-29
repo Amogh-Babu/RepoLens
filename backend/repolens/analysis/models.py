@@ -4,7 +4,7 @@ These records are language-neutral: a `LanguageAnalyzer` for another language
 maps its own syntax onto the same `ParsedImport` and `ParsedSymbol` shapes.
 Imports are reported exactly as written; resolving them to files in the
 repository and classifying them as internal or external happens later in the
-pipeline (see `repolens.analysis.adapter`).
+pipeline (see `repolens.analysis.classifier`).
 """
 
 from dataclasses import dataclass

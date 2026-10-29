@@ -10,6 +10,12 @@ from repolens.analysis.adapter import (
     to_analyzed_file,
     to_analyzed_files,
 )
+from repolens.analysis.classifier import (
+    MODULE_SUFFIXES,
+    PACKAGE_MARKER_NAMES,
+    ImportClassifier,
+    classify_imports,
+)
 from repolens.analysis.models import (
     ImportForm,
     ParsedFile,
@@ -32,8 +38,11 @@ from repolens.analysis.service import (
 
 __all__ = [
     "AnalysisService",
+    "ImportClassifier",
     "ImportForm",
     "LanguageAnalyzer",
+    "MODULE_SUFFIXES",
+    "PACKAGE_MARKER_NAMES",
     "PYTHON_FILE_EXTENSIONS",
     "PYTHON_LANGUAGE",
     "ParseError",
@@ -44,6 +53,7 @@ __all__ = [
     "RepositoryAnalysis",
     "SKIPPED_DIRECTORY_NAMES",
     "UnsupportedFileError",
+    "classify_imports",
     "to_analysis_counts",
     "to_analyzed_file",
     "to_analyzed_files",
