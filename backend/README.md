@@ -132,23 +132,35 @@ target, since they are the only files the store can point an import at.
   against any directory that is not itself inside a package, so a `src/` or
   `backend/` layout resolves `app.config` to `src/app/config.py` instead of
   reporting an external `app` package. The roots that contain the importing
-  file are tried first, deepest first, which keeps two checkouts of one
-  package in a monorepo apart.
+  file are tried first, deepest first, the way the nearest directory on
+  `sys.path` wins at runtime; the roots outside its tree follow, so a
+  `tests/` file still reaches a `src/` package the way an installed
+  distribution would.
+- **The owning root is a boundary.** The search stops at the first containing
+  root that holds the top-level package being imported, including as a
+  namespace directory. Two checkouts of one package in a monorepo therefore
+  stay apart: `import app.only_a` from `service_b/app/main.py` is
+  `unresolved`, not an edge into `service_a/app/only_a.py` that Python would
+  never take.
 - **Relative imports** resolve against the importing file's package: level 1
   is its own package and each further level is one package up, so
   `from .. import config` in `app/services/billing.py` resolves to
   `app/config.py`, and `from . import config` in `app/__init__.py` resolves to
   the sibling `app/config.py`. A level that reaches past the repository root
   is `unresolved`; a relative import is never external.
-- **A single imported name is preferred as a submodule**, so
+- **The dotted module resolves first**, because only a package can hold
+  submodules. The trailing name in `from app.config import DEFAULT_TIMEOUT`
+  is therefore an attribute and the import resolves to `app/config.py`, even
+  where a directory happens to hold an `app/config/DEFAULT_TIMEOUT.py`: a
+  file module can never load a submodule.
+- **A single imported name is preferred as a submodule** when the module is a
+  package, or a directory with no module file of its own (a namespace
+  package, which includes the empty module of `from . import config`). So
   `from app.services import billing` targets `app/services/billing.py` rather
   than the `app/services/__init__.py` that may re-export it — an edge to the
   file that defines the code says more than an edge to the package that
   forwards it. When several names are imported, one record holds one target,
   so the package they come from is the target.
-- **Otherwise the dotted module itself is the target**, which is why the
-  trailing name in `from app.config import DEFAULT_TIMEOUT` stays an
-  attribute and the import resolves to `app/config.py`.
 - **Star imports** are resolved from their module alone, never from their
   names: `'*'` is never treated as a submodule, so `from .services import *`
   is an internal edge to `app/services/__init__.py`, `from numpy import *` is

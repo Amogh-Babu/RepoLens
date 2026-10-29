@@ -45,7 +45,8 @@ class ImportClassifier:
 
     def __init__(self, file_paths: Iterable[str]) -> None:
         self._files = frozenset(file_paths)
-        self._source_roots = _infer_source_roots(self._files)
+        self._directories = _directories_of(self._files)
+        self._source_roots = _infer_source_roots(self._files, self._directories)
         self._deepest_first = tuple(
             sorted(self._source_roots, key=lambda root: (-_depth(root), root))
         )
@@ -73,10 +74,13 @@ class ImportClassifier:
         if imported.level > 0:
             return _resolved(imported, self._resolve_relative(source_path, imported))
 
+        directory = source_path.rpartition("/")[0]
         for root in self._roots_for(source_path):
             target = self._resolve_reference(root, module, imported, source_path)
             if target is not None:
                 return _resolved(imported, target)
+            if _contains(root, directory) and self._owns(root, module):
+                break
 
         package = self._external_package(source_path, module)
         return _resolved(imported, None, package=package)
@@ -133,25 +137,31 @@ class ImportClassifier:
     ) -> str | None:
         """Resolve one import reference below `root`, or return None.
 
-        A `from` import that takes a single name prefers that name as a
-        submodule, so `from . import config` reaches the sibling
-        `config.py` and `from app.services import billing` reaches
-        `app/services/billing.py` rather than the package that re-exports it.
-        Otherwise the dotted module itself is the target, which is what makes
-        the trailing name in `from app.config import DEFAULT_TIMEOUT` an
-        attribute instead of a module. `'*'` is never resolved as a submodule:
-        a star import is resolved from its module alone.
+        The dotted module is resolved first, because only a package can hold
+        submodules: `from app.config import DEFAULT_TIMEOUT` resolves to the
+        `app/config.py` module and its trailing name stays an attribute, even
+        if a directory happens to hold an `app/config/DEFAULT_TIMEOUT.py`.
+
+        When the module is a package, or names a directory with no module file
+        of its own (a namespace package, which includes the empty module of
+        `from . import config`), a `from` import that takes a single name
+        prefers that name as a submodule. So `from . import config` reaches
+        the sibling `config.py` and `from app.services import billing`
+        reaches `app/services/billing.py` rather than the package that
+        re-exports it. `'*'` is never resolved as a submodule: a star import
+        is resolved from its module alone.
 
         A file never depends on itself, so a reference that lands back on
         `source_path` resolves to nothing.
         """
-        names = tuple(name for name in imported.symbols if name != _STAR_IMPORT)
-        if len(names) == 1:
-            submodule = self._resolve_module(root, _join_module(module, names[0]))
-            if submodule is not None and submodule != source_path:
-                return submodule
-
         target = self._resolve_module(root, module)
+        if target is None or _is_package_file(target):
+            names = tuple(name for name in imported.symbols if name != _STAR_IMPORT)
+            if len(names) == 1:
+                submodule = self._resolve_module(root, _join_module(module, names[0]))
+                if submodule is not None and submodule != source_path:
+                    return submodule
+
         return None if target == source_path else target
 
     def _resolve_module(self, root: str, module: str) -> str | None:
@@ -178,17 +188,36 @@ class ImportClassifier:
         if not top_level:
             return None
         for root in self._roots_for(source_path):
-            if self._resolve_module(root, top_level) is not None:
+            if self._owns(root, module):
                 return None
         return top_level
+
+    def _owns(self, root: str, module: str) -> bool:
+        """Return whether `root` holds the top-level package `module` names.
+
+        A namespace package counts, so a bare `service_b/app/` directory owns
+        `app` for the files inside it even with no `__init__.py`.
+        """
+        top_level = module.split(".")[0]
+        if not top_level:
+            return False
+        if self._resolve_module(root, top_level) is not None:
+            return True
+        return "/".join(part for part in (root, top_level) if part) in self._directories
 
     def _roots_for(self, source_path: str) -> tuple[str, ...]:
         """Return the source roots to try for a file, nearest root first.
 
         The roots containing the importing file come first, deepest first,
-        the way the nearest package directory on `sys.path` wins at runtime.
-        That keeps two copies of one package in a monorepo apart: a file in
-        `service_b/` resolves `app.config` to its own tree.
+        the way the nearest package directory on `sys.path` wins at runtime,
+        and the roots outside its tree follow, the way an installed
+        distribution is still importable from a `tests/` directory.
+
+        Search stops at the first containing root that owns the top-level
+        package being imported, so two copies of one package in a monorepo
+        stay apart: a file in `service_b/` resolves `app.config` in its own
+        tree, and a module only `service_a/` has is missing rather than a
+        cross-checkout dependency Python would never take.
         """
         directory = source_path.rpartition("/")[0]
         cached = self._roots_by_directory.get(directory)
@@ -235,14 +264,20 @@ def _resolved(
     )
 
 
-def _infer_source_roots(file_paths: frozenset[str]) -> tuple[str, ...]:
-    """Return the repository root plus every directory outside a package."""
+def _directories_of(file_paths: frozenset[str]) -> frozenset[str]:
+    """Return every directory the analyzed files live in, parents included."""
     directories: set[str] = set()
     for path in file_paths:
         parts = path.split("/")[:-1]
         for end in range(1, len(parts) + 1):
             directories.add("/".join(parts[:end]))
+    return frozenset(directories)
 
+
+def _infer_source_roots(
+    file_paths: frozenset[str], directories: frozenset[str]
+) -> tuple[str, ...]:
+    """Return the repository root plus every directory outside a package."""
     packages = {
         directory
         for directory in directories
@@ -283,6 +318,11 @@ def _contains(root: str, directory: str) -> bool:
 def _depth(directory: str) -> int:
     """Return how many path components a directory has, 0 for the root."""
     return 0 if not directory else directory.count("/") + 1
+
+
+def _is_package_file(path: str) -> bool:
+    """Return whether a resolved path is a package rather than a plain module."""
+    return path.rpartition("/")[2] in PACKAGE_MARKER_NAMES
 
 
 def _join_module(module: str, name: str) -> str:

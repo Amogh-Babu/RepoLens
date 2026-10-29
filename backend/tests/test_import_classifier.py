@@ -112,6 +112,78 @@ def test_a_single_name_that_is_a_submodule_resolves_to_the_submodule_file() -> N
     )
 
 
+def test_a_module_file_beats_a_same_named_directory_for_an_imported_name() -> None:
+    """A plain module has no submodules, so the trailing name is an attribute.
+
+    Python resolves `app.config` to `app/config.py` first, and a file module
+    can never load `app.config.DEFAULT_TIMEOUT`, so a directory of that name
+    does not take the import.
+    """
+    classifier = ImportClassifier(
+        ("app/config.py", "app/config/DEFAULT_TIMEOUT.py", "app/main.py")
+    )
+
+    resolved = classifier.classify(
+        "app/main.py",
+        ImportRecord(
+            raw_name="app.config", kind="unresolved", symbols=("DEFAULT_TIMEOUT",)
+        ),
+    )
+
+    assert (resolved.kind, resolved.target_path) == ("internal", "app/config.py")
+
+
+def test_an_imported_name_resolves_under_a_package_of_the_same_name() -> None:
+    """When the base is a package, the imported name may be its submodule."""
+    classifier = ImportClassifier(
+        (
+            "app/config/__init__.py",
+            "app/config/defaults.py",
+            "app/config.py",
+            "app/main.py",
+        )
+    )
+
+    resolved = classifier.classify(
+        "app/main.py",
+        ImportRecord(raw_name="app.config", kind="unresolved", symbols=("defaults",)),
+    )
+
+    assert (resolved.kind, resolved.target_path) == (
+        "internal",
+        "app/config/defaults.py",
+    )
+
+
+def test_an_imported_name_resolves_inside_a_namespace_package() -> None:
+    """A directory with no `__init__.py` still holds importable submodules."""
+    classifier = ImportClassifier(
+        ("app/__init__.py", "app/plugins/export.py", "app/main.py")
+    )
+
+    resolved = classifier.classify(
+        "app/main.py",
+        ImportRecord(raw_name="app.plugins", kind="unresolved", symbols=("export",)),
+    )
+
+    assert (resolved.kind, resolved.target_path) == (
+        "internal",
+        "app/plugins/export.py",
+    )
+
+
+def test_a_sibling_relative_import_resolves_without_a_package_init() -> None:
+    """`from . import b` works in a namespace package too."""
+    classifier = ImportClassifier(("pkg/a.py", "pkg/b.py"))
+
+    resolved = classifier.classify(
+        "pkg/a.py",
+        ImportRecord(raw_name=".", kind="unresolved", level=1, symbols=("b",)),
+    )
+
+    assert (resolved.kind, resolved.target_path) == ("internal", "pkg/b.py")
+
+
 def test_several_imported_names_resolve_to_the_package_they_come_from() -> None:
     """One record holds one target, so a mixed name list targets the package."""
     classifier = ImportClassifier(
@@ -280,6 +352,67 @@ def test_the_source_root_holding_the_importing_file_wins() -> None:
     )
 
     assert resolved.target_path == "service_b/app/config.py"
+
+
+def test_a_missing_module_does_not_resolve_into_another_checkout() -> None:
+    """Resolution stops at the source root that owns the importing file.
+
+    Service B's own `app` package is the one Python would import, so a module
+    only service A has is missing, not a cross-checkout dependency.
+    """
+    classifier = ImportClassifier(("service_a/app/only_a.py", "service_b/app/main.py"))
+
+    resolved = classifier.classify(
+        "service_b/app/main.py",
+        ImportRecord(raw_name="app.only_a", kind="unresolved"),
+    )
+
+    assert (resolved.kind, resolved.target_path, resolved.target_package) == (
+        "unresolved",
+        None,
+        None,
+    )
+
+
+def test_a_missing_name_does_not_resolve_into_another_packaged_checkout() -> None:
+    """The same boundary holds when both checkouts are regular packages."""
+    classifier = ImportClassifier(
+        (
+            "service_a/app/__init__.py",
+            "service_a/app/only_a.py",
+            "service_b/app/__init__.py",
+            "service_b/app/main.py",
+        )
+    )
+
+    resolved = classifier.classify(
+        "service_b/app/main.py",
+        ImportRecord(raw_name="app", kind="unresolved", symbols=("only_a",)),
+    )
+
+    assert (resolved.kind, resolved.target_path) == (
+        "internal",
+        "service_b/app/__init__.py",
+    )
+
+
+def test_a_package_outside_the_importing_tree_still_resolves() -> None:
+    """A test file importing an installed `src/` package is internal.
+
+    No source root containing `tests/test_main.py` holds an `app` package, so
+    resolution falls through to the `src/` root the way an installed
+    distribution would.
+    """
+    classifier = ImportClassifier(
+        ("src/app/__init__.py", "src/app/config.py", "tests/test_main.py")
+    )
+
+    resolved = classifier.classify(
+        "tests/test_main.py",
+        ImportRecord(raw_name="app.config", kind="unresolved", symbols=("Settings",)),
+    )
+
+    assert (resolved.kind, resolved.target_path) == ("internal", "src/app/config.py")
 
 
 def test_a_missing_module_under_a_repository_package_stays_unresolved() -> None:
