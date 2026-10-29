@@ -112,13 +112,103 @@ module or a name re-exported by `app/services/__init__.py`. These two fields
 hand parsing off to classifying in memory; the pipeline classifies before it
 stores, so the `imports` table persists only the resolved kind and target.
 
+### Import Classification
+
+`repolens.analysis.classify_imports` is the classifying stage: it takes the
+storable records the adapter produced and returns them with every import
+labeled `internal`, `external`, or `unresolved`, and with the `target_path` or
+`target_package` that label refers to. It works on the whole file list,
+because resolving one import needs to know every file the repository
+contains, and it runs before storing, so no schema change is involved.
+`ImportClassifier` is the object behind it, for a caller that already has the
+repository's file paths.
+
+Resolution follows Python's module layout — dotted names, `__init__.py`
+packages, `.pyi` stubs — over the analyzed paths only. Nothing is imported,
+executed, or looked up on `sys.path`, and only the analyzed files can be a
+target, since they are the only files the store can point an import at.
+
+- **Source roots.** Absolute imports resolve against the repository root and
+  against any directory that is not itself inside a package, so a `src/` or
+  `backend/` layout resolves `app.config` to `src/app/config.py` instead of
+  reporting an external `app` package. The roots that contain the importing
+  file are tried first, deepest first, the way the nearest directory on
+  `sys.path` wins at runtime; the roots outside its tree follow, so a
+  `tests/` file still reaches a `src/` package the way an installed
+  distribution would.
+- **The owning root is a boundary.** The search stops at the first containing
+  root that holds the top-level package being imported, including as a
+  namespace directory. Two checkouts of one package in a monorepo therefore
+  stay apart: `import app.only_a` from `service_b/app/main.py` is
+  `unresolved`, not an edge into `service_a/app/only_a.py` that Python would
+  never take.
+- **Relative imports** resolve against the importing file's package: level 1
+  is its own package and each further level is one package up, so
+  `from .. import config` in `app/services/billing.py` resolves to
+  `app/config.py`, and `from . import config` in `app/__init__.py` resolves to
+  the sibling `app/config.py`. A level that reaches past the repository root
+  is `unresolved`; a relative import is never external.
+- **The dotted module resolves first**, because only a package can hold
+  submodules. The trailing name in `from app.config import DEFAULT_TIMEOUT`
+  is therefore an attribute and the import resolves to `app/config.py`, even
+  where a directory happens to hold an `app/config/DEFAULT_TIMEOUT.py`: a
+  file module can never load a submodule.
+- **Imported names are tried as submodules** when the module is a package, or
+  a directory with no module file of its own (a namespace package, which
+  includes the empty module of `from . import config`). One statement can
+  reach several files, so every resolved submodule gets its own record and
+  its own edge: `from pkg import a, b` links to `pkg/a.py` and `pkg/b.py`,
+  and `from app.services import billing` links to `app/services/billing.py`
+  rather than the `app/services/__init__.py` that may re-export it — an edge
+  to the file that defines the code says more than an edge to the package
+  that forwards it. The module itself is reported as well unless every
+  imported name turned out to be a submodule, so
+  `from app.services import billing, InvoiceCalculator` links to both the
+  submodule and the package that defines the other name.
+- **An absolute import of a missing module falls back to its closest parent
+  package**, because `import pkg.generated.models` runs `pkg/__init__.py`
+  whether or not the named module is in the analysis — which is what happens
+  when the ingestion filter excluded it. The nearest package that *is* in the
+  analysis is the most precise true target for that dependency.
+- **Repeated references to one target are merged** per file, so a file that
+  reaches `app/services/billing.py` both as
+  `from app.services import billing` and as
+  `from app.services.billing import InvoiceCalculator` keeps one record and
+  one edge.
+- **Star imports** are resolved from their module alone, never from their
+  names: `'*'` is never treated as a submodule, so `from .services import *`
+  is an internal edge to `app/services/__init__.py`, `from numpy import *` is
+  external, and `from app.plugins import *` with no such module stays
+  `unresolved`.
+- **External** is the fallback for an absolute import the repository does not
+  contain, and `target_package` is its top-level name, so `os.path` reports
+  `os`. When that top-level name *is* in the repository but neither the named
+  module nor any parent package of it is, the import is `unresolved` rather
+  than a third-party dependency.
+- **A file never depends on itself**: a reference that resolves back to the
+  importing file is `unresolved`, so `from . import missing` in a package's
+  `__init__.py` does not become a self edge.
+
+A file that did not parse reports no imports, so it passes through
+classification unchanged — and it is still a resolvable target for the
+imports in other files, because it is a repository file all the same.
+
 ```python
-from repolens.analysis import AnalysisService, to_analysis_counts, to_analyzed_files
+from repolens.analysis import (
+    AnalysisService,
+    classify_imports,
+    to_analysis_counts,
+    to_analyzed_files,
+)
 from repolens.graph import AnalysisRecord, SqliteGraphStore
 
 analysis = AnalysisService().analyze_repository("/tmp/checkout")
 for file in analysis.files:
     print(file.path, [i.raw_name for i in file.imports], [s.name for s in file.symbols])
+
+classified = classify_imports(to_analyzed_files(analysis))
+for file in classified:
+    print(file.path, [(i.raw_name, i.kind, i.target_path) for i in file.imports])
 
 SqliteGraphStore("repolens.db").save(
     AnalysisRecord(
@@ -126,7 +216,7 @@ SqliteGraphStore("repolens.db").save(
         repo="https://github.com/owner/repo",
         sha="0123456789abcdef0123456789abcdef01234567",
         counts=to_analysis_counts(analysis),
-        files=to_analyzed_files(analysis),
+        files=classified,
     )
 )
 ```
@@ -226,19 +316,10 @@ with its own code; anything unexpected is logged and reported as
 
 ### Import Classification
 
-`repolens.analysis.classify_imports` marks each import:
-
-- **internal** when it names a `.py` or `.pyi` file in the repository, with
-  the repository root and a top-level `src/` both treated as import roots.
-  `from pkg import a, b` links to `pkg/a.py` and `pkg/b.py` when those are
-  submodules, and to `pkg/__init__.py` for names that are not. An absolute
-  import of a missing submodule falls back to its closest parent package.
-- **external** when it is absolute and its top-level package is not in the
-  repository (`target_package` is that top-level name).
-- **unresolved** otherwise: a relative import that points at no file, or a
-  local package import with no matching file.
-
-Repeated imports of one target are merged, and a file never links to itself.
+The classifying stage is `repolens.analysis.classify_imports`: it marks each
+import `internal`, `external`, or `unresolved`, and resolves the internal ones
+to the file they reach. Its rules are documented under
+[Import Classification](#import-classification) in Source Analysis above.
 
 ## Search and Ranking
 
