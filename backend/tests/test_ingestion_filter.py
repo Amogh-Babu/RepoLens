@@ -336,3 +336,4 @@ def test_the_filter_exposes_its_limits_and_the_file_filter_port() -> None:
     assert file_filter.limits is limits
     assert callable(file_filter.exclusion_for)
     assert callable(file_filter.directory_exclusion_for)
+    assert callable(file_filter.require_repository_within_limits)

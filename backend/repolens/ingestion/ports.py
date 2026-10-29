@@ -55,3 +55,9 @@ class FileFilter(Protocol):
     def directory_exclusion_for(self, path: str) -> FileExclusion | None:
         """Return why the directory at path is not analyzed, or None when it is."""
         ...
+
+    def require_repository_within_limits(
+        self, analyzable_count: int, analyzable_bytes: int
+    ) -> None:
+        """Raise RepositoryTooLargeError once the kept files pass a repo cap."""
+        ...

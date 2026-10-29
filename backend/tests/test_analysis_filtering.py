@@ -7,13 +7,20 @@ fixture tree is only read and parsed; it is never imported or executed.
 
 from pathlib import Path
 
+import pytest
+
 from repolens.analysis import (
     AnalysisService,
     ParsedFile,
     PythonAnalyzer,
     to_analysis_counts,
 )
-from repolens.ingestion import ArchiveLimits, FileExclusion, SourceFileFilter
+from repolens.ingestion import (
+    ArchiveLimits,
+    FileExclusion,
+    RepositoryTooLargeError,
+    SourceFileFilter,
+)
 
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "filter_mini_repo"
@@ -53,6 +60,11 @@ class AllowEverythingFilter:
         return None
 
     def directory_exclusion_for(self, path: str) -> FileExclusion | None:
+        return None
+
+    def require_repository_within_limits(
+        self, analyzable_count: int, analyzable_bytes: int
+    ) -> None:
         return None
 
 
@@ -149,3 +161,83 @@ def test_filtered_files_are_counted_as_excluded_for_the_graph_store(
     counts = to_analysis_counts(analysis)
 
     assert (counts.analyzed, counts.excluded, counts.unparsed) == (1, 2, 0)
+
+
+def test_a_repository_over_the_source_file_cap_is_rejected(tmp_path: Path) -> None:
+    for index in range(4):
+        _write(tmp_path, f"app/module{index}.py", "VALUE = 1\n")
+    analyzer = RecordingAnalyzer()
+    service = AnalysisService(
+        (analyzer,),
+        file_filter=SourceFileFilter(ArchiveLimits(max_analyzable_file_count=2)),
+    )
+
+    with pytest.raises(RepositoryTooLargeError) as error:
+        service.analyze_repository(tmp_path)
+
+    assert error.value.code == "REPOSITORY_TOO_LARGE"
+    assert error.value.status_code == 413
+    assert "more than 2 source files" in error.value.message
+    assert analyzer.analyzed_paths == ["app/module0.py", "app/module1.py"]
+
+
+def test_a_repository_over_the_source_byte_cap_is_rejected(tmp_path: Path) -> None:
+    _write(tmp_path, "app/a.py", "VALUE = 1\n" * 40)
+    _write(tmp_path, "app/b.py", "VALUE = 2\n" * 40)
+    service = AnalysisService(
+        file_filter=SourceFileFilter(ArchiveLimits(max_analyzable_bytes=500))
+    )
+
+    with pytest.raises(RepositoryTooLargeError) as error:
+        service.analyze_repository(tmp_path)
+
+    assert error.value.to_dict() == {
+        "code": "REPOSITORY_TOO_LARGE",
+        "message": (
+            "This repository holds more than 500 bytes of source to analyze, "
+            "past the size limit."
+        ),
+        "hint": "Analyze a smaller repository.",
+    }
+
+
+def test_the_repository_caps_ignore_filtered_and_unsupported_files(
+    tmp_path: Path,
+) -> None:
+    _write(tmp_path, "app/main.py", "import os\n")
+    _write(tmp_path, "app/helpers.py", "VALUE = 1\n")
+    for index in range(20):
+        _write(tmp_path, f"node_modules/dep/module{index}.py", "VALUE = 1\n" * 40)
+        _write(tmp_path, f"app/schema{index}_pb2.py", "VALUE = 1\n" * 40)
+        _write(tmp_path, f"docs/page{index}.md", "# Page\n" * 40)
+    service = AnalysisService(
+        file_filter=SourceFileFilter(
+            ArchiveLimits(max_analyzable_bytes=200, max_analyzable_file_count=2)
+        )
+    )
+
+    analysis = service.analyze_repository(tmp_path)
+
+    assert [parsed.path for parsed in analysis.files] == [
+        "app/helpers.py",
+        "app/main.py",
+    ]
+
+
+def test_a_repository_at_the_caps_is_analyzed(tmp_path: Path) -> None:
+    _write(tmp_path, "app/a.py", "VALUE = 1\n")
+    _write(tmp_path, "app/b.py", "VALUE = 2\n")
+    source_bytes = sum(
+        (tmp_path / name).stat().st_size for name in ("app/a.py", "app/b.py")
+    )
+    service = AnalysisService(
+        file_filter=SourceFileFilter(
+            ArchiveLimits(
+                max_analyzable_bytes=source_bytes, max_analyzable_file_count=2
+            )
+        )
+    )
+
+    analysis = service.analyze_repository(tmp_path)
+
+    assert [parsed.path for parsed in analysis.files] == ["app/a.py", "app/b.py"]
