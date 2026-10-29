@@ -107,3 +107,12 @@ Desktop.ini
 *.swp
 *.swo
 *~
+
+# ==============================================================================
+# 6. Test Fixtures
+# ==============================================================================
+# The ingestion filter's fixture tree deliberately contains vendored and
+# generated paths, so the rules above must not hide it from Git.
+!backend/tests/fixtures/filter_mini_repo/node_modules/
+!backend/tests/fixtures/filter_mini_repo/build/
+!backend/tests/fixtures/filter_mini_repo/app.egg-info/
