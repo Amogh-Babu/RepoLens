@@ -29,6 +29,8 @@ from repolens.graph.store import (
     SqliteGraphStore,
     normalize_repo_url,
 )
+from repolens.ingestion import IngestionError
+from repolens.pipeline import PipelineAnalysisRunner
 from repolens.search import (
     AnalysisUnavailableError,
     PaginationValidationError,
@@ -121,7 +123,12 @@ class AnalysisRunner(Protocol):
 
 
 class DefaultAnalysisRunner:
-    """Default runner that reuses cached analyses or registers a queued analysis."""
+    """Stub runner that reuses cached analyses or registers a queued analysis.
+
+    It never downloads or parses anything, so its analyses stay queued. Tests
+    use it to exercise the API contract offline; the server runs
+    `PipelineAnalysisRunner`.
+    """
 
     def start(
         self,
@@ -255,7 +262,7 @@ def create_analysis_router(
         try:
             repo_url = validate_github_repo_url(payload.url)
             return active_runner.start(store, repo_url, payload.ref)
-        except GraphStoreError as exc:
+        except (GraphStoreError, IngestionError) as exc:
             return JSONResponse(
                 status_code=exc.status_code,
                 content=exc.to_dict(),
@@ -418,4 +425,6 @@ def _error_response(
     )
 
 
-app = create_app()
+# The server analyzes real repositories. `create_app()` without a runner keeps
+# the offline stub for tests.
+app = create_app(runner=PipelineAnalysisRunner())

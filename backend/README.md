@@ -178,7 +178,7 @@ results = SearchService(store).search("analysis-1", "main")
 ## FastAPI Application and Endpoints (`repolens.api`)
 
 `repolens.api.app.create_app(store, runner)` creates the unified FastAPI application whose OpenAPI schema matches `frontend/src/api/types.ts`:
-- `POST /analyses` — Validates the GitHub URL, reuses a non-expired cached analysis for `(repo, sha)` or starts a new analysis, returning `{analysisId, sha, status}`.
+- `POST /analyses` — Validates the GitHub URL, resolves the ref to a commit SHA, reuses a non-expired cached analysis for `(repo, sha)` or starts a new analysis, returning `{analysisId, sha, status}`.
 - `GET /analyses/{analysis_id}` — Returns lifecycle status, active stage, summary counts, cache flag, ISO-8601 timestamps, and any structured error.
 - `DELETE /analyses/{analysis_id}` — Cancels a queued or running analysis (`204 No Content`).
 - `GET /analyses/{analysis_id}/graph` — Returns `{modules, files, edges}` for the interactive dependency map (`repolens.graph.endpoints`).
@@ -190,6 +190,55 @@ Run the main backend server locally from the repository root:
 ```bash
 PYTHONPATH=backend python3 -m uvicorn repolens.api.app:app --app-dir backend --reload
 ```
+
+The server keeps analyses in an in-memory SQLite database, so restarting it
+clears them. Set `GITHUB_TOKEN` to raise GitHub's anonymous API limit of 60
+requests an hour; the token is only sent to `api.github.com`.
+
+## Analysis Pipeline (`repolens.pipeline`)
+
+`repolens.api.app:app` starts analyses with `PipelineAnalysisRunner`.
+`create_app()` without a runner keeps `DefaultAnalysisRunner`, an offline stub
+whose analyses stay queued, for contract tests.
+
+`POST /analyses` resolves the ref (or the default branch) to a commit SHA with
+`repolens.ingestion.GitHubRefResolver` before it answers, so the response
+names the SHA and a completed, unexpired analysis of the same commit is
+reused. Resolution failures are returned directly: `REPO_NOT_FOUND`,
+`REF_NOT_FOUND`, `REPO_EMPTY`, `RATE_LIMITED`, or `GITHUB_UNAVAILABLE`.
+
+The remaining stages run on a background thread and are recorded on the
+analysis, which is what the frontend shows while it polls
+`GET /analyses/{id}`:
+
+1. **downloading**: `GitHubSource` downloads and extracts the archive into a
+   temporary directory, deleted once the analysis finishes.
+2. **filtering**: fails with `NO_PYTHON_FILES` if no file has an analyzer.
+3. **parsing**: `AnalysisService` parses every supported file.
+4. **classifying**: `classify_imports` resolves each import against the file
+   list (see below).
+5. **storing**: the graph is saved and the analysis marked `completed`.
+
+A cancel (`DELETE /analyses/{id}`) stops the pipeline at the next stage and is
+never overwritten by a later result. An ingestion error fails the analysis
+with its own code; anything unexpected is logged and reported as
+`ANALYSIS_FAILED`.
+
+### Import Classification
+
+`repolens.analysis.classify_imports` marks each import:
+
+- **internal** when it names a `.py` or `.pyi` file in the repository, with
+  the repository root and a top-level `src/` both treated as import roots.
+  `from pkg import a, b` links to `pkg/a.py` and `pkg/b.py` when those are
+  submodules, and to `pkg/__init__.py` for names that are not. An absolute
+  import of a missing submodule falls back to its closest parent package.
+- **external** when it is absolute and its top-level package is not in the
+  repository (`target_package` is that top-level name).
+- **unresolved** otherwise: a relative import that points at no file, or a
+  local package import with no matching file.
+
+Repeated imports of one target are merged, and a file never links to itself.
 
 ## Search and Ranking
 

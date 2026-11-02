@@ -71,19 +71,30 @@ There are two implementations, chosen by `VITE_API_MODE`:
 
 | Mode             | Client          | Use it for                                            |
 | ---------------- | --------------- | ----------------------------------------------------- |
-| `mock` (default) | `MockApiClient` | Building the UI without a backend                     |
-| `http`           | `HttpApiClient` | Talking to the FastAPI backend at `VITE_API_BASE_URL` |
+| `http` (default) | `HttpApiClient` | Talking to the FastAPI backend at `VITE_API_BASE_URL` |
+| `mock`           | `MockApiClient` | Building the UI without a backend                     |
 
-To use the real backend, create `frontend/.env.local`:
+Tests always use the mock client: `vite.config.ts` sets `VITE_API_MODE=mock`
+for Vitest, and `src/test/renderApp.tsx` renders the app with a
+`MockApiClient`.
+
+### Running against the backend
+
+Start the backend from the repository root (see
+[`backend/README.md`](../backend/README.md) for setup):
 
 ```bash
-VITE_API_MODE=http
-VITE_API_BASE_URL=/api
-API_PROXY_TARGET=http://localhost:8000
+python -m uvicorn repolens.api.app:app --app-dir backend --reload
 ```
 
-The dev server forwards `/api/...` to `API_PROXY_TARGET` with the `/api`
-prefix removed, so the browser never makes a cross-origin request.
+Then start the frontend with `npm run dev` and paste a public GitHub URL,
+such as `https://github.com/pallets/itsdangerous`. The dev server forwards
+`/api/...` to `API_PROXY_TARGET` (default `http://localhost:8000`) with the
+`/api` prefix removed, so the browser never makes a cross-origin request. To
+change either setting, copy `.env.example` to `.env.local`.
+
+To work on the UI without a backend, put `VITE_API_MODE=mock` in
+`frontend/.env.local`.
 
 ### Mock data
 

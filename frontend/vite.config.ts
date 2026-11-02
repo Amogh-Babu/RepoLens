@@ -24,6 +24,8 @@ export default defineConfig(({mode}) => {
       globals: true,
       setupFiles: ['./src/test/setup.ts'],
       css: false,
+      // Tests never talk to a real backend, whatever .env.local says.
+      env: {VITE_API_MODE: 'mock'},
     },
   };
 });

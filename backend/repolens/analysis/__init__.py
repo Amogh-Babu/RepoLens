@@ -10,6 +10,7 @@ from repolens.analysis.adapter import (
     to_analyzed_file,
     to_analyzed_files,
 )
+from repolens.analysis.classifier import classify_imports
 from repolens.analysis.models import (
     ImportForm,
     ParsedFile,
@@ -44,6 +45,7 @@ __all__ = [
     "RepositoryAnalysis",
     "SKIPPED_DIRECTORY_NAMES",
     "UnsupportedFileError",
+    "classify_imports",
     "to_analysis_counts",
     "to_analyzed_file",
     "to_analyzed_files",

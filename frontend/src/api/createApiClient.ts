@@ -11,20 +11,21 @@ export interface ApiEnv {
 /**
  * Builds the ApiClient selected by the environment:
  *
- * - VITE_API_MODE=mock (the default for now): in-memory fixture data.
- * - VITE_API_MODE=http: the real backend at VITE_API_BASE_URL, which
- *   defaults to "/api" (proxied to the backend by the Vite dev server).
+ * - VITE_API_MODE=http (the default): the real backend at VITE_API_BASE_URL,
+ *   which defaults to "/api" (proxied to the backend by the Vite dev server).
+ * - VITE_API_MODE=mock: in-memory fixture data, no backend needed. Tests
+ *   always use this mode.
  */
 export function createApiClient(env: ApiEnv = import.meta.env): ApiClient {
-  const mode = env.VITE_API_MODE ?? 'mock';
+  const mode = env.VITE_API_MODE || 'http';
   switch (mode) {
-    case 'mock':
-      return new MockApiClient();
     case 'http':
       return new HttpApiClient(env.VITE_API_BASE_URL || '/api');
+    case 'mock':
+      return new MockApiClient();
     default:
       throw new Error(
-        `Unknown VITE_API_MODE "${mode}"; expected "mock" or "http".`,
+        `Unknown VITE_API_MODE "${mode}"; expected "http" or "mock".`,
       );
   }
 }
