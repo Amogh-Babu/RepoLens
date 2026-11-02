@@ -8,3 +8,6 @@ requires-python = ">=3.11"
 pythonpath = ["."]
 testpaths = ["tests"]
 addopts = ["-ra", "--strict-markers"]
+markers = [
+    "e2e: runs the whole pipeline on the reference repository (tests/fixtures/e2e_reference)",
+]
