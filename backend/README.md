@@ -341,5 +341,18 @@ To add a test, create `tests/test_<feature>.py` and write functions named
 `test_*` that use plain `assert`. Shared fixtures live in `tests/conftest.py`;
 `test_search_scoring.py` is a short example. Existing `unittest.TestCase`
 classes also run under pytest unchanged. The Backend GitHub Actions workflow
-runs the whole suite on Python 3.11, 3.12, and 3.13 for every pull request that
+runs the suite on Python 3.11, 3.12, and 3.13 for every pull request that
 touches `backend/`.
+
+### End-to-end test
+
+`tests/test_e2e_reference_repo.py` (marked `e2e`) runs the whole pipeline on
+the hand-written reference repository in `tests/fixtures/e2e_reference/` through
+the HTTP API, with only GitHub's network transport faked. It compares the
+summary, graph, every file's symbols and imports, and the reading order of
+several searches with the hand-written `expected.json`, so drift between
+ingestion, analysis, the graph store, and search fails CI. CI runs it as its own
+"End-to-end (reference repo)" job; the matrix job skips it with
+`-m "not e2e"`. Locally, `python -m pytest` runs everything and
+`python -m pytest -m e2e` runs only this test. The fixture's README lists the
+cases it covers and how to update the expectations.
