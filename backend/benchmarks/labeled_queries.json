@@ -1,0 +1,172 @@
+{
+  "top_k": 5,
+  "labeling_rule": "A file is relevant to a query if a developer asked to understand or change that feature would have to open it: it either implements the named behavior or defines a step the behavior delegates to by name. A package __init__.py that only holds a docstring or re-exports a name is not relevant, because it contains nothing to read about the feature. A test of the named behavior is relevant. Labels were written from the fixture source before either system was run.",
+  "repos": [
+    {
+      "id": "search_mini_repo",
+      "name": "search mini repository",
+      "root": "tests/fixtures/search_mini_repo",
+      "queries": [
+        {
+          "query": "login",
+          "relevant": [
+            "app/authentication/routes.py",
+            "app/authentication/service.py"
+          ],
+          "rationale": "routes.post_login is the entry point; service.login_user creates the session."
+        },
+        {
+          "query": "password verification",
+          "relevant": [
+            "app/authentication/service.py",
+            "app/users/repository.py"
+          ],
+          "rationale": "service.verify_password compares the submitted password; repository.find_account supplies the stored password_hash it is compared against."
+        },
+        {
+          "query": "invoice total",
+          "relevant": [
+            "app/billing/service.py"
+          ],
+          "rationale": "calculate_invoice is the only code that totals an invoice."
+        },
+        {
+          "query": "user account lookup",
+          "relevant": [
+            "app/users/repository.py"
+          ],
+          "rationale": "find_account is the only account lookup in the repository."
+        },
+        {
+          "query": "http request handler",
+          "relevant": [
+            "app/authentication/routes.py"
+          ],
+          "rationale": "post_login is the only HTTP entry point in the repository."
+        },
+        {
+          "query": "tax",
+          "relevant": [
+            "app/billing/service.py"
+          ],
+          "rationale": "calculate_invoice takes the tax amount; nothing else in the repository touches tax."
+        }
+      ]
+    },
+    {
+      "id": "analysis_mini_repo",
+      "name": "analysis mini repository",
+      "root": "tests/fixtures/analysis_mini_repo",
+      "queries": [
+        {
+          "query": "invoice calculation",
+          "relevant": [
+            "app/services/billing.py"
+          ],
+          "rationale": "InvoiceCalculator.total and default_calculator are the whole invoice calculation."
+        },
+        {
+          "query": "tax rate",
+          "relevant": [
+            "app/services/billing.py",
+            "app/config.py"
+          ],
+          "rationale": "billing.TAX_RATES and InvoiceCalculator apply the rate; config.Settings.tax_rate declares it with its default."
+        },
+        {
+          "query": "configuration settings",
+          "relevant": [
+            "app/config.py"
+          ],
+          "rationale": "Settings and the DEFAULT_TIMEOUT, RETRY_LIMIT, and BACKOFF_SECONDS constants are all declared here."
+        },
+        {
+          "query": "command line arguments",
+          "relevant": [
+            "app/main.py"
+          ],
+          "rationale": "build_parser and main are the only argument parsing in the repository."
+        },
+        {
+          "query": "json encoding",
+          "relevant": [
+            "app/compat.py"
+          ],
+          "rationale": "JsonCodec.encode and the ujson/json backend selection are the only JSON handling."
+        },
+        {
+          "query": "cache directory",
+          "relevant": [
+            "app/compat.py"
+          ],
+          "rationale": "the platform-gated cache_directory is the only cache path in the repository."
+        }
+      ]
+    },
+    {
+      "id": "e2e_reference",
+      "name": "end-to-end reference repository (bookshop)",
+      "root": "tests/fixtures/e2e_reference/repo",
+      "queries": [
+        {
+          "query": "login",
+          "relevant": [
+            "bookshop/auth/login.py",
+            "bookshop/auth/tokens.py",
+            "bookshop/catalog/models.py"
+          ],
+          "rationale": "login.login and login_required implement signing in; issue_token is the step login delegates to; User.check_password is the password check it calls."
+        },
+        {
+          "query": "token verification",
+          "relevant": [
+            "bookshop/auth/tokens.py",
+            "bookshop/auth/login.py",
+            "bookshop/orders/checkout.py"
+          ],
+          "rationale": "tokens.verify_token implements it; login_required and place_order are its two callers, so changing it means reading them."
+        },
+        {
+          "query": "cart total",
+          "relevant": [
+            "bookshop/orders/checkout.py",
+            "bookshop/catalog/models.py",
+            "tests/test_checkout.py"
+          ],
+          "rationale": "checkout.cart_total sums the cart; User.cart and Book.price_cents define what is summed; test_checkout asserts the behavior."
+        },
+        {
+          "query": "book search by title",
+          "relevant": [
+            "bookshop/catalog/search.py",
+            "bookshop/catalog/models.py"
+          ],
+          "rationale": "search_books filters on Book.title; models.py defines Book and that title field."
+        },
+        {
+          "query": "secret key",
+          "relevant": [
+            "bookshop/config.py",
+            "bookshop/auth/tokens.py"
+          ],
+          "rationale": "config.SECRET_KEY declares it; tokens.issue_token is its only consumer."
+        },
+        {
+          "query": "command line entry point",
+          "relevant": [
+            "manage.py",
+            "bookshop/app.py"
+          ],
+          "rationale": "manage.main reads sys.argv; App.run is what it hands the arguments to."
+        },
+        {
+          "query": "payments",
+          "relevant": [
+            "bookshop/legacy/payments.py"
+          ],
+          "rationale": "the legacy charge function is the only payment code in the repository."
+        }
+      ]
+    }
+  ]
+}
