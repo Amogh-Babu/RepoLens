@@ -145,7 +145,7 @@ class DefaultAnalysisRunner:
             ).hexdigest()
             sha = digest
 
-        cached = store.find_cached_analysis(repo_url, sha)
+        cached = store.reuse_cached_analysis(repo_url, sha)
         if cached is not None:
             return {
                 "analysisId": str(cached["id"]),
@@ -259,6 +259,9 @@ def create_analysis_router(
         summary="Start a new repository analysis or reuse a cached one",
     )
     def start_analysis(payload: StartAnalysisRequestModel) -> Any:
+        # Analyses are only added here, so evicting first keeps the store to
+        # about a day of analyses without a background sweep.
+        store.evict_expired()
         try:
             repo_url = validate_github_repo_url(payload.url)
             return active_runner.start(store, repo_url, payload.ref)

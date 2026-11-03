@@ -89,6 +89,35 @@ def test_post_analyses_reuses_completed_cached_analysis() -> None:
         "sha": FLASK_AUTH_SHA,
         "status": "completed",
     }
+    assert client.get("/analyses/cached-flask-id").json()["fromCache"] is True
+
+
+def test_post_analyses_deletes_expired_analyses() -> None:
+    now = time.time()
+    store = SqliteGraphStore()
+    record = build_flask_auth_record("expired-flask")
+    store.save(
+        type(record)(
+            **{
+                **record.__dict__,
+                "created_at": now - 100_000,
+                "expires_at": now - 10,
+            }
+        )
+    )
+    client = TestClient(create_app(store))
+
+    res = client.post(
+        "/analyses",
+        json={"url": FLASK_AUTH_REPO_URL, "ref": FLASK_AUTH_SHA},
+    )
+
+    assert res.status_code == 200
+    assert res.json()["analysisId"] != "expired-flask"
+    assert res.json()["status"] == "queued"
+    expired = client.get("/analyses/expired-flask")
+    assert expired.status_code == 404
+    assert expired.json()["code"] == "ANALYSIS_NOT_FOUND"
 
 
 def test_post_analyses_rejects_invalid_and_unsupported_urls() -> None:

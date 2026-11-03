@@ -190,6 +190,41 @@ def test_expiry_and_eviction() -> None:
     assert store.get_graph("active-1").analysis_id == "active-1"
 
 
+def test_reuse_cached_analysis_marks_it_served_from_cache() -> None:
+    now = time.time()
+    store = SqliteGraphStore()
+    store.save(_sample_analysis("cached-1", created_at=now))
+    sample = _sample_analysis()
+
+    before = store.get_analysis("cached-1")
+    assert before["fromCache"] is False
+
+    row = store.reuse_cached_analysis(sample.repo, sample.sha, now=now)
+
+    assert row is not None
+    assert row["id"] == "cached-1"
+    after = store.get_analysis("cached-1")
+    assert after["fromCache"] is True
+    assert after["expiresAt"] == before["expiresAt"]
+
+
+def test_reuse_cached_analysis_skips_expired_and_unfinished_analyses() -> None:
+    now = time.time()
+    store = SqliteGraphStore()
+    store.save(
+        _sample_analysis(
+            "expired-1",
+            created_at=now - 90_000,
+            expires_at=now - 10,
+        )
+    )
+    store.save(_sample_analysis("running-1", status="running", created_at=now))
+    sample = _sample_analysis()
+
+    assert store.reuse_cached_analysis(sample.repo, sample.sha, now=now) is None
+    assert store.get_analysis("running-1")["fromCache"] is False
+
+
 def test_not_ready_and_failed_analysis_lifecycle() -> None:
     store = SqliteGraphStore()
     store.save(_sample_analysis("queued-1", status="queued"))
