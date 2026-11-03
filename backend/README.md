@@ -509,6 +509,30 @@ checks the labels and reproduces the run against the recorded numbers in
 `benchmarks/measured_precision.json`. `benchmarks/README.md` has the
 per-repository table, the labeling rule, and what the misses show.
 
+## Import Classification Measurement (`benchmarks`)
+
+`benchmarks/import_classification.py` answers Risk 2 -- do resolved imports
+point where Python points? -- by scoring `classify_imports` against 85
+hand-labeled references across seven layouts in
+`tests/fixtures/import_classification/` (src layout, namespace packages,
+re-exports, relative imports, a module colliding with a same-named directory,
+monorepo source roots, and stdlib/third-party packages). The labels were
+written from Python's import rules and checked against `importlib`, not taken
+from RepoLens' output.
+
+```bash
+python -m benchmarks.import_classification            # print the table
+python -m benchmarks.import_classification --write    # refresh the record
+```
+
+Measured overall: **84 of 85 correct (98.8%), 3 unresolved (3.5%)**, against 4
+references that should be unresolved. The one miss is real and left failing:
+`import app.config.defaults` is a `ModuleNotFoundError` where `app/config.py`
+shadows `app/config/`, and the classifier reports an internal edge instead.
+`tests/test_import_classification.py` reproduces the run against
+`benchmarks/measured_classification.json`, and the fixture README has the
+per-layout table, the labeling rules, and what each layout covers.
+
 ## Tests
 
 Backend tests use [pytest](https://docs.pytest.org/). From `backend/`:

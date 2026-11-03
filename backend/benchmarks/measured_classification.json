@@ -1,0 +1,106 @@
+{
+  "overall": {
+    "title": "overall",
+    "labeledReferences": 85,
+    "correct": 84,
+    "percentCorrect": 98.8235,
+    "classifiedReferences": 85,
+    "unresolved": 3,
+    "percentUnresolved": 3.5294,
+    "labeledUnresolved": 4
+  },
+  "layouts": [
+    {
+      "layout": "external_packages",
+      "title": "external packages",
+      "labeledReferences": 17,
+      "correct": 17,
+      "percentCorrect": 100.0,
+      "classifiedReferences": 17,
+      "unresolved": 0,
+      "percentUnresolved": 0.0,
+      "labeledUnresolved": 0
+    },
+    {
+      "layout": "module_directory_collision",
+      "title": "module/directory collision",
+      "labeledReferences": 11,
+      "correct": 10,
+      "percentCorrect": 90.9091,
+      "classifiedReferences": 11,
+      "unresolved": 0,
+      "percentUnresolved": 0.0,
+      "labeledUnresolved": 1
+    },
+    {
+      "layout": "monorepo_source_roots",
+      "title": "monorepo source roots",
+      "labeledReferences": 11,
+      "correct": 11,
+      "percentCorrect": 100.0,
+      "classifiedReferences": 11,
+      "unresolved": 0,
+      "percentUnresolved": 0.0,
+      "labeledUnresolved": 0
+    },
+    {
+      "layout": "namespace_packages",
+      "title": "namespace packages",
+      "labeledReferences": 11,
+      "correct": 11,
+      "percentCorrect": 100.0,
+      "classifiedReferences": 11,
+      "unresolved": 2,
+      "percentUnresolved": 18.1818,
+      "labeledUnresolved": 2
+    },
+    {
+      "layout": "reexports",
+      "title": "re-exports from __init__.py",
+      "labeledReferences": 11,
+      "correct": 11,
+      "percentCorrect": 100.0,
+      "classifiedReferences": 11,
+      "unresolved": 0,
+      "percentUnresolved": 0.0,
+      "labeledUnresolved": 0
+    },
+    {
+      "layout": "relative_imports",
+      "title": "relative imports",
+      "labeledReferences": 15,
+      "correct": 15,
+      "percentCorrect": 100.0,
+      "classifiedReferences": 15,
+      "unresolved": 1,
+      "percentUnresolved": 6.6667,
+      "labeledUnresolved": 1
+    },
+    {
+      "layout": "src_layout",
+      "title": "src layout",
+      "labeledReferences": 9,
+      "correct": 9,
+      "percentCorrect": 100.0,
+      "classifiedReferences": 9,
+      "unresolved": 0,
+      "percentUnresolved": 0.0,
+      "labeledUnresolved": 0
+    }
+  ],
+  "misses": [
+    {
+      "layout": "module_directory_collision",
+      "path": "main.py",
+      "rawName": "app.config.defaults",
+      "expected": {
+        "kind": "unresolved",
+        "target": null
+      },
+      "actual": {
+        "kind": "internal",
+        "target": "app/config/defaults.py"
+      }
+    }
+  ]
+}
