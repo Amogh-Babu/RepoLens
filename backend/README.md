@@ -277,6 +277,20 @@ names the SHA and a completed, unexpired analysis of the same commit is
 reused. Resolution failures are returned directly: `REPO_NOT_FOUND`,
 `REF_NOT_FOUND`, `REPO_EMPTY`, `RATE_LIMITED`, or `GITHUB_UNAVAILABLE`.
 
+### Caching
+
+Analyses are cached by `(repo, sha)` for 24 hours from when they were first
+run:
+
+- A second `POST /analyses` for the same repository and commit returns the
+  existing `analysisId` without downloading or parsing again, and that
+  analysis then reports `fromCache: true`. Reuse does not extend its expiry.
+- Until it is deleted, an expired analysis answers `410 ANALYSIS_EXPIRED` on
+  every endpoint, and is never reused.
+- Every `POST /analyses` first deletes expired analyses with
+  `SqliteGraphStore.evict_expired()`, so the next request for that commit
+  analyzes it again and the old ID answers `404 ANALYSIS_NOT_FOUND`.
+
 The remaining stages run on a background thread and are recorded on the
 analysis, which is what the frontend shows while it polls
 `GET /analyses/{id}`:

@@ -62,6 +62,16 @@ class FakeSource:
         return Snapshot(repo=repo_url, sha=sha, root=str(destination), files=files)
 
 
+class FakeClock:
+    """Stands in for the `time` module in the graph store."""
+
+    def __init__(self, now: float) -> None:
+        self.now = now
+
+    def time(self) -> float:
+        return self.now
+
+
 class ManualExecutor(Executor):
     """Holds submitted work until the test runs it, or runs it right away."""
 
@@ -175,6 +185,33 @@ def test_reuses_a_completed_analysis_of_the_same_commit(tmp_path: Path) -> None:
         "status": "completed",
     }
     assert len(source.destinations) == 1
+    assert client.get(f"/analyses/{first['analysisId']}").json()["fromCache"] is True
+
+
+def test_reanalyzes_and_deletes_the_cached_analysis_after_24_hours(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clock = FakeClock(1_700_000_000.0)
+    monkeypatch.setattr("repolens.graph.store.time", clock)
+    source = FakeSource()
+    client = _client(tmp_path, source=source)
+
+    first_id = client.post("/analyses", json={"url": REPO_URL}).json()["analysisId"]
+
+    clock.now += 24 * 60 * 60 - 1
+    reused = client.post("/analyses", json={"url": REPO_URL}).json()
+    assert reused["analysisId"] == first_id
+    assert len(source.destinations) == 1
+
+    clock.now += 1
+    second = client.post("/analyses", json={"url": REPO_URL}).json()
+
+    assert second["analysisId"] != first_id
+    assert len(source.destinations) == 2
+    assert client.get(f"/analyses/{first_id}").json()["code"] == "ANALYSIS_NOT_FOUND"
+    analysis = client.get(f"/analyses/{second['analysisId']}").json()
+    assert analysis["status"] == "completed"
+    assert analysis["fromCache"] is False
 
 
 def test_resolver_errors_are_returned_by_post(tmp_path: Path) -> None:

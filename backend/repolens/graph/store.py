@@ -358,6 +358,29 @@ class SqliteGraphStore:
         ).fetchone()
 
     @_locked
+    def reuse_cached_analysis(
+        self,
+        repo: str,
+        sha: str,
+        now: float | None = None,
+    ) -> sqlite3.Row | None:
+        """Find a cached analysis for (repo, sha) and mark it served from cache.
+
+        Returns None when there is no completed, non-expired analysis. Its
+        expiry is not extended, so a reused analysis still expires 24 hours
+        after it was first run.
+        """
+        row = self.find_cached_analysis(repo, sha, now=now)
+        if row is None:
+            return None
+        with self._conn:
+            self._conn.execute(
+                "UPDATE analyses SET from_cache = 1 WHERE id = ?;",
+                (row["id"],),
+            )
+        return row
+
+    @_locked
     def cancel_analysis(self, analysis_id: str) -> None:
         """Cancel a queued or running analysis."""
         row = self._get_valid_analysis_row(analysis_id, require_completed=False)

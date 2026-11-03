@@ -98,7 +98,7 @@ class PipelineAnalysisRunner:
         clean_ref = ref.strip() if ref and ref.strip() else None
         sha = self._resolver.resolve(repo_url, clean_ref)
 
-        cached = store.find_cached_analysis(repo_url, sha)
+        cached = store.reuse_cached_analysis(repo_url, sha)
         if cached is not None:
             return {
                 "analysisId": str(cached["id"]),
