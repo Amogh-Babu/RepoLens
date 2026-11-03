@@ -1,0 +1,463 @@
+{
+  "top_k": 5,
+  "overall": {
+    "queries": 19,
+    "precision": {
+      "repolens": 0.2105,
+      "grep": 0.0421,
+      "grep_ranked": 0.0526
+    },
+    "ideal_precision": 0.3263
+  },
+  "repos": [
+    {
+      "id": "search_mini_repo",
+      "indexed_files": 8,
+      "listed_files": 11,
+      "precision": {
+        "repolens": 0.1667,
+        "grep": 0.0333,
+        "grep_ranked": 0.0333
+      },
+      "ideal_precision": 0.2667,
+      "queries": [
+        {
+          "query": "login",
+          "relevant": [
+            "app/authentication/routes.py",
+            "app/authentication/service.py"
+          ],
+          "ideal_hits": 2,
+          "hits": {
+            "repolens": 2,
+            "grep": 0,
+            "grep_ranked": 0
+          },
+          "top": {
+            "repolens": [
+              "app/authentication/service.py",
+              "app/authentication/routes.py"
+            ],
+            "grep": [],
+            "grep_ranked": []
+          }
+        },
+        {
+          "query": "password verification",
+          "relevant": [
+            "app/authentication/service.py",
+            "app/users/repository.py"
+          ],
+          "ideal_hits": 2,
+          "hits": {
+            "repolens": 1,
+            "grep": 0,
+            "grep_ranked": 0
+          },
+          "top": {
+            "repolens": [
+              "app/authentication/service.py"
+            ],
+            "grep": [],
+            "grep_ranked": []
+          }
+        },
+        {
+          "query": "invoice total",
+          "relevant": [
+            "app/billing/service.py"
+          ],
+          "ideal_hits": 1,
+          "hits": {
+            "repolens": 1,
+            "grep": 0,
+            "grep_ranked": 0
+          },
+          "top": {
+            "repolens": [
+              "app/billing/service.py"
+            ],
+            "grep": [],
+            "grep_ranked": []
+          }
+        },
+        {
+          "query": "user account lookup",
+          "relevant": [
+            "app/users/repository.py"
+          ],
+          "ideal_hits": 1,
+          "hits": {
+            "repolens": 1,
+            "grep": 1,
+            "grep_ranked": 1
+          },
+          "top": {
+            "repolens": [
+              "app/users/repository.py",
+              "app/authentication/service.py",
+              "app/users/__init__.py",
+              "app/authentication/routes.py"
+            ],
+            "grep": [
+              "app/users/__init__.py",
+              "app/users/repository.py"
+            ],
+            "grep_ranked": [
+              "app/users/__init__.py",
+              "app/users/repository.py"
+            ]
+          }
+        },
+        {
+          "query": "http request handler",
+          "relevant": [
+            "app/authentication/routes.py"
+          ],
+          "ideal_hits": 1,
+          "hits": {
+            "repolens": 0,
+            "grep": 0,
+            "grep_ranked": 0
+          },
+          "top": {
+            "repolens": [],
+            "grep": [],
+            "grep_ranked": []
+          }
+        },
+        {
+          "query": "tax",
+          "relevant": [
+            "app/billing/service.py"
+          ],
+          "ideal_hits": 1,
+          "hits": {
+            "repolens": 0,
+            "grep": 0,
+            "grep_ranked": 0
+          },
+          "top": {
+            "repolens": [],
+            "grep": [],
+            "grep_ranked": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "analysis_mini_repo",
+      "indexed_files": 7,
+      "listed_files": 9,
+      "precision": {
+        "repolens": 0.1667,
+        "grep": 0.0,
+        "grep_ranked": 0.0
+      },
+      "ideal_precision": 0.2333,
+      "queries": [
+        {
+          "query": "invoice calculation",
+          "relevant": [
+            "app/services/billing.py"
+          ],
+          "ideal_hits": 1,
+          "hits": {
+            "repolens": 1,
+            "grep": 0,
+            "grep_ranked": 0
+          },
+          "top": {
+            "repolens": [
+              "app/services/billing.py"
+            ],
+            "grep": [],
+            "grep_ranked": []
+          }
+        },
+        {
+          "query": "tax rate",
+          "relevant": [
+            "app/services/billing.py",
+            "app/config.py"
+          ],
+          "ideal_hits": 2,
+          "hits": {
+            "repolens": 1,
+            "grep": 0,
+            "grep_ranked": 0
+          },
+          "top": {
+            "repolens": [
+              "app/services/billing.py"
+            ],
+            "grep": [],
+            "grep_ranked": []
+          }
+        },
+        {
+          "query": "configuration settings",
+          "relevant": [
+            "app/config.py"
+          ],
+          "ideal_hits": 1,
+          "hits": {
+            "repolens": 1,
+            "grep": 0,
+            "grep_ranked": 0
+          },
+          "top": {
+            "repolens": [
+              "app/config.py",
+              "app/compat.py"
+            ],
+            "grep": [],
+            "grep_ranked": []
+          }
+        },
+        {
+          "query": "command line arguments",
+          "relevant": [
+            "app/main.py"
+          ],
+          "ideal_hits": 1,
+          "hits": {
+            "repolens": 0,
+            "grep": 0,
+            "grep_ranked": 0
+          },
+          "top": {
+            "repolens": [],
+            "grep": [],
+            "grep_ranked": []
+          }
+        },
+        {
+          "query": "json encoding",
+          "relevant": [
+            "app/compat.py"
+          ],
+          "ideal_hits": 1,
+          "hits": {
+            "repolens": 1,
+            "grep": 0,
+            "grep_ranked": 0
+          },
+          "top": {
+            "repolens": [
+              "app/compat.py"
+            ],
+            "grep": [],
+            "grep_ranked": []
+          }
+        },
+        {
+          "query": "cache directory",
+          "relevant": [
+            "app/compat.py"
+          ],
+          "ideal_hits": 1,
+          "hits": {
+            "repolens": 1,
+            "grep": 0,
+            "grep_ranked": 0
+          },
+          "top": {
+            "repolens": [
+              "app/compat.py"
+            ],
+            "grep": [],
+            "grep_ranked": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "e2e_reference",
+      "indexed_files": 14,
+      "listed_files": 16,
+      "precision": {
+        "repolens": 0.2857,
+        "grep": 0.0857,
+        "grep_ranked": 0.1143
+      },
+      "ideal_precision": 0.4571,
+      "queries": [
+        {
+          "query": "login",
+          "relevant": [
+            "bookshop/auth/login.py",
+            "bookshop/auth/tokens.py",
+            "bookshop/catalog/models.py"
+          ],
+          "ideal_hits": 3,
+          "hits": {
+            "repolens": 1,
+            "grep": 1,
+            "grep_ranked": 1
+          },
+          "top": {
+            "repolens": [
+              "bookshop/auth/login.py",
+              "bookshop/auth/__init__.py"
+            ],
+            "grep": [
+              "bookshop/auth/login.py"
+            ],
+            "grep_ranked": [
+              "bookshop/auth/login.py"
+            ]
+          }
+        },
+        {
+          "query": "token verification",
+          "relevant": [
+            "bookshop/auth/tokens.py",
+            "bookshop/auth/login.py",
+            "bookshop/orders/checkout.py"
+          ],
+          "ideal_hits": 3,
+          "hits": {
+            "repolens": 3,
+            "grep": 1,
+            "grep_ranked": 1
+          },
+          "top": {
+            "repolens": [
+              "bookshop/auth/tokens.py",
+              "bookshop/auth/login.py",
+              "bookshop/orders/checkout.py",
+              "bookshop/auth/__init__.py",
+              "tests/test_checkout.py"
+            ],
+            "grep": [
+              "bookshop/auth/tokens.py"
+            ],
+            "grep_ranked": [
+              "bookshop/auth/tokens.py"
+            ]
+          }
+        },
+        {
+          "query": "cart total",
+          "relevant": [
+            "bookshop/orders/checkout.py",
+            "bookshop/catalog/models.py",
+            "tests/test_checkout.py"
+          ],
+          "ideal_hits": 3,
+          "hits": {
+            "repolens": 2,
+            "grep": 0,
+            "grep_ranked": 0
+          },
+          "top": {
+            "repolens": [
+              "bookshop/orders/checkout.py",
+              "tests/test_checkout.py"
+            ],
+            "grep": [],
+            "grep_ranked": []
+          }
+        },
+        {
+          "query": "book search by title",
+          "relevant": [
+            "bookshop/catalog/search.py",
+            "bookshop/catalog/models.py"
+          ],
+          "ideal_hits": 2,
+          "hits": {
+            "repolens": 2,
+            "grep": 0,
+            "grep_ranked": 1
+          },
+          "top": {
+            "repolens": [
+              "bookshop/catalog/models.py",
+              "bookshop/config.py",
+              "bookshop/catalog/search.py",
+              "bookshop/auth/tokens.py",
+              "bookshop/orders/checkout.py"
+            ],
+            "grep": [
+              "bookshop/__init__.py",
+              "bookshop/app.py",
+              "bookshop/auth/__init__.py",
+              "bookshop/auth/login.py",
+              "bookshop/auth/tokens.py"
+            ],
+            "grep_ranked": [
+              "bookshop/catalog/search.py",
+              "bookshop/__init__.py",
+              "bookshop/app.py",
+              "bookshop/auth/__init__.py",
+              "bookshop/auth/login.py"
+            ]
+          }
+        },
+        {
+          "query": "secret key",
+          "relevant": [
+            "bookshop/config.py",
+            "bookshop/auth/tokens.py"
+          ],
+          "ideal_hits": 2,
+          "hits": {
+            "repolens": 1,
+            "grep": 0,
+            "grep_ranked": 0
+          },
+          "top": {
+            "repolens": [
+              "bookshop/config.py"
+            ],
+            "grep": [],
+            "grep_ranked": []
+          }
+        },
+        {
+          "query": "command line entry point",
+          "relevant": [
+            "manage.py",
+            "bookshop/app.py"
+          ],
+          "ideal_hits": 2,
+          "hits": {
+            "repolens": 0,
+            "grep": 0,
+            "grep_ranked": 0
+          },
+          "top": {
+            "repolens": [],
+            "grep": [],
+            "grep_ranked": []
+          }
+        },
+        {
+          "query": "payments",
+          "relevant": [
+            "bookshop/legacy/payments.py"
+          ],
+          "ideal_hits": 1,
+          "hits": {
+            "repolens": 1,
+            "grep": 1,
+            "grep_ranked": 1
+          },
+          "top": {
+            "repolens": [
+              "bookshop/legacy/payments.py"
+            ],
+            "grep": [
+              "bookshop/legacy/payments.py"
+            ],
+            "grep_ranked": [
+              "bookshop/legacy/payments.py"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
