@@ -1,0 +1,33 @@
+{
+  "title": "external packages",
+  "summary": "Standard library and third-party imports that must stay external, including dotted names reported by their top-level package, beside a repository module that shadows a stdlib name and a package-local module named after one.",
+  "imports": {
+    "main.py": [
+      ["__future__", "external", "__future__"],
+      ["os.path", "external", "os"],
+      ["queue", "internal", "queue.py"],
+      ["sys", "external", "sys"],
+      ["xml.etree.ElementTree", "external", "xml"],
+      ["collections.abc", "external", "collections"],
+      ["requests", "external", "requests"],
+      ["flask", "external", "flask"],
+      ["sqlalchemy.orm", "external", "sqlalchemy"],
+      ["pkg.client", "internal", "pkg/client.py"]
+    ],
+    "pkg/__init__.py": [
+      ["pkg.client", "internal", "pkg/client.py"]
+    ],
+    "pkg/client.py": [
+      ["json", "external", "json"],
+      ["logging", "external", "logging"],
+      ["httpx", "external", "httpx"],
+      ["pkg.json", "internal", "pkg/json.py"]
+    ],
+    "pkg/json.py": [
+      ["json", "external", "json"]
+    ],
+    "queue.py": [
+      ["collections", "external", "collections"]
+    ]
+  }
+}

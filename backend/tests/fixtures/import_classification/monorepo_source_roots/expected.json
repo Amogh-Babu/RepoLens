@@ -1,0 +1,31 @@
+{
+  "title": "monorepo source roots",
+  "summary": "Two sibling checkouts that each hold their own `app` package, so an absolute import must resolve inside the importing tree.",
+  "imports": {
+    "service_a/app/__init__.py": [
+      ["app.config", "internal", "service_a/app/config.py"]
+    ],
+    "service_a/app/config.py": [
+      ["dataclasses", "external", "dataclasses"]
+    ],
+    "service_a/app/legacy.py": [
+      ["app.config", "internal", "service_a/app/config.py"]
+    ],
+    "service_a/main.py": [
+      ["logging", "external", "logging"],
+      ["app.legacy", "internal", "service_a/app/legacy.py"],
+      ["app.config", "internal", "service_a/app/config.py"]
+    ],
+    "service_b/app/__init__.py": [
+      ["app.config", "internal", "service_b/app/config.py"]
+    ],
+    "service_b/app/config.py": [
+      ["dataclasses", "external", "dataclasses"]
+    ],
+    "service_b/main.py": [
+      ["logging", "external", "logging"],
+      ["app.legacy", "internal", "service_b/app/__init__.py"],
+      ["app.config", "internal", "service_b/app/config.py"]
+    ]
+  }
+}

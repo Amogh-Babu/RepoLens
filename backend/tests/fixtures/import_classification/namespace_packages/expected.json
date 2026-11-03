@@ -1,0 +1,25 @@
+{
+  "title": "namespace packages",
+  "summary": "PEP 420 namespace packages with no __init__.py anywhere, so every directory looks like a source root.",
+  "imports": {
+    "main.py": [
+      ["logging", "external", "logging"],
+      ["telemetry.metrics.collector", "internal", "telemetry/metrics/collector.py"],
+      ["telemetry.transport.rest", "internal", "telemetry/transport/rest.py"]
+    ],
+    "telemetry/metrics/collector.py": [
+      ["collections", "external", "collections"],
+      [".exporter", "internal", "telemetry/metrics/exporter.py"]
+    ],
+    "telemetry/metrics/exporter.py": [
+      ["json", "external", "json"],
+      ["telemetry.transport.rest", "internal", "telemetry/transport/rest.py"]
+    ],
+    "telemetry/transport/rest.py": [
+      ["urllib.request", "external", "urllib"],
+      ["requests", "external", "requests"],
+      ["telemetry.metrics", "unresolved", null],
+      ["telemetry.transport", "unresolved", null]
+    ]
+  }
+}

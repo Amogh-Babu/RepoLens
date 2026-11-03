@@ -1,0 +1,30 @@
+{
+  "title": "module/directory collision",
+  "summary": "app/config.py beside app/config/ (module wins over a namespace portion) and app/models.py beside app/models/__init__.py (package wins over module).",
+  "imports": {
+    "app/__init__.py": [
+      ["app.config", "internal", "app/config.py"],
+      ["app.models", "internal", "app/models/__init__.py"]
+    ],
+    "app/config.py": [
+      ["os", "external", "os"]
+    ],
+    "app/config/defaults.py": [],
+    "app/models.py": [
+      ["dataclasses", "external", "dataclasses"]
+    ],
+    "app/models/__init__.py": [
+      [".user", "internal", "app/models/user.py"]
+    ],
+    "app/models/user.py": [
+      ["dataclasses", "external", "dataclasses"],
+      ["app.config", "internal", "app/config.py"]
+    ],
+    "main.py": [
+      ["logging", "external", "logging"],
+      ["app.config.defaults", "unresolved", null],
+      ["app.config", "internal", "app/config.py"],
+      ["app.models.user", "internal", "app/models/user.py"]
+    ]
+  }
+}

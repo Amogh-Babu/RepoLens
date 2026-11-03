@@ -1,0 +1,25 @@
+{
+  "title": "src layout",
+  "summary": "A package under src/, imported absolutely from inside src/ and from a sibling tests/ tree.",
+  "imports": {
+    "src/shopfront/__init__.py": [
+      ["shopfront.catalog.items", "internal", "src/shopfront/catalog/items.py"],
+      ["shopfront.config", "internal", "src/shopfront/config.py"]
+    ],
+    "src/shopfront/catalog/__init__.py": [
+      [".items", "internal", "src/shopfront/catalog/items.py"]
+    ],
+    "src/shopfront/catalog/items.py": [
+      ["dataclasses", "external", "dataclasses"],
+      ["shopfront.config", "internal", "src/shopfront/config.py"]
+    ],
+    "src/shopfront/config.py": [
+      ["os", "external", "os"],
+      ["dataclasses", "external", "dataclasses"]
+    ],
+    "tests/test_catalog.py": [
+      ["shopfront.catalog.items", "internal", "src/shopfront/catalog/items.py"],
+      ["shopfront.config", "internal", "src/shopfront/config.py"]
+    ]
+  }
+}

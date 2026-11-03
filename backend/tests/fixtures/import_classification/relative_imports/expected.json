@@ -1,0 +1,35 @@
+{
+  "title": "relative imports",
+  "summary": "Relative imports at depth 1, 2, and 3, including `from . import <submodule>`, `from .. import <submodule>`, and one that points at no file.",
+  "imports": {
+    "store/__init__.py": [
+      [".orders.cart", "internal", "store/orders/cart.py"]
+    ],
+    "store/config.py": [
+      ["os", "external", "os"],
+      ["pathlib", "external", "pathlib"]
+    ],
+    "store/orders/__init__.py": [
+      [".cart", "internal", "store/orders/cart.py"]
+    ],
+    "store/orders/cart.py": [
+      ["decimal", "external", "decimal"],
+      [".pricing", "internal", "store/orders/pricing.py"],
+      ["..config", "internal", "store/config.py"],
+      [".discounts.coupons", "internal", "store/orders/discounts/coupons.py"]
+    ],
+    "store/orders/discounts/__init__.py": [
+      [".coupons", "internal", "store/orders/discounts/coupons.py"]
+    ],
+    "store/orders/discounts/coupons.py": [
+      ["decimal", "external", "decimal"],
+      ["..pricing", "internal", "store/orders/pricing.py"],
+      ["...config", "internal", "store/config.py"]
+    ],
+    "store/orders/pricing.py": [
+      ["decimal", "external", "decimal"],
+      ["..config", "internal", "store/config.py"],
+      [".missing_tax_table", "unresolved", null]
+    ]
+  }
+}
