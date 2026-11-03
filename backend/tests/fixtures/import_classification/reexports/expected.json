@@ -1,0 +1,29 @@
+{
+  "title": "re-exports from __init__.py",
+  "summary": "A package whose __init__.py re-exports names its submodules define, imported both as re-exports and as submodules.",
+  "imports": {
+    "consumer.py": [
+      ["library.core", "internal", "library/core/__init__.py"]
+    ],
+    "library/__init__.py": [
+      ["library.core", "internal", "library/core/__init__.py"],
+      ["library.plugins", "internal", "library/plugins/__init__.py"]
+    ],
+    "library/core/__init__.py": [
+      [".engine", "internal", "library/core/engine.py"],
+      [".registry", "internal", "library/core/registry.py"]
+    ],
+    "library/core/engine.py": [
+      ["__future__", "external", "__future__"],
+      ["threading", "external", "threading"],
+      ["library.core.registry", "internal", "library/core/registry.py"]
+    ],
+    "library/core/registry.py": [
+      ["collections.abc", "external", "collections"]
+    ],
+    "library/plugins/__init__.py": [
+      ["library.core", "internal", "library/core/__init__.py"],
+      ["library.core.engine", "internal", "library/core/engine.py"]
+    ]
+  }
+}
