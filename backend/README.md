@@ -394,6 +394,26 @@ curl 'http://127.0.0.1:8000/analyses/mini-repo-fixture/search?q=authentication'
 The fixture queries and expected orders are in
 `backend/tests/fixtures/search_mini_repo/search_cases.json`.
 
+## Search Precision Measurement (`benchmarks`)
+
+`benchmarks/search_precision.py` answers Risk 1 -- does RepoLens search beat
+grep? -- on 19 hand-labeled queries over three fixture repositories
+(`labeled_queries.json`), and compares top-5 precision with a grep filename
+baseline. RepoLens is measured through its production path: parse, classify,
+store, then search the store, so the measurement sees the documents the API
+serves rather than a hand-written index.
+
+```bash
+python -m benchmarks.search_precision            # print the comparison table
+python -m benchmarks.search_precision --write    # refresh measured_precision.json
+```
+
+Measured top-5 precision, overall: **RepoLens 0.211, grep 0.042**, against an
+ideal ceiling of 0.326 for these labels. `tests/test_search_precision.py`
+checks the labels and reproduces the run against the recorded numbers in
+`benchmarks/measured_precision.json`. `benchmarks/README.md` has the
+per-repository table, the labeling rule, and what the misses show.
+
 ## Tests
 
 Backend tests use [pytest](https://docs.pytest.org/). From `backend/`:
