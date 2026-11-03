@@ -24,6 +24,7 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 import re
+import subprocess
 import sys
 
 from repolens.analysis import AnalysisService, classify_imports, to_analyzed_files
@@ -53,12 +54,13 @@ SYSTEM_LABELS = {
 # two stay in agreement.
 _TOKEN_PATTERN = re.compile(r"[\w]+", re.UNICODE)
 
-# Directories a `git ls-files` listing would never contain.
-_UNLISTED_DIRECTORY_NAMES = frozenset({".git", ".hg", ".svn", "__pycache__"})
-
 _ANALYSIS_ID = "precision-benchmark"
 _BENCHMARK_REPO_URL = "https://github.com/repolens/benchmark"
 _SHA = "0" * 40
+
+
+class TrackedFilesUnavailableError(RuntimeError):
+    """Raised when git cannot list the tracked files the baseline greps."""
 
 
 @dataclass(frozen=True)
@@ -218,15 +220,33 @@ def repolens_top_paths(
 
 
 def list_repository_paths(root: Path) -> tuple[str, ...]:
-    """List every file in the tree, sorted, the way `git ls-files` would."""
-    paths = [
-        path.relative_to(root).as_posix()
-        for path in root.rglob("*")
-        if path.is_file()
-        and not path.is_symlink()
-        and _UNLISTED_DIRECTORY_NAMES.isdisjoint(path.relative_to(root).parts)
-    ]
-    return tuple(sorted(paths))
+    """List the files the repository tracks under `root`, sorted.
+
+    This runs `git ls-files`, which is the listing the baseline greps. Walking
+    the directory instead would hand grep whatever else happens to sit in the
+    working tree -- an ignored cache, a `.DS_Store`, a local scratch file --
+    so a filename nobody committed could change the baseline's matches and the
+    recorded `listed_files` count. Tracked files are the same for everyone who
+    checks out the commit, which is what makes the measurement reproducible.
+
+    Raises:
+      TrackedFilesUnavailableError: git could not list `root`, so the file set
+        the baseline searches is unknown.
+    """
+    try:
+        listed = subprocess.run(
+            ("git", "-C", str(root), "ls-files", "-z"),
+            capture_output=True,
+            check=True,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise TrackedFilesUnavailableError(
+            f"Could not list the files git tracks under {root}. The grep "
+            "baseline greps a `git ls-files` listing, so this measurement "
+            "needs a git checkout of the repository."
+        ) from error
+    paths = listed.decode("utf-8").split("\0")
+    return tuple(sorted(path for path in paths if path))
 
 
 def grep_matches(paths: Iterable[str], query: str) -> tuple[str, ...]:

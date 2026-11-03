@@ -84,9 +84,13 @@ git ls-files | grep -i -E 'term1|term2'
 
 A path matches when any query term is a case-insensitive substring of it,
 directories included, and the matches stay in the sorted listing order grep
-was given. grep sees *every* file in the tree (11, 9, and 16 files, against
-the 8, 7, and 14 RepoLens indexes), including the Markdown and
-`requirements.txt` files RepoLens cannot analyze.
+was given. The listing really is `git ls-files`: taking the repository's
+tracked files rather than walking the directory keeps ignored and untracked
+working-tree files -- a `.DS_Store`, a cache, a local scratch file -- from
+changing what the baseline matches, so the recorded numbers do not depend on
+whose checkout the measurement ran in. grep sees *every* file the repository
+tracks (11, 9, and 16 files, against the 8, 7, and 14 RepoLens indexes),
+including the Markdown and `requirements.txt` files RepoLens cannot analyze.
 
 **grep+rank** is the same matches with the cheapest possible ranking added:
 sort by how many query terms the path contains, then by path. Plain grep

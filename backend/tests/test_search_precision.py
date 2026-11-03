@@ -13,6 +13,8 @@ Refresh the recorded numbers deliberately, from `backend/`:
 """
 
 from collections.abc import Iterator
+from pathlib import Path
+import subprocess
 
 import pytest
 
@@ -24,6 +26,7 @@ from benchmarks.search_precision import (
     LabeledQuery,
     Measurement,
     RepoQuerySet,
+    TrackedFilesUnavailableError,
     baseline_top_paths,
     build_search_service,
     format_report,
@@ -101,6 +104,31 @@ def test_the_baseline_searches_for_the_same_terms_as_repolens(query: str) -> Non
     service's tokenization ever changes.
     """
     assert query_terms(query) == SearchService._parse_query(query)
+
+
+def test_the_file_list_holds_only_the_files_git_tracks(tmp_path: Path) -> None:
+    """Untracked and ignored working-tree files must not reach the baseline.
+
+    Listing the directory instead would let a `.DS_Store`, a cache, or any
+    local scratch file change what grep matches and how many files it was
+    given, which would make the recorded measurement depend on whose checkout
+    it ran in.
+    """
+    subprocess.run(("git", "init", "-q", str(tmp_path)), check=True)
+    (tmp_path / ".gitignore").write_text("ignored.py\n", encoding="utf-8")
+    for name in ("tracked.py", "ignored.py", "untracked.py"):
+        (tmp_path / name).touch()
+    subprocess.run(
+        ("git", "-C", str(tmp_path), "add", ".gitignore", "tracked.py"), check=True
+    )
+
+    assert list_repository_paths(tmp_path) == (".gitignore", "tracked.py")
+
+
+def test_a_tree_outside_a_git_checkout_fails_loudly(tmp_path: Path) -> None:
+    """Falling back to a directory walk would silently change the file set."""
+    with pytest.raises(TrackedFilesUnavailableError):
+        list_repository_paths(tmp_path / "not-a-checkout")
 
 
 def test_the_grep_baseline_matches_terms_against_the_whole_path() -> None:
