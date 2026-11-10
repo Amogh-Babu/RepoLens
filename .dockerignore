@@ -1,0 +1,17 @@
+# Keep the build context small and free of local state. Patterns without a
+# leading `**/` match at the repository root only, so test fixtures (which
+# include README.md files on purpose) are still sent.
+.git
+.github
+.claude
+.venv
+docs
+*.md
+**/__pycache__
+**/.pytest_cache
+**/*.pyc
+**/node_modules
+frontend/dist
+**/.env
+**/.env.*
+!**/.env.example

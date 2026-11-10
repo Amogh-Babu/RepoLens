@@ -19,117 +19,113 @@ RepoLens is a web-based code exploration platform designed to help developers on
 ├── frontend/          # Web user interface (React 19, TypeScript, Vite, React Flow, Vitest)
 ├── backend/           # API server, GitHub ingestion, AST analysis, graph store, and search (Python / FastAPI / SQLite)
 ├── docs/              # Living document snapshots, specifications, and architecture diagrams
-├── .github/           # Issue templates, PR templates, and GitHub Actions CI workflows
-├── Makefile           # Automated one-command setup, build, test, and run targets
+├── .github/           # Issue templates, PR templates, and GitHub Actions CI/CD workflows
+├── Dockerfile         # The whole app (frontend + backend) in one pinned image
+├── compose.yaml       # `docker compose up` runs it on http://localhost:8000
+├── .python-version    # The Python version the image and CI use (3.12)
+├── .nvmrc             # The Node.js version the image and CI use (22)
+├── Makefile           # Optional shortcuts for developers on macOS/Linux
 └── README.md          # Project overview and instructions for building, testing, and running
 ```
 
 ---
 
-## Prerequisites
+## Run RepoLens (Docker, one command)
 
-* **Python**: `3.11` or newer (tested on Python 3.11, 3.12, and 3.13)
-* **Node.js**: `22` or newer (includes `npm`)
-* **Make**: GNU Make (standard on macOS and Linux; Windows users can run the manual commands listed below or use WSL)
+The only thing you need installed is **Docker** (Docker Desktop on macOS and
+Windows, or Docker Engine with the Compose plugin on Linux). You do not need
+Python, Node.js, `make`, or a virtual environment: the image carries its own
+pinned versions of everything.
 
----
-
-## How to Build the System
-
-### Automated Build (One Command)
-
-From the repository root, run:
+From the repository root:
 
 ```bash
-make build
+docker compose up --build
 ```
 
-This command automatically:
-1. Creates a Python virtual environment at `.venv/` (if not already present).
-2. Installs backend runtime and test dependencies from [`backend/requirements-dev.txt`](backend/requirements-dev.txt).
-3. Installs frontend dependencies cleanly via `npm --prefix frontend ci`.
-4. Verifies backend Python compilation and builds the production frontend bundle (`tsc -b && vite build`) into `frontend/dist/`.
+Then open **http://localhost:8000**. The first build takes a few minutes; later
+starts take seconds. Analyses are kept in a Docker volume, so they survive
+restarts until they expire after 24 hours. Press `Ctrl+C` to stop.
 
-### Manual Build Steps (Without `make`)
-
-```bash
-# 1. Backend setup
-python3 -m venv .venv
-.venv/bin/pip install -r backend/requirements-dev.txt
-
-# 2. Frontend setup & production build
-cd frontend
-npm ci
-npm run build
-cd ..
-```
-
----
-
-## How to Test the System
-
-### Automated Test Suite (One Command)
-
-After running `make build` (or `make setup`), run the entire backend and frontend verification suite from the repository root:
-
-```bash
-make test
-```
-
-`make test` runs:
-* **Backend (`make test-backend`)**: `pytest` across all unit, integration, and end-to-end reference repository tests in `backend/tests/`.
-* **Frontend (`make test-frontend`)**: ESLint (`npm run lint`), Prettier formatting check (`npm run format:check`), TypeScript compiler check (`npm run typecheck`), and the Vitest unit/component test suite (`npm test`).
-
-### Running Individual Test Suites
-
-| Part | Framework | Automated (`make`) | Manual command (from repo root) | Add a test |
-| --- | --- | --- | --- | --- |
-| **Backend** | `pytest` | `make test-backend` | `.venv/bin/pytest -c backend/pyproject.toml backend/tests` | Add `backend/tests/test_<feature>.py` with `test_*` functions |
-| **Frontend** | `Vitest` + React Testing Library | `make test-frontend` | `cd frontend && npm test` | Add `<Component>.test.tsx` or `<module>.test.ts` next to the code under test |
-
----
-
-## How to Run the System
-
-### Option 1: Single-Command Full-Stack Launch (`make run`)
-
-From the repository root (after `make build` or `make setup`), start both the FastAPI backend and the Vite frontend dev server together:
-
-```bash
-make run
-```
-
-* **Frontend UI**: Open **http://localhost:5173** in your browser.
-* **Backend API & OpenAPI Docs**: Running at **http://127.0.0.1:8000** (interactive Swagger UI at **http://127.0.0.1:8000/docs**).
-* The Vite dev server automatically proxies `/api/*` requests to `http://127.0.0.1:8000`.
-* Press `Ctrl+C` to stop both servers cleanly.
-
-### Option 2: Run Backend and Frontend in Separate Terminals
-
-**Terminal 1 — Start the FastAPI Backend (`http://127.0.0.1:8000`):**
-
-```bash
-make run-backend
-# Or manually:
-PYTHONPATH=backend .venv/bin/uvicorn repolens.api.app:app --app-dir backend --host 127.0.0.1 --port 8000 --reload
-```
-
-**Terminal 2 — Start the React Frontend (`http://localhost:5173`):**
-
-```bash
-make run-frontend
-# Or manually:
-cd frontend && npm run dev
-```
+* To use the image published by CI instead of building it:
+  `docker compose pull && docker compose up`.
+* Optional: set `GITHUB_TOKEN` in your shell before starting to raise GitHub's
+  API limit of 60 requests an hour (`GITHUB_TOKEN=... docker compose up`).
+* The API and its health check live under `/api` (for example
+  `http://localhost:8000/api/health`).
 
 ### Using RepoLens in the Browser
 
-1. Open **http://localhost:5173**.
+1. Open **http://localhost:8000** (or **http://localhost:5173** when running the development servers below).
 2. Paste any public Python GitHub repository URL (for example, `https://github.com/pallets/itsdangerous` or `https://github.com/pallets/click`) and optionally specify a branch, tag, or commit SHA.
 3. Click **Analyze** to download, filter, parse, and store the repository's dependency graph.
 4. Explore the **File Explorer**, click module groups on the **Interactive Dependency Map** to inspect file relationships and open pinned GitHub source links, or describe what you are looking for in the **Search Bar** (a feature name or a plain question such as "where do I check if a signature expired") to get a ranked reading order with explanations.
 
-*(Optional: To run the frontend against offline mock fixture data without starting the backend, set `VITE_API_MODE=mock` in `frontend/.env.local`. See [`frontend/README.md`](frontend/README.md) and [`backend/README.md`](backend/README.md) for component-specific options.)*
+---
+
+## Develop RepoLens
+
+### Prerequisites
+
+* **Python 3.11 or newer.** The pinned version in [`.python-version`](.python-version) (3.12) is what the image and CI use; CI also runs the suite on 3.11 and the newest Python release.
+* **[uv](https://docs.astral.sh/uv/getting-started/installation/)** to install the backend's locked dependencies. uv also downloads the pinned Python for you if it is missing, so you do not need `venv` or a system Python.
+* **Node.js 22** (see [`.nvmrc`](.nvmrc)) with `npm`.
+* `make` is optional; every step below is a plain command.
+
+### Install
+
+```bash
+cd backend && uv sync --locked && cd ..
+```
+
+```bash
+npm --prefix frontend ci
+```
+
+`uv sync --locked` creates `backend/.venv` with exactly the versions in
+[`backend/uv.lock`](backend/uv.lock). Without uv,
+`python -m pip install -r backend/requirements-dev.txt` installs the same
+pinned versions (the file is exported from the lockfile and checked in CI).
+
+### Run the Development Servers
+
+Run the backend and the frontend in two terminals:
+
+```bash
+cd backend && uv run uvicorn repolens.api.app:app --reload --port 8000
+```
+
+```bash
+npm --prefix frontend run dev
+```
+
+Open **http://localhost:5173**. The Vite dev server proxies `/api/*` to the
+backend on port 8000, and the API's interactive docs are at
+**http://127.0.0.1:8000/docs**. (On macOS/Linux, `make run` starts both.)
+
+*(To run the frontend against offline mock data without the backend, set
+`VITE_API_MODE=mock` in `frontend/.env.local`. See
+[`frontend/README.md`](frontend/README.md) and
+[`backend/README.md`](backend/README.md) for component-specific options.)*
+
+### Test
+
+| Part | Framework | Command (from the repository root) | Add a test |
+| --- | --- | --- | --- |
+| **Backend** | `pytest` | `cd backend && uv run pytest` | Add `backend/tests/test_<feature>.py` with `test_*` functions |
+| **Frontend** | `Vitest` + React Testing Library | `npm --prefix frontend test` (also `run lint`, `run format:check`, `run typecheck`) | Add `<Component>.test.tsx` or `<module>.test.ts` next to the code under test |
+| **Image** | `pytest` inside Docker | `docker build --target test .` | Runs the backend suite in the exact production environment |
+
+### Update Dependencies
+
+Backend dependencies are locked. To upgrade them, move `exclude-newer` in
+[`backend/pyproject.toml`](backend/pyproject.toml) to a recent date (keep it a
+couple of weeks in the past), then run `uv lock` and re-export the
+requirements files:
+
+```bash
+cd backend && uv lock && uv export --locked --no-dev --format requirements-txt --no-emit-project -o requirements.txt && uv export --locked --format requirements-txt --no-emit-project -o requirements-dev.txt
+```
 
 ---
 
@@ -142,7 +138,7 @@ First-version implementations of all major system components (**React Frontend**
 ### 1. Use Case 1: Analyze a Public Repository by URL and Commit *(Operational — Prototype)*
 * **Components Touched**: React Landing Page (`RepoInputForm`) $\rightarrow$ FastAPI (`POST /analyses`, `GET /analyses/{id}`) $\rightarrow$ GitHub Ref Resolver & Archive Fetcher (`repolens.ingestion`) $\rightarrow$ Auto-generated/Vendored File Filter $\rightarrow$ Python AST Parser & Import Classifier (`repolens.analysis`) $\rightarrow$ SQLite Graph Store (`repolens.graph`) $\rightarrow$ Frontend Summary Bar, File Explorer, and Dependency Map.
 * **How to Verify**:
-  1. Run `make run` and open **http://localhost:5173**.
+  1. Run `docker compose up --build` and open **http://localhost:8000** (or start the development servers and open **http://localhost:5173**).
   2. Enter a public Python repository URL (e.g., `https://github.com/pallets/itsdangerous`) and click **Analyze**.
   3. Observe the pipeline stage indicator (`resolving` $\rightarrow$ `downloading` $\rightarrow$ `filtering` $\rightarrow$ `parsing` $\rightarrow$ `classifying` $\rightarrow$ `storing`) and the resulting summary bar (analyzed, excluded, and unparsed file counts), file explorer tree, and module dependency map.
 
@@ -168,14 +164,15 @@ Because this is an initial end-to-end prototype, several areas are still being h
 
 ---
 
-## Continuous Integration
+## Continuous Integration and Delivery
 
-GitHub Actions runs both suites automatically via workflows in [`.github/workflows/`](.github/workflows/):
+GitHub Actions workflows live in [`.github/workflows/`](.github/workflows/):
 
-* [`backend.yml`](.github/workflows/backend.yml) runs `pytest` on Python 3.11, 3.12, and 3.13, plus a dedicated end-to-end job that runs the full pipeline on a hand-written reference repository and compares the results against expected output.
-* [`frontend.yml`](.github/workflows/frontend.yml) runs ESLint, Prettier, the TypeScript typecheck, Vitest, and the production build on Node 22.
+* [`backend.yml`](.github/workflows/backend.yml) checks that `backend/uv.lock` and the exported requirements files are current, runs `pytest` on the pinned Python from `.python-version` with the locked dependencies, runs a compatibility job on Python 3.11 (the minimum) and the newest Python release, and runs a dedicated end-to-end job that runs the full pipeline on a hand-written reference repository and compares the results against expected output.
+* [`frontend.yml`](.github/workflows/frontend.yml) runs ESLint, Prettier, the TypeScript typecheck, Vitest, and the production build on the Node version in `.nvmrc`.
+* [`release.yml`](.github/workflows/release.yml) builds the Docker image, runs the backend suite inside it, starts the container and smoke-tests the UI and API, and on `main` publishes it to `ghcr.io/amogh-babu/repolens` (`:latest` and the commit SHA). If the repository has a `DEPLOY_HOOK_URL` secret (for example a Render deploy hook), it then redeploys the hosted demo.
 
-Each workflow runs automatically on pull requests and on pushes to `main` that modify its part of the repository, and can also be triggered manually from the GitHub Actions tab (**Run workflow**).
+The backend and frontend workflows run on pull requests and on pushes to `main` that modify their part of the repository; the release workflow runs on every push to `main` and on pull requests that change the image. All of them can also be started from the Actions tab (**Run workflow**).
 
 ---
 

@@ -386,15 +386,39 @@ error shape:
   non-integer or out-of-range value is `422 INVALID_REQUEST`.
 - `q` is a string of at most 200 characters with at least one word.
 
-Run the main backend server locally from the repository root:
+`GET /health` answers `{"status": "ok"}` while the graph store responds, and
+`503 UNHEALTHY` otherwise; the Docker image's health check uses it.
+
+Run the development API server (from `backend/`, after `uv sync --locked`):
 
 ```bash
-PYTHONPATH=backend python3 -m uvicorn repolens.api.app:app --app-dir backend --reload
+uv run uvicorn repolens.api.app:app --reload --port 8000
 ```
 
-The server keeps analyses in an in-memory SQLite database, so restarting it
-clears them. Set `GITHUB_TOKEN` to raise GitHub's anonymous API limit of 60
+The development server keeps analyses in an in-memory SQLite database, so
+restarting it clears them, and it allows cross-origin requests from any
+origin. Set `GITHUB_TOKEN` to raise GitHub's anonymous API limit of 60
 requests an hour; the token is only sent to `api.github.com`.
+
+### Production Server (`repolens.api.server`)
+
+`repolens.api.server:app` is what the Docker image runs. It mounts the API
+under `/api` and serves the built frontend (`frontend/dist`) at `/` from the
+same origin, falling back to `index.html` for client-side routes such as
+`/analysis/<id>`. Fingerprinted files under `/assets` are served with
+`Cache-Control: immutable`, and `index.html` with `no-cache`. It is configured
+by environment variables:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `REPOLENS_DB_PATH` | in memory | SQLite file for the graph store; the image uses `/data/repolens.db` on a volume, so analyses survive restarts until they expire |
+| `REPOLENS_FRONTEND_DIR` | unset (API only) | The built frontend to serve; the image uses `/app/frontend/dist` |
+| `REPOLENS_CORS_ORIGINS` | none | Comma-separated origins allowed to call the API cross-origin |
+| `GITHUB_TOKEN` | unset | Raises GitHub's API rate limit |
+
+A file-backed store uses write-ahead logging. Its schema version is checked
+on startup, and a database written by another version is rebuilt empty (see
+[Types and Constraints](#types-and-constraints)).
 
 ## Analysis Pipeline (`repolens.pipeline`)
 
@@ -515,10 +539,10 @@ orders for representative queries. Its Python source is not executed. The
 fixture index is a stand-in for the future analyzer/graph adapter, so this
 demo exercises real HTTP/API/search behavior but does not ingest a Git repo.
 
-Install backend and development dependencies from the repository root:
+Install backend and development dependencies (from `backend/`):
 
 ```bash
-python3 -m pip install -r backend/requirements-dev.txt
+uv sync --locked
 ```
 
 Start the demo server:
@@ -585,9 +609,12 @@ per-layout table, the labeling rules, and what each layout covers.
 Backend tests use [pytest](https://docs.pytest.org/). From `backend/`:
 
 ```bash
-python -m pip install -r requirements-dev.txt
-python -m pytest
+uv sync --locked
+uv run pytest
 ```
+
+(Without uv, `python -m pip install -r requirements-dev.txt` installs the
+same pinned versions, and `python -m pytest` runs the suite.)
 
 `pyproject.toml` puts `backend/` on the import path and points pytest at
 `tests/`, so no `PYTHONPATH` is needed. Run one file with
@@ -597,8 +624,9 @@ To add a test, create `tests/test_<feature>.py` and write functions named
 `test_*` that use plain `assert`. Shared fixtures live in `tests/conftest.py`;
 `test_search_scoring.py` is a short example. Existing `unittest.TestCase`
 classes also run under pytest unchanged. The Backend GitHub Actions workflow
-runs the suite on Python 3.11, 3.12, and 3.13 for every pull request that
-touches `backend/`.
+runs the suite for every pull request that touches `backend/`: on the pinned
+Python from `../.python-version` with the locked dependencies, and in a
+compatibility job on Python 3.11 (the minimum) and the newest Python release.
 
 ### End-to-end test
 
@@ -608,7 +636,7 @@ the HTTP API, with only GitHub's network transport faked. It compares the
 summary, graph, every file's symbols and imports, and the reading order of
 several searches with the hand-written `expected.json`, so drift between
 ingestion, analysis, the graph store, and search fails CI. CI runs it as its own
-"End-to-end (reference repo)" job; the matrix job skips it with
+"End-to-end (reference repo)" job; the other jobs skip it with
 `-m "not e2e"`. Locally, `python -m pytest` runs everything and
 `python -m pytest -m e2e` runs only this test. The fixture's README lists the
 cases it covers and how to update the expectations.
