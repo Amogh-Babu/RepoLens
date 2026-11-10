@@ -1,14 +1,31 @@
 """HTTP payload serializers and FastAPI route wiring for graph endpoints."""
 
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Path
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from repolens.graph.models import DependencyGraph, FileDetail, ImportKind, SymbolKind
 from repolens.graph.ports import GraphStore
 from repolens.graph.store import GraphStoreError
+
+
+# Analysis ids are generated as `analysis-<12 hex digits>`; anything that is
+# not a short slug cannot name an analysis, so it is rejected before the store
+# is queried.
+ANALYSIS_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_-]*$"
+ANALYSIS_ID_MAX_LENGTH = 64
+
+AnalysisIdPath = Annotated[
+    str,
+    Path(
+        pattern=ANALYSIS_ID_PATTERN,
+        max_length=ANALYSIS_ID_MAX_LENGTH,
+        description="Analysis id returned by POST /analyses.",
+        examples=["analysis-3f9c2a1b7d4e"],
+    ),
+]
 
 
 class ModuleGroupResponse(BaseModel):
@@ -143,7 +160,7 @@ def create_graph_router(store: GraphStore) -> APIRouter:
         response_model=DependencyGraphResponse,
         summary="Get the dependency graph for an analyzed repository",
     )
-    def read_graph(analysis_id: str) -> Any:
+    def read_graph(analysis_id: AnalysisIdPath) -> Any:
         try:
             return get_graph_response(store, analysis_id)
         except GraphStoreError as exc:
@@ -157,7 +174,7 @@ def create_graph_router(store: GraphStore) -> APIRouter:
         response_model=FileDetailResponse,
         summary="Get details for a single file in an analyzed repository",
     )
-    def read_file_detail(analysis_id: str, file_path: str) -> Any:
+    def read_file_detail(analysis_id: AnalysisIdPath, file_path: str) -> Any:
         try:
             return get_file_detail_response(store, analysis_id, file_path)
         except GraphStoreError as exc:

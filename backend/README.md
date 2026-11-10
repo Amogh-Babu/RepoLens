@@ -329,6 +329,24 @@ The mini repository used by the analyzer tests is
 
 All child tables cascade on `DELETE FROM analyses`, and indexes (`idx_analyses_repo_sha`, `idx_files_analysis_id`, `idx_symbols_file_id`, `idx_imports_file_id`, `idx_imports_target_file_id`, `idx_comments_file_id`, `idx_members_file_id`) accelerate neighbor lookups and cache checks.
 
+### Types and Constraints
+- Every table is `STRICT` (SQLite 3.37 or newer; older libraries fall back to
+  ordinary tables with the same constraints), so SQLite itself rejects a value
+  of the wrong type, such as text in `line_count`.
+- Columns with a fixed set of values carry a `CHECK` built from the matching
+  `Literal` in `repolens.graph.models`: `analyses.status` (`AnalysisStatus`),
+  `analyses.stage` (`AnalysisStage` or `NULL`), `symbols.kind`,
+  `imports.kind`, `comments.kind`, and `members.kind`. Adding a value to one of
+  those `Literal`s is enough to allow it in the database.
+- Booleans (`from_cache`, `parsed`) are `INTEGER` 0 or 1; counts, line
+  numbers, and `line_count` are non-negative `INTEGER`s; timestamps are `REAL`
+  POSIX seconds; ids, paths, and names are `TEXT`.
+- The schema version lives in `PRAGMA user_version` (`SCHEMA_VERSION` in
+  `repolens.graph.schema`). The store is a 24-hour cache, so there are no
+  migrations: opening a database written at another version drops its tables
+  and recreates them empty. Bump `SCHEMA_VERSION` whenever a table, column, or
+  constraint changes.
+
 ```python
 from repolens.graph import AnalysisRecord, AnalyzedFile, SqliteGraphStore
 from repolens.search import SearchService
@@ -356,6 +374,17 @@ results = SearchService(store).search("analysis-1", "main")
 - `GET /analyses/{analysis_id}/graph` — Returns `{modules, files, edges}` for the interactive dependency map (`repolens.graph.endpoints`).
 - `GET /analyses/{analysis_id}/files/{file_path:path}` — Returns `{path, module, parsed, lineCount, symbols, imports, importedBy, sourceUrl}` with pinned GitHub blob and `#L<line>` URLs.
 - `GET /analyses/{analysis_id}/search` — Queries `SearchService(store)` and returns ranked files with 1-based reading-order `position` and match line numbers.
+
+Parameters are typed, and every rejection uses the `{code, message, hint}`
+error shape:
+- `analysis_id` must be a slug of letters, digits, `-`, and `_`, starting with
+  a letter or digit, at most 64 characters (`AnalysisIdPath` in
+  `repolens.graph.endpoints`; ids are generated as `analysis-<12 hex digits>`).
+  Anything else cannot name an analysis, so it is answered with `404
+  ANALYSIS_NOT_FOUND` without querying the store or echoing the id.
+- `offset` is an integer `>= 0` and `limit` an integer from 1 to 100; a
+  non-integer or out-of-range value is `422 INVALID_REQUEST`.
+- `q` is a string of at most 200 characters with at least one word.
 
 Run the main backend server locally from the repository root:
 
