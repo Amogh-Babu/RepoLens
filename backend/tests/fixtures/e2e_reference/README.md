@@ -29,6 +29,8 @@ Nothing in `repo/` is ever imported or run, and pytest does not collect it
 | Non-Python files counted as excluded            | `README.md`, `requirements.txt`               |
 | Reading order following dependencies            | the `token` and `config` searches             |
 | Multi-word query                                | the `cart total` search                       |
+| Match on a dataclass field (class member)       | `User.cart` in the `cart total` search        |
+| Match on a docstring                            | `bookshop/auth/__init__.py` in the `token` search |
 
 ## `expected.json`
 

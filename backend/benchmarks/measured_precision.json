@@ -3,7 +3,7 @@
   "overall": {
     "queries": 19,
     "precision": {
-      "repolens": 0.2105,
+      "repolens": 0.2632,
       "grep": 0.0421,
       "grep_ranked": 0.0526
     },
@@ -15,7 +15,7 @@
       "indexed_files": 8,
       "listed_files": 11,
       "precision": {
-        "repolens": 0.1667,
+        "repolens": 0.2,
         "grep": 0.0333,
         "grep_ranked": 0.0333
       },
@@ -116,12 +116,14 @@
           ],
           "ideal_hits": 1,
           "hits": {
-            "repolens": 0,
+            "repolens": 1,
             "grep": 0,
             "grep_ranked": 0
           },
           "top": {
-            "repolens": [],
+            "repolens": [
+              "app/authentication/routes.py"
+            ],
             "grep": [],
             "grep_ranked": []
           }
@@ -150,7 +152,7 @@
       "indexed_files": 7,
       "listed_files": 9,
       "precision": {
-        "repolens": 0.1667,
+        "repolens": 0.2333,
         "grep": 0.0,
         "grep_ranked": 0.0
       },
@@ -169,7 +171,8 @@
           },
           "top": {
             "repolens": [
-              "app/services/billing.py"
+              "app/services/billing.py",
+              "app/main.py"
             ],
             "grep": [],
             "grep_ranked": []
@@ -183,13 +186,15 @@
           ],
           "ideal_hits": 2,
           "hits": {
-            "repolens": 1,
+            "repolens": 2,
             "grep": 0,
             "grep_ranked": 0
           },
           "top": {
             "repolens": [
-              "app/services/billing.py"
+              "app/config.py",
+              "app/services/billing.py",
+              "app/compat.py"
             ],
             "grep": [],
             "grep_ranked": []
@@ -209,7 +214,9 @@
           "top": {
             "repolens": [
               "app/config.py",
-              "app/compat.py"
+              "app/compat.py",
+              "app/services/billing.py",
+              "app/main.py"
             ],
             "grep": [],
             "grep_ranked": []
@@ -222,12 +229,14 @@
           ],
           "ideal_hits": 1,
           "hits": {
-            "repolens": 0,
+            "repolens": 1,
             "grep": 0,
             "grep_ranked": 0
           },
           "top": {
-            "repolens": [],
+            "repolens": [
+              "app/main.py"
+            ],
             "grep": [],
             "grep_ranked": []
           }
@@ -277,7 +286,7 @@
       "indexed_files": 14,
       "listed_files": 16,
       "precision": {
-        "repolens": 0.2857,
+        "repolens": 0.3429,
         "grep": 0.0857,
         "grep_ranked": 0.1143
       },
@@ -326,8 +335,8 @@
             "repolens": [
               "bookshop/auth/tokens.py",
               "bookshop/auth/login.py",
-              "bookshop/orders/checkout.py",
               "bookshop/auth/__init__.py",
+              "bookshop/orders/checkout.py",
               "tests/test_checkout.py"
             ],
             "grep": [
@@ -347,12 +356,13 @@
           ],
           "ideal_hits": 3,
           "hits": {
-            "repolens": 2,
+            "repolens": 3,
             "grep": 0,
             "grep_ranked": 0
           },
           "top": {
             "repolens": [
+              "bookshop/catalog/models.py",
               "bookshop/orders/checkout.py",
               "tests/test_checkout.py"
             ],
@@ -424,12 +434,14 @@
           ],
           "ideal_hits": 2,
           "hits": {
-            "repolens": 0,
+            "repolens": 1,
             "grep": 0,
             "grep_ranked": 0
           },
           "top": {
-            "repolens": [],
+            "repolens": [
+              "manage.py"
+            ],
             "grep": [],
             "grep_ranked": []
           }

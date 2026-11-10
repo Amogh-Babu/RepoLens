@@ -6,6 +6,8 @@ from typing import Literal
 
 SymbolKind = Literal["function", "class", "variable"]
 ImportKind = Literal["internal", "external", "unresolved"]
+CommentKind = Literal["comment", "docstring"]
+MemberKind = Literal["method", "attribute"]
 AnalysisStatus = Literal["queued", "running", "completed", "failed", "cancelled"]
 AnalysisStage = Literal[
     "resolving",
@@ -51,10 +53,35 @@ class ImportRecord:
 
 @dataclass(frozen=True)
 class CommentRecord:
-    """A comment extracted from a source file."""
+    """Prose extracted from a source file: a `#` comment or a docstring.
+
+    Consecutive full-line comments are merged into one record at the line of
+    the first. A docstring is recorded at the line where it starts.
+    """
 
     line: int
     text: str
+    kind: CommentKind = "comment"
+
+
+@dataclass(frozen=True)
+class MemberRecord:
+    """A method or class-level attribute declared inside a top-level class.
+
+    Members are kept apart from `SymbolRecord` on purpose: symbols are the
+    file's public surface shown in the file detail panel, while members only
+    widen what search can find.
+    """
+
+    owner: str
+    name: str
+    kind: MemberKind
+    line: int
+
+    @property
+    def qualified_name(self) -> str:
+        """Return the member as `Owner.name`."""
+        return f"{self.owner}.{self.name}"
 
 
 @dataclass(frozen=True)
@@ -68,6 +95,7 @@ class AnalyzedFile:
     symbols: tuple[SymbolRecord, ...] = ()
     imports: tuple[ImportRecord, ...] = ()
     comments: tuple[CommentRecord, ...] = ()
+    members: tuple[MemberRecord, ...] = ()
 
 
 @dataclass(frozen=True)

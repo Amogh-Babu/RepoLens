@@ -46,6 +46,36 @@ _FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
 
 FrontendMatchKind = Literal["filename", "symbol", "import", "comment"]
 
+# The contract keeps four match kinds: a method or class attribute is shown
+# as a symbol, and a docstring as a comment.
+_FRONTEND_MATCH_KINDS: dict[str, FrontendMatchKind] = {
+    "filename": "filename",
+    "symbol": "symbol",
+    "member": "symbol",
+    "reference": "import",
+    "docstring": "comment",
+    "comment": "comment",
+}
+
+# Characters of prose shown around the first matched term in search evidence.
+_SNIPPET_LENGTH = 120
+
+
+def _prose_snippet(text: str, terms: tuple[str, ...]) -> str:
+    """Return a one-line excerpt of `text` around the first matched term."""
+    flattened = " ".join(text.split())
+    if len(flattened) <= _SNIPPET_LENGTH:
+        return flattened
+    folded = flattened.casefold()
+    hits = [folded.find(term) for term in terms if folded.find(term) >= 0]
+    first = min(hits) if hits else 0
+    start = max(0, min(first - _SNIPPET_LENGTH // 3, len(flattened) - _SNIPPET_LENGTH))
+    end = start + _SNIPPET_LENGTH
+    excerpt = flattened[start:end].strip()
+    prefix = "\u2026" if start > 0 else ""
+    suffix = "\u2026" if end < len(flattened) else ""
+    return f"{prefix}{excerpt}{suffix}"
+
 
 class ApiErrorBodyResponse(BaseModel):
     code: str
@@ -355,14 +385,17 @@ def create_analysis_router(
             line_lookup = store.get_file_match_lines(analysis_id, ranked.path)
             matches: list[dict[str, Any]] = []
             for m in ranked.matches:
-                frontend_kind: FrontendMatchKind = (
-                    "import" if m.kind == "reference" else m.kind
-                )
+                frontend_kind = _FRONTEND_MATCH_KINDS[m.kind]
                 line = line_lookup.get((m.kind, m.value))
+                text = (
+                    _prose_snippet(m.value, m.matched_terms)
+                    if frontend_kind == "comment"
+                    else m.value
+                )
                 matches.append(
                     {
                         "kind": frontend_kind,
-                        "text": m.value,
+                        "text": text,
                         "line": line,
                         "value": m.value,
                         "matched_terms": list(m.matched_terms),

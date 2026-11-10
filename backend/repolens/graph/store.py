@@ -302,12 +302,24 @@ class SqliteGraphStore:
                 if file_rec.comments:
                     self._conn.executemany(
                         """
-                        INSERT INTO comments (file_id, line, text)
-                        VALUES (?, ?, ?);
+                        INSERT INTO comments (file_id, line, text, kind)
+                        VALUES (?, ?, ?, ?);
                         """,
                         [
-                            (file_id, com.line, com.text)
+                            (file_id, com.line, com.text, com.kind)
                             for com in file_rec.comments
+                        ],
+                    )
+
+                if file_rec.members:
+                    self._conn.executemany(
+                        """
+                        INSERT INTO members (file_id, owner, name, kind, line)
+                        VALUES (?, ?, ?, ?, ?);
+                        """,
+                        [
+                            (file_id, mem.owner, mem.name, mem.kind, mem.line)
+                            for mem in file_rec.members
                         ],
                     )
 
@@ -746,10 +758,18 @@ class SqliteGraphStore:
                     (file_id,),
                 ).fetchall()
             )
-            comments = tuple(
-                str(r["text"])
+            prose = self._conn.execute(
+                "SELECT text, kind FROM comments WHERE file_id = ? ORDER BY line ASC;",
+                (file_id,),
+            ).fetchall()
+            comments = tuple(str(r["text"]) for r in prose if r["kind"] == "comment")
+            docstrings = tuple(
+                str(r["text"]) for r in prose if r["kind"] == "docstring"
+            )
+            members = tuple(
+                f"{r['owner']}.{r['name']}"
                 for r in self._conn.execute(
-                    "SELECT text FROM comments WHERE file_id = ? ORDER BY line ASC;",
+                    "SELECT owner, name FROM members WHERE file_id = ? ORDER BY id ASC;",
                     (file_id,),
                 ).fetchall()
             )
@@ -773,6 +793,8 @@ class SqliteGraphStore:
                     symbols=symbols,
                     references=references,
                     comments=comments,
+                    members=members,
+                    docstrings=docstrings,
                     depended_on_by=depended_on_by,
                 )
             )
@@ -785,7 +807,12 @@ class SqliteGraphStore:
         analysis_id: str,
         path: str,
     ) -> dict[tuple[str, str], int]:
-        """Return 1-based line numbers for symbols and comments in a file."""
+        """Return 1-based line numbers for a file's searchable records.
+
+        Keys are `(match kind, value)` exactly as `SearchService` reports
+        them: `symbol`, `member` (as `Owner.name`), `comment`, and
+        `docstring`.
+        """
         file_row = self._conn.execute(
             "SELECT id FROM files WHERE analysis_id = ? AND path = ?;",
             (analysis_id, path),
@@ -804,10 +831,18 @@ class SqliteGraphStore:
                 lines[key] = int(row["line"])
 
         for row in self._conn.execute(
-            "SELECT text, line FROM comments WHERE file_id = ? ORDER BY line ASC;",
+            "SELECT owner, name, line FROM members WHERE file_id = ? ORDER BY line ASC;",
             (file_id,),
         ).fetchall():
-            key = ("comment", str(row["text"]))
+            key = ("member", f"{row['owner']}.{row['name']}")
+            if key not in lines:
+                lines[key] = int(row["line"])
+
+        for row in self._conn.execute(
+            "SELECT text, kind, line FROM comments WHERE file_id = ? ORDER BY line ASC;",
+            (file_id,),
+        ).fetchall():
+            key = (str(row["kind"]), str(row["text"]))
             if key not in lines:
                 lines[key] = int(row["line"])
 

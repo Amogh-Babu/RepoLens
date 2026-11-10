@@ -123,10 +123,10 @@ The mini repository used by the filter tests is
 
 ## Source Analysis (`repolens.analysis`)
 
-`repolens.analysis` reads a repository tree and reports the imports and
-top-level symbols of every file it can analyze. Source is parsed with the
-standard library `ast` module only; analyzed files are never imported,
-executed, or evaluated.
+`repolens.analysis` reads a repository tree and reports the imports,
+top-level symbols, class members, docstrings, and comments of every file it
+can analyze. Source is parsed with the standard library `ast` module and read
+with `tokenize`; analyzed files are never imported, executed, or evaluated.
 
 ### LanguageAnalyzer
 
@@ -140,8 +140,8 @@ changing the service, the graph store, or search.
 
 ### Reported Data
 - **`ParsedFile`**: `path` (POSIX, relative to the repository root),
-  `language`, `parsed`, `line_count`, `imports`, `symbols`, and an `error`
-  when the file did not parse.
+  `language`, `parsed`, `line_count`, `imports`, `symbols`, `members`,
+  `comments`, and an `error` when the file did not parse.
 - **`ParsedImport`**: `module`, `form` (`import` or `from`), `level` (0 for an
   absolute import, otherwise the relative-import depth), the `symbols` taken
   from the module (`'*'` for a star import), and the `line` of the first
@@ -155,6 +155,16 @@ changing the service, the graph store, or search.
   class, a `try`/`except ImportError` fallback, and a platform- or
   version-gated definition are all reported, each once at the line of its
   first branch.
+- **`ParsedMember`**: `owner`, `name`, `kind` (`method` or `attribute`), and
+  `line` for each method and class-level attribute of a module-level class,
+  including dataclass fields and the `self.<name>` attributes its methods
+  assign. Members widen what search can find; they are stored apart from
+  symbols, so the file detail panel still lists only module-level symbols.
+- **`ParsedComment`**: `line`, `text`, and `kind` (`docstring` or `comment`).
+  Docstrings come from the module, its classes and functions, and methods.
+  Consecutive full-line `#` comments are merged into one block; shebangs,
+  encoding cookies, and tool directives (`# noqa`, `# type: ...`,
+  `# pragma: ...`) are dropped. Prose is cut at 2,000 characters.
 - **`RepositoryAnalysis`**: every analyzed `ParsedFile` sorted by path, plus
   `skipped_paths` for files no registered analyzer supports.
 
@@ -313,9 +323,11 @@ The mini repository used by the analyzer tests is
 - **`imports`**:
   - `id` (`INTEGER PRIMARY KEY AUTOINCREMENT`), `file_id` (`INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE`), `raw_name` (`TEXT NOT NULL`), `kind` (`TEXT NOT NULL`: `internal`, `external`, `unresolved`), `target_file_id` (`INTEGER REFERENCES files(id) ON DELETE SET NULL`), `target_package` (`TEXT`).
 - **`comments`**:
-  - `id` (`INTEGER PRIMARY KEY AUTOINCREMENT`), `file_id` (`INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE`), `line` (`INTEGER NOT NULL`), `text` (`TEXT NOT NULL`).
+  - `id` (`INTEGER PRIMARY KEY AUTOINCREMENT`), `file_id` (`INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE`), `line` (`INTEGER NOT NULL`), `text` (`TEXT NOT NULL`), `kind` (`TEXT NOT NULL DEFAULT 'comment'`: `comment`, `docstring`).
+- **`members`**:
+  - `id` (`INTEGER PRIMARY KEY AUTOINCREMENT`), `file_id` (`INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE`), `owner` (`TEXT NOT NULL`: the class name), `name` (`TEXT NOT NULL`), `kind` (`TEXT NOT NULL`: `method`, `attribute`), `line` (`INTEGER NOT NULL`).
 
-All child tables cascade on `DELETE FROM analyses`, and indexes (`idx_analyses_repo_sha`, `idx_files_analysis_id`, `idx_symbols_file_id`, `idx_imports_file_id`, `idx_imports_target_file_id`, `idx_comments_file_id`) accelerate neighbor lookups and cache checks.
+All child tables cascade on `DELETE FROM analyses`, and indexes (`idx_analyses_repo_sha`, `idx_files_analysis_id`, `idx_symbols_file_id`, `idx_imports_file_id`, `idx_imports_target_file_id`, `idx_comments_file_id`, `idx_members_file_id`) accelerate neighbor lookups and cache checks.
 
 ```python
 from repolens.graph import AnalysisRecord, AnalyzedFile, SqliteGraphStore
@@ -424,13 +436,19 @@ Reading order respects matched dependency edges: when one matched file
 depends on another matched file, the dependency comes first. Among files whose
 order is not constrained by dependencies, query relevance and then
 case-insensitive path determine order. Cycles are handled deterministically.
-The baseline field weights are 8 for paths, 6 for symbols, 4 for references,
-and 2 for comments per matched term, plus 3 per distinct matched query term.
+The field weights per matched term are 8 for paths, 6 for module-level
+symbols, 5 for class members (`Owner.name`), 4 for references, 3 for
+docstrings, and 2 for comments, plus 3 per distinct matched query term.
 An additional 1.5 points per matching dependent breaks ties and informs the
 reason; dependency order itself is enforced separately.
 
 Queries are case-insensitive substring matches over distinct word terms and
-are limited to 200 characters. Whitespace-only queries are rejected. The
+are limited to 200 characters. Docstrings and comments are prose, so there a
+term must start a word (`auth` matches "Authenticate" but not "reauthorize";
+`rate` matches `tax_rate`), and single letters and common English stop words
+("where", "do", "the", ...) are ignored. The HTTP API reports member matches
+as `symbol` and docstring matches as `comment`, and shortens long prose to a
+snippet around the first matched term in `text` while `value` keeps it whole. Whitespace-only queries are rejected. The
 default page size is 20 and the maximum is 100. Reasons are single-line and
 cite up to two matching values; the full match list is returned separately.
 
