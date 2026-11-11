@@ -14,6 +14,7 @@ import {MapErrorBoundary} from './map/MapErrorBoundary.tsx';
 import {ReadingList} from './ReadingList.tsx';
 import {ReanalyzeButton} from './ReanalyzeButton.tsx';
 import {SearchBar} from './SearchBar.tsx';
+import {SearchHelp} from './SearchHelp.tsx';
 import type {TourStep} from './WorkspaceTour.tsx';
 import {WorkspaceTour} from './WorkspaceTour.tsx';
 import './Workspace.css';
@@ -97,6 +98,7 @@ export function Workspace({analysis}: {analysis: Analysis}) {
             }}
           />
         </div>
+        <SearchHelp />
         <button
           type="button"
           className="button"
@@ -167,11 +169,19 @@ const TOUR_STEPS: readonly TourStep[] = [
     target: 'search',
     title: 'Start with a search',
     body: (
-      <p>
-        Type the feature you want to understand, like “checkout”, or a function
-        or class name. RepoLens lists the files involved, in the order to read
-        them.
-      </p>
+      <>
+        <p>
+          Type the feature you want to understand, like “checkout”, or a
+          function or class name. RepoLens lists the files involved, in the
+          order to read them.
+        </p>
+        <p>
+          It matches the words you type in file names, functions, classes,
+          imports, docstrings and comments, not their meaning.{' '}
+          <strong>How search works</strong>, next to the search bar, explains
+          how results are ranked and ordered.
+        </p>
+      </>
     ),
   },
   {
