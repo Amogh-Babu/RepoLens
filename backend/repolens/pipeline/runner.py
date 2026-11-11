@@ -15,6 +15,7 @@ from concurrent.futures import Executor, ThreadPoolExecutor
 import logging
 from pathlib import Path
 import shutil
+import sys
 import tempfile
 from typing import Any
 import uuid
@@ -149,7 +150,9 @@ class PipelineAnalysisRunner:
             _LOGGER.exception("Analysis %s of %s failed", analysis_id, repo_url)
             store.fail_analysis(analysis_id, _UNEXPECTED_FAILURE)
         finally:
-            shutil.rmtree(work_dir, ignore_errors=True)
+            # Normally already gone (see `_run_stages`); this covers failures
+            # and cancellations before parsing finished.
+            _remove_snapshot(work_dir)
 
     def _run_stages(
         self,
@@ -173,6 +176,11 @@ class PipelineAnalysisRunner:
         if not store.update_stage(analysis_id, "parsing"):
             return
         analysis = self._analysis_service.analyze_repository(snapshot.root)
+        # Everything later stages need is in memory now. Removing the source
+        # before the analysis is marked completed means a completed analysis
+        # never has a snapshot left on disk (#73), and source is never kept
+        # longer than parsing needs it.
+        _remove_snapshot(work_dir)
 
         if not store.update_stage(analysis_id, "classifying"):
             return
@@ -191,3 +199,22 @@ class PipelineAnalysisRunner:
                 files=files,
             )
         )
+
+
+def _remove_snapshot(work_dir: Path) -> None:
+    """Delete a snapshot directory, logging (not raising) if any of it stays."""
+    if not work_dir.exists():
+        return
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(work_dir, onexc=_log_cleanup_error)
+    else:  # `onexc` is new in 3.12; `onerror` is deprecated from then on.
+        shutil.rmtree(
+            work_dir,
+            onerror=lambda function, path, info: _log_cleanup_error(function, path, info[1]),
+        )
+
+
+def _log_cleanup_error(function: Any, path: str, error: BaseException) -> None:
+    _LOGGER.warning(
+        "Could not remove %s during snapshot cleanup: %s", path, error, exc_info=error
+    )

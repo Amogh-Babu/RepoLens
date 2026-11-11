@@ -3,6 +3,7 @@
 import hashlib
 import logging
 import re
+from collections.abc import Sequence
 from typing import Any, Literal, Protocol
 from urllib.parse import urlparse
 import uuid
@@ -462,11 +463,48 @@ def create_analysis_router(
     return router
 
 
+class HealthResponse(BaseModel):
+    status: Literal["ok"]
+
+
+def create_health_router(store: SqliteGraphStore) -> APIRouter:
+    """Create `GET /health`, which answers only when the graph store does."""
+    router = APIRouter()
+
+    @router.get(
+        "/health",
+        response_model=HealthResponse,
+        summary="Report that the API and its graph store are up",
+    )
+    def health() -> Any:
+        try:
+            store.check_health()
+        except Exception:
+            _LOGGER.exception("Health check failed")
+            return _error_response(
+                503,
+                "UNHEALTHY",
+                "The graph store is not responding.",
+                "Check the server logs and the database volume.",
+            )
+        return {"status": "ok"}
+
+    return router
+
+
 def create_app(
     store: SqliteGraphStore | None = None,
     runner: AnalysisRunner | None = None,
+    *,
+    cors_origins: Sequence[str] = ("*",),
 ) -> FastAPI:
-    """Create the RepoLens FastAPI application matching the frontend contract."""
+    """Create the RepoLens FastAPI application matching the frontend contract.
+
+    `cors_origins` lists the browser origins allowed to call the API from
+    another origin. The default allows any, which suits local development;
+    `repolens.api.server` serves the frontend from the same origin and passes
+    none, so no CORS headers are sent at all.
+    """
     graph_store = store if store is not None else SqliteGraphStore()
 
     application = FastAPI(
@@ -474,15 +512,17 @@ def create_app(
         version="0.1.0",
         description="Architectural discovery and feature search API for Python repositories.",
     )
-    application.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-        allow_headers=["*"],
-    )
+    if cors_origins:
+        application.add_middleware(
+            CORSMiddleware,
+            allow_origins=list(cors_origins),
+            allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+            allow_headers=["*"],
+        )
 
     application.add_exception_handler(RequestValidationError, _contract_validation_handler)
     application.state.store = graph_store
+    application.include_router(create_health_router(graph_store))
     application.include_router(create_analysis_router(graph_store, runner=runner))
     application.include_router(create_graph_router(graph_store))
 

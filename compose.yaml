@@ -1,0 +1,25 @@
+# Run RepoLens with one command:
+#
+#   docker compose up --build
+#
+# then open http://localhost:8000. Analyses are kept in the `repolens-data`
+# volume, so they survive restarts until they expire (24 hours).
+#
+# To use the published image instead of building locally:
+#
+#   docker compose pull && docker compose up
+services:
+  repolens:
+    image: ghcr.io/amogh-babu/repolens:latest
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      # Optional: raises GitHub's API limit of 60 requests an hour.
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+    volumes:
+      - repolens-data:/data
+    restart: unless-stopped
+
+volumes:
+  repolens-data:

@@ -202,7 +202,16 @@ class SqliteGraphStore:
         self._lock = threading.RLock()
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
+        if db_path != ":memory:":
+            # A file-backed store survives restarts; write-ahead logging keeps
+            # it consistent if the process stops mid-write.
+            self._conn.execute("PRAGMA journal_mode = WAL;")
         init_schema(self._conn)
+
+    @_locked
+    def check_health(self) -> None:
+        """Raise if the database cannot answer a trivial query."""
+        self._conn.execute("SELECT 1;").fetchone()
 
     def close(self) -> None:
         """Close the underlying SQLite connection."""
