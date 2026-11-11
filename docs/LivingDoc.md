@@ -1,4 +1,4 @@
-# **RepoLens: Project Proposal**
+# **RepoLens Living Document**
 
 Members: Shashank Giridharan, Austin Elenzano, Levi Lenin, Abhinav Damarla, Amogh Babu, Dylan Maring
 
