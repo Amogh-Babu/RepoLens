@@ -1,8 +1,29 @@
 .repo-form {
   display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
   align-items: start;
+}
+
+/* The optional ref sits folded under the URL and the Analyze button. */
+.repo-form__more {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+
+.repo-form__more summary {
+  width: fit-content;
+  font-size: 0.875rem;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+
+.repo-form__more[open] summary {
+  margin-bottom: 8px;
+}
+
+.repo-form__more .repo-form__field {
+  max-width: 360px;
 }
 
 .repo-form__field {

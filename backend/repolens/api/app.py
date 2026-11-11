@@ -129,6 +129,7 @@ class RankedFileContractResponse(BaseModel):
     path: str
     score: float
     reason: str
+    orderReason: str
     matches: list[SearchMatchResponse]
 
 
@@ -447,6 +448,7 @@ def create_analysis_router(
                     "path": ranked.path,
                     "score": ranked.score,
                     "reason": ranked.reason,
+                    "orderReason": ranked.order_reason,
                     "matches": matches,
                 }
             )

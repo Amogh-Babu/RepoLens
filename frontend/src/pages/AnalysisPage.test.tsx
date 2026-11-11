@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import {MockApiClient} from '../api/mock/mockClient.ts';
 import type {Analysis} from '../api/types.ts';
 import {renderApp} from '../test/renderApp.tsx';
+import {clearSeen, hasSeen} from '../utils/seenFlags.ts';
 
 const RUNNING: Analysis = {
   analysisId: 'a1',
@@ -177,6 +178,33 @@ describe('AnalysisPage workspace', () => {
   });
 });
 
+describe('AnalysisPage tour', () => {
+  it('opens the tour on the first visit and not after it is skipped', async () => {
+    clearSeen('workspace-tour');
+    const user = userEvent.setup();
+    await renderFinished('flask-auth');
+
+    expect(
+      await screen.findByRole('dialog', {name: 'Welcome to RepoLens'}),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', {name: 'Skip tour'}));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(hasSeen('workspace-tour')).toBe(true);
+  });
+
+  it('does not open by itself once seen, and Help reopens it', async () => {
+    const user = userEvent.setup();
+    await renderFinished('flask-auth');
+
+    await user.click(await screen.findByRole('button', {name: 'Help'}));
+
+    expect(
+      screen.getByRole('dialog', {name: 'Welcome to RepoLens'}),
+    ).toBeInTheDocument();
+  });
+});
+
 describe('AnalysisPage map', () => {
   it('shows the dependency map with collapsed modules', async () => {
     await renderFinished('flask-auth');
@@ -208,7 +236,7 @@ describe('AnalysisPage map', () => {
 
     await user.click(screen.getByRole('button', {name: 'Map'}));
     expect(
-      await screen.findByRole('button', {name: 'Reset view'}),
+      await screen.findByRole('button', {name: 'Fit'}),
     ).toBeInTheDocument();
   });
 });

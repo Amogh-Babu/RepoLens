@@ -9,6 +9,7 @@ const SERVICE: RankedFile = {
   path: 'app/auth/service.py',
   score: 40,
   reason: 'Defines login_user; imported by 2 other matching files',
+  orderReason: 'Comes before app/auth/views.py, which imports it.',
   matches: [
     {kind: 'symbol', text: 'login_user', line: 22},
     {kind: 'filename', text: 'app/auth/service.py', line: null},
@@ -19,6 +20,7 @@ const VIEWS: RankedFile = {
   path: 'app/auth/views.py',
   score: 20,
   reason: 'Defines login',
+  orderReason: 'Comes after app/auth/service.py, which it imports.',
   matches: [{kind: 'symbol', text: 'login', line: 11}],
 };
 
@@ -64,6 +66,10 @@ describe('ReadingList', () => {
       '1. app/auth/service.py',
     );
     expect(first.getByText(/^Defines login_user/)).toBeVisible();
+    expect(first.getByText('Why #1')).toBeVisible();
+    expect(
+      first.getByText('Comes before app/auth/views.py, which imports it.'),
+    ).toBeVisible();
     expect(first.getByRole('link', {name: /Source/})).toHaveAttribute(
       'href',
       'https://github.com/o/r/blob/abc/app/auth/service.py',

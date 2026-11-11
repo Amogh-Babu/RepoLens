@@ -31,10 +31,17 @@ class MatchEvidence:
 
 @dataclass(frozen=True)
 class RankedFile:
+    """One search result.
+
+    `reason` says why the file matched; `order_reason` says why it sits at
+    its place in the suggested reading order.
+    """
+
     path: str
     score: float
     reason: str
     matches: tuple[MatchEvidence, ...]
+    order_reason: str = ""
 
 
 @dataclass(frozen=True)

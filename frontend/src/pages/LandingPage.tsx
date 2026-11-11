@@ -72,8 +72,9 @@ export function LandingPage() {
       <header className="landing__intro">
         <h1>RepoLens</h1>
         <p className="lede">
-          See how the files in a Python repository depend on each other, and get
-          a suggested reading order for the feature you want to learn.
+          Paste a link to a Python project on GitHub. RepoLens shows which files
+          depend on which, and what to read first for the feature you care
+          about.
         </p>
       </header>
 
@@ -107,28 +108,27 @@ export function LandingPage() {
         <h2 id="guide-heading">How it works</h2>
         <ol className="landing__steps">
           <li>
-            <strong>Paste a repository URL.</strong> RepoLens downloads the code
-            at that commit and maps which files import which. It never runs the
-            code.
+            <strong>Paste a repository URL.</strong> RepoLens reads the code but
+            never runs it.
           </li>
           <li>
-            <strong>Search for a feature.</strong> Type a word like
-            &ldquo;login&rdquo; or a function name to get a ranked list of the
-            files involved.
+            <strong>Search for a feature,</strong> like &ldquo;login&rdquo; or a
+            function name.
           </li>
           <li>
-            <strong>Read in the suggested order.</strong> Each file comes with a
-            reason, its place on the dependency map, and a link to its source on
-            GitHub.
+            <strong>Read the files in order.</strong> Each one says why it is on
+            the list and why it comes where it does.
           </li>
         </ol>
 
-        <h3>What this version supports</h3>
-        <ul className="landing__limits">
-          <li>Public repositories on github.com</li>
-          <li>Python code, up to 1,000 Python files</li>
-          <li>Results are kept for 24 hours, then analyzed again</li>
-        </ul>
+        <details className="landing__details">
+          <summary>What this version supports</summary>
+          <ul className="landing__limits">
+            <li>Public repositories on github.com</li>
+            <li>Python code, up to 1,000 Python files</li>
+            <li>Results are kept for 24 hours, then analyzed again</li>
+          </ul>
+        </details>
       </section>
     </main>
   );

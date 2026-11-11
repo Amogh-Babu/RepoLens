@@ -169,6 +169,7 @@ def test_completed_analysis_end_to_end_contract() -> None:
     assert search["query"] == "login"
     assert search["total"] >= 4
     assert search["results"][0]["position"] == 1
+    assert all(result["orderReason"] for result in search["results"])
 
 
 def test_expired_analysis_returns_410_across_all_endpoints() -> None:

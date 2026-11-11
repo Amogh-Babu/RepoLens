@@ -1,8 +1,6 @@
 import type {NodeChange} from '@xyflow/react';
 import {
   applyNodeChanges,
-  Background,
-  Controls,
   ReactFlow,
   ReactFlowProvider,
   useNodesInitialized,
@@ -17,6 +15,7 @@ import {MapActionsContext} from './mapActions.ts';
 import type {MapEdge, MapHighlight, MapNode} from './mapLayout.ts';
 import {
   fileNodeId,
+  focusGraph,
   highlightAround,
   layoutMap,
   moduleIndex,
@@ -42,6 +41,12 @@ interface DependencyMapProps {
   selectedPath: string | null;
   /** Files matching the current search, or null without a search. */
   matchedPaths: ReadonlySet<string> | null;
+  /**
+   * During a search, draw only the matching files (and the selected file)
+   * instead of the whole repository.
+   */
+  matchesOnly?: boolean;
+  onMatchesOnlyChange?: (matchesOnly: boolean) => void;
   onSelectFile: (path: string) => void;
   onToggleModule: (moduleId: string, expanded?: boolean) => void;
   onCollapseAll: () => void;
@@ -56,7 +61,7 @@ interface DependencyMapProps {
  * expanding one shows its files and the imports between them. Selecting a
  * file highlights what it imports and what imports it, and dims the rest.
  * Without a selection, files matching the search are highlighted instead
- * (Use Case 2).
+ * (Use Case 2). With `matchesOnly`, a search hides every other file.
  */
 export function DependencyMap(props: DependencyMapProps) {
   return (
@@ -71,6 +76,8 @@ function MapCanvas({
   expandedModules,
   selectedPath,
   matchedPaths,
+  matchesOnly = false,
+  onMatchesOnlyChange,
   onSelectFile,
   onToggleModule,
   onCollapseAll,
@@ -79,9 +86,34 @@ function MapCanvas({
 }: DependencyMapProps) {
   const flow = useReactFlow();
   const initialized = useNodesInitialized();
+  const searching = matchedPaths !== null && matchedPaths.size > 0;
+  const focused = matchesOnly && searching;
+  // The files to draw when focused, as a stable key so selecting another
+  // match does not lay the map out again.
+  const focusKey = focused
+    ? [...matchedPaths, ...(selectedPath === null ? [] : [selectedPath])]
+        .sort()
+        .join('\n')
+    : null;
+  const shownGraph = useMemo(
+    () =>
+      focusKey === null
+        ? graph
+        : focusGraph(graph, new Set(focusKey.split('\n'))),
+    [graph, focusKey],
+  );
+  // Every module stays open when focused, so each match is its own node.
+  const shownExpanded = useMemo(
+    () =>
+      focusKey === null
+        ? expandedModules
+        : new Set(shownGraph.modules.map(module => module.id)),
+    [focusKey, expandedModules, shownGraph],
+  );
   const layout = useMemo(
-    () => layoutMap(graph, expandedModules),
-    [graph, expandedModules],
+    () =>
+      layoutMap(shownGraph, shownExpanded, {collapsible: focusKey === null}),
+    [shownGraph, shownExpanded, focusKey],
   );
   const moduleOf = useMemo(() => moduleIndex(graph), [graph]);
   // Positions the user dragged nodes to; reset whenever the layout changes.
@@ -117,7 +149,7 @@ function MapCanvas({
   const selectedUnit =
     selectedPath === null
       ? null
-      : unitFor(selectedPath, moduleOf, expandedModules);
+      : unitFor(selectedPath, moduleOf, shownExpanded);
   const highlight = useMemo(
     () => highlightAround(layout.edges, selectedUnit),
     [layout.edges, selectedUnit],
@@ -127,11 +159,11 @@ function MapCanvas({
     if (matchedPaths === null || selectedUnit !== null) return null;
     const units = new Set<string>();
     for (const path of matchedPaths) {
-      const unit = unitFor(path, moduleOf, expandedModules);
+      const unit = unitFor(path, moduleOf, shownExpanded);
       if (unit !== null) units.add(unit);
     }
     return units;
-  }, [matchedPaths, selectedUnit, moduleOf, expandedModules]);
+  }, [matchedPaths, selectedUnit, moduleOf, shownExpanded]);
 
   const displayNodes = useMemo(
     () =>
@@ -201,13 +233,50 @@ function MapCanvas({
   return (
     <MapActionsContext value={actions}>
       <div className="map">
-        <div className="map__toolbar">
-          <button type="button" className="button" onClick={resetView}>
-            Reset view
-          </button>
-          <button type="button" className="button" onClick={onCollapseAll}>
-            Collapse all
-          </button>
+        <div className="map__toolbar" role="toolbar" aria-label="Map controls">
+          <div className="map__group" role="group" aria-label="Zoom">
+            <button
+              type="button"
+              className="button"
+              onClick={() => void flow.zoomOut({duration: 200})}
+              aria-label="Zoom out"
+              title="Zoom out"
+            >
+              −
+            </button>
+            <button
+              type="button"
+              className="button"
+              onClick={() => void flow.zoomIn({duration: 200})}
+              aria-label="Zoom in"
+              title="Zoom in"
+            >
+              +
+            </button>
+            <button
+              type="button"
+              className="button"
+              onClick={resetView}
+              title="Fit the whole map on screen and undo any dragging"
+            >
+              Fit
+            </button>
+          </div>
+          {!focused && (
+            <button type="button" className="button" onClick={onCollapseAll}>
+              Collapse all
+            </button>
+          )}
+          {searching && onMatchesOnlyChange !== undefined && (
+            <label className="map__toggle">
+              <input
+                type="checkbox"
+                checked={matchesOnly}
+                onChange={event => onMatchesOnlyChange(event.target.checked)}
+              />
+              Only show matches
+            </label>
+          )}
           <span className="map__legend">
             Arrows point from a file to what it imports.
           </span>
@@ -230,10 +299,7 @@ function MapCanvas({
             elementsSelectable={false}
             colorMode="system"
             proOptions={{hideAttribution: true}}
-          >
-            <Background gap={24} size={1} />
-            <Controls showInteractive={false} />
-          </ReactFlow>
+          />
         </div>
       </div>
     </MapActionsContext>

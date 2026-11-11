@@ -4,6 +4,17 @@
   gap: 12px;
 }
 
+.workspace__top {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.workspace__search {
+  flex: 1;
+  min-width: 0;
+}
+
 .workspace {
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr) 320px;

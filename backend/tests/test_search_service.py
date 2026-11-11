@@ -85,6 +85,74 @@ class SearchServiceTest(unittest.TestCase):
         self.assertEqual(expected_paths, [result.path for result in first_result.results])
         self.assertEqual(first_result, second_result)
 
+    def test_order_reasons_name_files_read_before_and_after(self) -> None:
+        documents = [
+            SearchDocument(path="auth/core.py", depended_on_by=("auth/routes.py",)),
+            SearchDocument(path="auth/routes.py"),
+            SearchDocument(path="auth/helpers.py"),
+        ]
+        service = SearchService(InMemorySearchIndex({"analysis-1": documents}))
+
+        page = service.search("analysis-1", "auth")
+        reasons = {result.path: result.order_reason for result in page.results}
+
+        self.assertEqual(
+            "Comes before auth/routes.py, which imports it.", reasons["auth/core.py"]
+        )
+        self.assertEqual(
+            "Comes after auth/core.py, which it imports.", reasons["auth/routes.py"]
+        )
+        self.assertEqual(
+            "Does not import or get imported by the other results, "
+            "so it is placed by how strongly it matches.",
+            reasons["auth/helpers.py"],
+        )
+
+    def test_order_reason_explains_a_cycle_break(self) -> None:
+        documents = [
+            SearchDocument(path="alpha/cycle.py", depended_on_by=("zeta/cycle.py",)),
+            SearchDocument(path="zeta/cycle.py", depended_on_by=("alpha/cycle.py",)),
+        ]
+        service = SearchService(InMemorySearchIndex({"analysis-1": documents}))
+
+        page = service.search("analysis-1", "cycle")
+
+        self.assertEqual(
+            "Part of an import cycle with zeta/cycle.py, so it is placed by how "
+            "strongly it matches; comes before zeta/cycle.py, which imports it.",
+            page.results[0].order_reason,
+        )
+        self.assertEqual(
+            "Comes after alpha/cycle.py, which it imports.", page.results[1].order_reason
+        )
+
+    def test_order_reason_separates_a_file_held_back_by_another_cycle(self) -> None:
+        # entry imports loop_a; loop_a and loop_b import each other. entry is
+        # the strongest match, so it is placed first without being in the cycle.
+        documents = [
+            SearchDocument(path="pkg/entry_cycle.py", symbols=("cycle_entry",)),
+            SearchDocument(
+                path="pkg/loop_a.py",
+                comments=("cycle",),
+                depended_on_by=("pkg/entry_cycle.py", "pkg/loop_b.py"),
+            ),
+            SearchDocument(
+                path="pkg/loop_b.py",
+                comments=("cycle",),
+                depended_on_by=("pkg/loop_a.py",),
+            ),
+        ]
+        service = SearchService(InMemorySearchIndex({"analysis-1": documents}))
+
+        page = service.search("analysis-1", "cycle")
+
+        self.assertEqual("pkg/entry_cycle.py", page.results[0].path)
+        self.assertEqual(
+            "Comes before pkg/loop_a.py, which it imports, because that file is "
+            "held back by an import cycle.",
+            page.results[0].order_reason,
+        )
+
     def test_rejects_empty_and_overlong_queries(self) -> None:
         for query in ("  \n", "x" * 201):
             with self.subTest(query_length=len(query)):

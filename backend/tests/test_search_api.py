@@ -29,6 +29,7 @@ class SearchApiTest(unittest.TestCase):
         self.assertTrue(result["has_more"])
         self.assertEqual(2, len(result["results"]))
         self.assertTrue(result["results"][0]["reason"])
+        self.assertTrue(result["results"][0]["order_reason"])
         self.assertTrue(result["results"][0]["matches"])
 
     def test_empty_query_returns_structured_error(self) -> None:

@@ -1,5 +1,13 @@
 // Runs before every test file. Adds DOM matchers such as toBeInTheDocument().
 import '@testing-library/jest-dom/vitest';
+import {markSeen} from '../utils/seenFlags.ts';
+
+// Start each test with a clean slate, past the first-run tour, so it does
+// not cover the workspace. Tour tests clear the flag themselves.
+beforeEach(() => {
+  localStorage.clear();
+  markSeen('workspace-tour');
+});
 
 // jsdom has no layout engine. React Flow needs these to measure nodes; see
 // https://reactflow.dev/learn/advanced-use/testing

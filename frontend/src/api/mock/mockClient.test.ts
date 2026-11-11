@@ -235,6 +235,7 @@ describe('MockApiClient results', () => {
     expect(response.query).toBe('login');
     expect(response.results[0]?.path).toBe('app/auth/service.py');
     expect(response.results[0]?.reason).toMatch(/^Defines login_user/);
+    expect(response.results[0]?.orderReason).toMatch(/^Comes before /);
     expect(response.results.map(r => r.position)).toEqual(
       response.results.map((_r, i) => i + 1),
     );

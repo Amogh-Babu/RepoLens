@@ -221,6 +221,13 @@
         "bookshop/auth/__init__.py",
         "bookshop/orders/checkout.py",
         "tests/test_checkout.py"
+      ],
+      "orderReasons": [
+        "Comes before bookshop/auth/login.py, bookshop/auth/__init__.py and 2 more, which import it.",
+        "Comes after bookshop/auth/tokens.py, which it imports; comes before bookshop/auth/__init__.py, which imports it.",
+        "Comes after bookshop/auth/tokens.py and bookshop/auth/login.py, which it imports.",
+        "Comes after bookshop/auth/tokens.py, which it imports; comes before tests/test_checkout.py, which imports it.",
+        "Comes after bookshop/auth/tokens.py and bookshop/orders/checkout.py, which it imports."
       ]
     },
     {
@@ -230,6 +237,12 @@
         "bookshop/catalog/search.py",
         "bookshop/app.py",
         "bookshop/auth/tokens.py"
+      ],
+      "orderReasons": [
+        "Comes before bookshop/catalog/search.py, bookshop/app.py and 1 more, which import it.",
+        "Comes after bookshop/config.py, which it imports; comes before bookshop/app.py, which imports it.",
+        "Comes after bookshop/config.py and bookshop/catalog/search.py, which it imports.",
+        "Comes after bookshop/config.py, which it imports."
       ]
     },
     {
@@ -238,11 +251,20 @@
         "bookshop/catalog/models.py",
         "bookshop/orders/checkout.py",
         "tests/test_checkout.py"
+      ],
+      "orderReasons": [
+        "Comes before bookshop/orders/checkout.py and tests/test_checkout.py, which import it.",
+        "Comes after bookshop/catalog/models.py, which it imports; comes before tests/test_checkout.py, which imports it.",
+        "Comes after bookshop/catalog/models.py and bookshop/orders/checkout.py, which it imports."
       ]
     },
     {
       "query": "login",
-      "readingOrder": ["bookshop/auth/login.py", "bookshop/auth/__init__.py"]
+      "readingOrder": ["bookshop/auth/login.py", "bookshop/auth/__init__.py"],
+      "orderReasons": [
+        "Comes before bookshop/auth/__init__.py, which imports it.",
+        "Comes after bookshop/auth/login.py, which it imports."
+      ]
     }
   ]
 }

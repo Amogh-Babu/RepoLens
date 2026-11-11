@@ -29,22 +29,26 @@
   font-size: 1.25rem;
 }
 
-.landing__guide h3 {
-  margin: 24px 0 8px;
-  font-size: 1rem;
-}
-
 .landing__steps {
   margin: 0;
   padding-left: 1.25rem;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   max-width: 70ch;
 }
 
-.landing__limits {
-  margin: 0;
-  padding-left: 1.25rem;
+.landing__details {
+  margin-top: 16px;
   color: var(--color-muted);
+}
+
+.landing__details summary {
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+
+.landing__limits {
+  margin: 8px 0 0;
+  padding-left: 1.25rem;
 }
