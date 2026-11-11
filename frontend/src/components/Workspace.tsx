@@ -11,6 +11,7 @@ import {FileDetailPanel} from './FileDetailPanel.tsx';
 import {FileExplorer} from './FileExplorer.tsx';
 import {ListFallback} from './map/ListFallback.tsx';
 import {MapErrorBoundary} from './map/MapErrorBoundary.tsx';
+import {OverviewPanel} from './OverviewPanel.tsx';
 import {ReadingList} from './ReadingList.tsx';
 import {ReanalyzeButton} from './ReanalyzeButton.tsx';
 import {SearchBar} from './SearchBar.tsx';
@@ -26,7 +27,7 @@ const DependencyMap = lazy(() =>
   })),
 );
 
-type SidebarTab = 'reading' | 'files';
+type SidebarTab = 'overview' | 'reading' | 'files';
 
 /**
  * Search, reading list, file explorer, dependency map and file details for
@@ -49,7 +50,19 @@ export function Workspace({analysis}: {analysis: Analysis}) {
   const runSearch = useAnalysisStore(state => state.runSearch);
   const clearSearch = useAnalysisStore(state => state.clearSearch);
   const expired = useAnalysisStore(state => state.expired);
-  const [tab, setTab] = useState<SidebarTab>('files');
+  const [tab, setTab] = useState<SidebarTab>('overview');
+  const [scopePaths, setScopePaths] = useState<ReadonlySet<string> | null>(
+    null,
+  );
+  const selectWorkspaceFile = useCallback(
+    (path: string | null) => {
+      if (path !== null && scopePaths !== null && !scopePaths.has(path)) {
+        setScopePaths(null);
+      }
+      selectFile(path);
+    },
+    [scopePaths, selectFile],
+  );
   // The tour opens by itself the first time a viewer reaches a workspace.
   const [touring, setTouring] = useState(() => !hasSeen('workspace-tour'));
   const endTour = useCallback(() => {
@@ -69,7 +82,11 @@ export function Workspace({analysis}: {analysis: Analysis}) {
         : new Set(search.results.map(r => r.path)),
     [search],
   );
-  const readingOrder = readingOrderFor(search, selectedPath, selectFile);
+  const readingOrder = readingOrderFor(
+    search,
+    selectedPath,
+    selectWorkspaceFile,
+  );
 
   const expiredBanner = expired && <ExpiredBanner analysis={analysis} />;
 
@@ -90,10 +107,12 @@ export function Workspace({analysis}: {analysis: Analysis}) {
             disabled={expired}
             searching={search?.pendingQuery != null}
             onSearch={query => {
+              setScopePaths(null);
               setTab('reading');
               runSearch(query);
             }}
             onClear={() => {
+              setScopePaths(null);
               setTab('files');
               clearSearch();
             }}
@@ -112,11 +131,18 @@ export function Workspace({analysis}: {analysis: Analysis}) {
 
       <div className="workspace">
         <Sidebar
-          tab={search === null ? 'files' : tab}
+          analysisId={analysis.analysisId}
+          tab={search === null && tab === 'reading' ? 'overview' : tab}
           onTabChange={setTab}
           readingAvailable={search !== null}
           readingCount={search?.query === '' ? null : (search?.total ?? null)}
           sourceUrlFor={sourceUrlFor}
+          onSelectFile={selectWorkspaceFile}
+          onSelectArea={files => {
+            setScopePaths(new Set(files));
+            const firstPath = files[0];
+            if (firstPath !== undefined) selectWorkspaceFile(firstPath);
+          }}
         />
 
         <MapPanel
@@ -124,6 +150,8 @@ export function Workspace({analysis}: {analysis: Analysis}) {
           selectedPath={selectedPath}
           selectionRevision={selectionRevision}
           matchedPaths={matchedPaths}
+          scopePaths={scopePaths}
+          onClearScope={() => setScopePaths(null)}
         />
 
         <div className="workspace__detail" data-tour="detail">
@@ -139,9 +167,9 @@ export function Workspace({analysis}: {analysis: Analysis}) {
               sha={analysis.sha}
               detail={detail}
               failure={fileFailure}
-              onSelectFile={selectFile}
-              onRetry={() => selectFile(selectedPath)}
-              onClose={() => selectFile(null)}
+              onSelectFile={selectWorkspaceFile}
+              onRetry={() => selectWorkspaceFile(selectedPath)}
+              onClose={() => selectWorkspaceFile(null)}
               readingOrder={readingOrder}
             />
           )}
@@ -196,7 +224,9 @@ const TOUR_STEPS: readonly TourStep[] = [
           why it matches and why it comes at that spot in the order.
         </p>
         <p>
-          <strong>Files</strong> lists every analyzed file by folder.
+          <strong>Files</strong> lists every analyzed file by folder.{' '}
+          <strong>Overview</strong> highlights entry points, central files and a
+          guided reading path.
         </p>
       </>
     ),
@@ -274,31 +304,38 @@ function readingOrderFor(
 
 /** Reading list and file explorer, as tabs. */
 function Sidebar({
+  analysisId,
   tab,
   onTabChange,
   readingAvailable,
   readingCount,
   sourceUrlFor,
+  onSelectFile,
+  onSelectArea,
 }: {
+  analysisId: string;
   tab: SidebarTab;
   onTabChange: (tab: SidebarTab) => void;
   readingAvailable: boolean;
   readingCount: number | null;
   sourceUrlFor: (path: string) => string;
+  onSelectFile: (path: string) => void;
+  onSelectArea: (paths: string[]) => void;
 }) {
   const id = useId();
-  const tabs: Array<{key: SidebarTab; label: string}> = readingAvailable
-    ? [
-        {
-          key: 'reading',
-          label:
-            readingCount === null
-              ? 'Reading list'
-              : `Reading list (${readingCount})`,
-        },
-        {key: 'files', label: 'Files'},
-      ]
-    : [{key: 'files', label: 'Files'}];
+  const tabs: Array<{key: SidebarTab; label: string}> = [
+    {key: 'overview', label: 'Overview'},
+  ];
+  if (readingAvailable) {
+    tabs.push({
+      key: 'reading',
+      label:
+        readingCount === null
+          ? 'Reading list'
+          : `Reading list (${readingCount})`,
+    });
+  }
+  tabs.push({key: 'files', label: 'Files'});
 
   // Arrow keys move between tabs, as in the WAI-ARIA tabs pattern.
   function handleKeyDown(event: KeyboardEvent) {
@@ -343,10 +380,19 @@ function Sidebar({
         role="tabpanel"
         aria-labelledby={`${id}-tab-${tab}`}
       >
-        {tab === 'reading' ? (
-          <ReadingPanel sourceUrlFor={sourceUrlFor} />
+        {tab === 'overview' ? (
+          <OverviewPanel
+            analysisId={analysisId}
+            onSelectFile={onSelectFile}
+            onSelectArea={onSelectArea}
+          />
+        ) : tab === 'reading' ? (
+          <ReadingPanel
+            sourceUrlFor={sourceUrlFor}
+            onSelectFile={onSelectFile}
+          />
         ) : (
-          <ExplorerPanel />
+          <ExplorerPanel onSelectFile={onSelectFile} />
         )}
       </div>
     </div>
@@ -355,12 +401,13 @@ function Sidebar({
 
 function ReadingPanel({
   sourceUrlFor,
+  onSelectFile,
 }: {
   sourceUrlFor: (path: string) => string;
+  onSelectFile: (path: string) => void;
 }) {
   const search = useAnalysisStore(state => state.search);
   const selectedPath = useAnalysisStore(state => state.selectedPath);
-  const selectFile = useAnalysisStore(state => state.selectFile);
   const runSearch = useAnalysisStore(state => state.runSearch);
   const loadMoreResults = useAnalysisStore(state => state.loadMoreResults);
   if (search === null) return null;
@@ -370,7 +417,7 @@ function ReadingPanel({
       search={search}
       selectedPath={selectedPath}
       sourceUrlFor={sourceUrlFor}
-      onSelectFile={selectFile}
+      onSelectFile={onSelectFile}
       onLoadMore={loadMoreResults}
       onRetry={() => {
         if (search.failure?.request === 'search') {
@@ -383,11 +430,10 @@ function ReadingPanel({
   );
 }
 
-function ExplorerPanel() {
+function ExplorerPanel({onSelectFile}: {onSelectFile: (path: string) => void}) {
   const graph = useAnalysisStore(state => state.graph);
   const selectedPath = useAnalysisStore(state => state.selectedPath);
   const expandedDirs = useAnalysisStore(state => state.expandedDirs);
-  const selectFile = useAnalysisStore(state => state.selectFile);
   const toggleDir = useAnalysisStore(state => state.toggleDir);
   if (graph === null) return null;
 
@@ -397,7 +443,7 @@ function ExplorerPanel() {
         files={graph.files}
         selectedPath={selectedPath}
         expandedDirs={expandedDirs}
-        onSelectFile={selectFile}
+        onSelectFile={onSelectFile}
         onToggleDir={toggleDir}
       />
     </nav>
@@ -418,11 +464,15 @@ function MapPanel({
   selectedPath,
   selectionRevision,
   matchedPaths,
+  scopePaths,
+  onClearScope,
 }: {
   graph: DependencyGraph;
   selectedPath: string | null;
   selectionRevision: number;
   matchedPaths: ReadonlySet<string> | null;
+  scopePaths: ReadonlySet<string> | null;
+  onClearScope: () => void;
 }) {
   const expandedModules = useAnalysisStore(state => state.expandedModules);
   const selectFile = useAnalysisStore(state => state.selectFile);
@@ -439,6 +489,25 @@ function MapPanel({
   const onTooSlow = useCallback(() => setFallbackMessage(TOO_SLOW_MESSAGE), []);
   const onMapError = useCallback(() => setFallbackMessage(FAILED_MESSAGE), []);
   const showList = view === 'list' || fallbackMessage !== null;
+  const visibleGraph = useMemo(() => {
+    if (scopePaths === null) return graph;
+    const files = graph.files.filter(file => scopePaths.has(file.path));
+    const paths = new Set(files.map(file => file.path));
+    const modules = graph.modules
+      .map(module => ({
+        ...module,
+        filePaths: module.filePaths.filter(path => paths.has(path)),
+      }))
+      .filter(module => module.filePaths.length > 0);
+    return {
+      ...graph,
+      files,
+      modules,
+      edges: graph.edges.filter(
+        edge => paths.has(edge.source) && paths.has(edge.target),
+      ),
+    };
+  }, [graph, scopePaths]);
 
   const viewSwitch = (
     <div className="workspace__map-switch" role="group" aria-label="View">
@@ -461,6 +530,11 @@ function MapPanel({
       >
         List
       </button>
+      {scopePaths !== null && (
+        <button type="button" className="button" onClick={onClearScope}>
+          All files
+        </button>
+      )}
     </div>
   );
 
@@ -472,7 +546,7 @@ function MapPanel({
     >
       {showList ? (
         <ListFallback
-          graph={graph}
+          graph={visibleGraph}
           selectedPath={selectedPath}
           onSelectFile={selectFile}
           message={fallbackMessage}
@@ -488,7 +562,7 @@ function MapPanel({
             }
           >
             <DependencyMap
-              graph={graph}
+              graph={visibleGraph}
               expandedModules={expandedModules}
               selectedPath={selectedPath}
               selectionRevision={selectionRevision}

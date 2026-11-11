@@ -32,6 +32,7 @@ from repolens.graph.store import (
     normalize_repo_url,
 )
 from repolens.ingestion import IngestionError
+from repolens.onboarding import OverviewService
 from repolens.pipeline import PipelineAnalysisRunner
 from repolens.search import (
     AnalysisUnavailableError,
@@ -140,6 +141,61 @@ class SearchContractResponse(BaseModel):
     limit: int
     has_more: bool
     results: list[RankedFileContractResponse]
+
+
+class OverviewFileResponse(BaseModel):
+    path: str
+    reason: str
+    summary: str
+    score: float | None = None
+
+
+class OverviewPackageResponse(BaseModel):
+    id: str
+    name: str
+    fileCount: int
+    layer: int
+    cyclic: bool
+
+
+class OverviewArchitectureEdgeResponse(BaseModel):
+    source: str
+    target: str
+    count: int
+
+
+class OverviewLayerResponse(BaseModel):
+    depth: int
+    name: str
+    packages: list[str]
+
+
+class OverviewArchitectureResponse(BaseModel):
+    packages: list[OverviewPackageResponse]
+    edges: list[OverviewArchitectureEdgeResponse]
+    layers: list[OverviewLayerResponse]
+    hasCycles: bool
+
+
+class OverviewAreaResponse(BaseModel):
+    id: str
+    name: str
+    files: list[str]
+    summary: str
+
+
+class OverviewCategoryResponse(BaseModel):
+    path: str
+    category: str
+
+
+class RepositoryOverviewResponse(BaseModel):
+    entryPoints: list[OverviewFileResponse]
+    coreFiles: list[OverviewFileResponse]
+    architecture: OverviewArchitectureResponse
+    areas: list[OverviewAreaResponse]
+    tour: list[OverviewFileResponse]
+    categories: list[OverviewCategoryResponse]
 
 
 class AnalysisRunner(Protocol):
@@ -322,6 +378,7 @@ def create_analysis_router(
     """Create routes for starting, polling, cancelling, and searching analyses."""
     active_runner = runner or DefaultAnalysisRunner()
     search_service = SearchService(store)
+    overview_service = OverviewService(store)
     router = APIRouter(route_class=_ContractRoute)
 
     @router.post(
@@ -461,6 +518,20 @@ def create_analysis_router(
             "has_more": page.has_more,
             "results": results,
         }
+
+    @router.get(
+        "/analyses/{analysis_id}/overview",
+        response_model=RepositoryOverviewResponse,
+        summary="Get an onboarding overview for an analyzed repository",
+    )
+    def get_overview(analysis_id: AnalysisIdPath) -> Any:
+        try:
+            return overview_service.get_overview(analysis_id)
+        except GraphStoreError as exc:
+            return JSONResponse(
+                status_code=exc.status_code,
+                content=exc.to_dict(),
+            )
 
     return router
 

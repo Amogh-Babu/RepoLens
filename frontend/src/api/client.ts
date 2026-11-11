@@ -3,6 +3,7 @@ import type {
   Analysis,
   DependencyGraph,
   FileDetail,
+  RepositoryOverview,
   SearchRequest,
   SearchResponse,
   StartAnalysisRequest,
@@ -48,6 +49,12 @@ export interface ApiClient {
     analysisId: string,
     options?: RequestOptions,
   ): Promise<DependencyGraph>;
+
+  /** GET /analyses/{id}/overview: onboarding guide derived from the graph. */
+  getOverview(
+    analysisId: string,
+    options?: RequestOptions,
+  ): Promise<RepositoryOverview>;
 
   /** GET /analyses/{id}/files/{path}: data for the file detail panel. */
   getFile(
@@ -122,6 +129,17 @@ export class HttpApiClient implements ApiClient {
     return this.request(
       'GET',
       `/analyses/${encodeURIComponent(analysisId)}/graph`,
+      options,
+    );
+  }
+
+  getOverview(
+    analysisId: string,
+    options?: RequestOptions,
+  ): Promise<RepositoryOverview> {
+    return this.request(
+      'GET',
+      `/analyses/${encodeURIComponent(analysisId)}/overview`,
       options,
     );
   }

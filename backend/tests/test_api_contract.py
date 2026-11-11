@@ -35,6 +35,9 @@ def test_openapi_schema_exposes_all_frontend_contract_routes() -> None:
     assert "/analyses/{analysis_id}/search" in paths
     assert "get" in paths["/analyses/{analysis_id}/search"]
 
+    assert "/analyses/{analysis_id}/overview" in paths
+    assert "get" in paths["/analyses/{analysis_id}/overview"]
+
 
 def test_post_get_and_delete_analyses_lifecycle() -> None:
     store = SqliteGraphStore()
@@ -170,6 +173,15 @@ def test_completed_analysis_end_to_end_contract() -> None:
     assert search["total"] >= 4
     assert search["results"][0]["position"] == 1
     assert all(result["orderReason"] for result in search["results"])
+
+    # 5. GET /analyses/{id}/overview
+    overview = client.get("/analyses/flask-1/overview")
+    assert overview.status_code == 200
+    overview_body = overview.json()
+    assert overview_body["entryPoints"]
+    assert overview_body["coreFiles"]
+    assert overview_body["architecture"]["packages"]
+    assert overview_body["tour"]
 
 
 def test_expired_analysis_returns_410_across_all_endpoints() -> None:
