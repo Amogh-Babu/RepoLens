@@ -1,13 +1,22 @@
 .tour {
+  --tour-dim: rgb(0 0 0 / 45%);
+
   position: fixed;
   inset: 0;
   z-index: 1000;
 }
 
+/* A dark page needs a darker veil for the outlined area to stand out. */
+@media (prefers-color-scheme: dark) {
+  .tour {
+    --tour-dim: rgb(0 0 0 / 72%);
+  }
+}
+
 .tour__backdrop {
   position: fixed;
   inset: 0;
-  background: rgb(0 0 0 / 45%);
+  background: var(--tour-dim);
 }
 
 /* The page stays visible through the outlined area; the rest is dimmed. */
@@ -15,7 +24,7 @@
   position: fixed;
   border: 2px solid var(--color-accent);
   border-radius: 10px;
-  box-shadow: 0 0 0 9999px rgb(0 0 0 / 45%);
+  box-shadow: 0 0 0 9999px var(--tour-dim);
   pointer-events: none;
   transition:
     top 150ms ease,

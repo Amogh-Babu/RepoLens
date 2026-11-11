@@ -139,6 +139,7 @@
 
 .detail__reading p {
   margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .detail__reading-position {

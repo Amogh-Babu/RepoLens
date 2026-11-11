@@ -99,6 +99,7 @@
 
 .reading-list__why dd {
   margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .reading-list__links {
