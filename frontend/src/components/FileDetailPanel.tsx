@@ -27,6 +27,8 @@ export interface ReadingOrderInfo {
   position: number;
   total: number;
   reason: string;
+  /** Why the file sits at this position in the order. */
+  orderReason: string;
   /** Selects the next file in the reading order; null at the end. */
   onNext: (() => void) | null;
 }
@@ -78,6 +80,12 @@ export function FileDetailPanel({
             {readingOrder.query}”
           </p>
           <p className="detail__muted">{readingOrder.reason}</p>
+          {readingOrder.orderReason !== '' && (
+            <p className="detail__muted">
+              <strong>Why #{readingOrder.position}:</strong>{' '}
+              {readingOrder.orderReason}
+            </p>
+          )}
           <button
             type="button"
             className="button"

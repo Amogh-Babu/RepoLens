@@ -188,6 +188,7 @@ def test_search_reading_order(
     assert [result["position"] for result in page["results"]] == list(
         range(1, len(search["readingOrder"]) + 1)
     )
+    assert [result["orderReason"] for result in page["results"]] == search["orderReasons"]
 
 
 def test_reanalyzing_the_same_commit_reuses_the_analysis(

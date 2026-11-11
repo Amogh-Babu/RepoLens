@@ -61,8 +61,9 @@ export function ReadingList({
           <div className="reading-list__header">
             <h2>Reading order for “{query}”</h2>
             <p className="reading-list__meta">
-              Showing {results.length} of {total}. A suggested order to read,
-              not the order the code runs in.
+              Showing {results.length} of {total}. A suggested order to read:
+              each file comes after the matching files it imports. This is not
+              the order the code runs in.
             </p>
           </div>
           <ol className="reading-list__entries">
@@ -122,7 +123,18 @@ function ReadingListEntry({
         <span className="reading-list__position">{entry.position}</span>
         <code>{entry.path}</code>
       </button>
-      <p className="reading-list__reason">{entry.reason}</p>
+      <dl className="reading-list__why">
+        <div>
+          <dt>Why it matches</dt>
+          <dd>{entry.reason}</dd>
+        </div>
+        {entry.orderReason !== '' && (
+          <div>
+            <dt>Why #{entry.position}</dt>
+            <dd>{entry.orderReason}</dd>
+          </div>
+        )}
+      </dl>
       <div className="reading-list__links">
         {entry.matches.length > 0 && (
           <details>

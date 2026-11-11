@@ -496,13 +496,48 @@ function rankFiles(files: FixtureFile[], terms: string[]): RankedFile[] {
   scored.sort(
     (a, b) => b.score - a.score || a.file.path.localeCompare(b.file.path),
   );
+  const order = scored.map(entry => entry.file);
   return scored.map((entry, index) => ({
     position: index + 1,
     path: entry.file.path,
     score: entry.score,
     reason: buildReason(entry.matches, entry.importers),
+    orderReason: buildOrderReason(order, index),
     matches: entry.matches,
   }));
+}
+
+/** Same wording as the backend's order reasons, from the mock's order. */
+function buildOrderReason(order: FixtureFile[], index: number): string {
+  const file = order[index];
+  if (file === undefined) return '';
+  const imports = (other: FixtureFile, target: FixtureFile) =>
+    other.imports.some(imp => imp.targetPath === target.path);
+  const before = order.slice(0, index).filter(other => imports(file, other));
+  const after = order.slice(index + 1).filter(other => imports(other, file));
+  const parts: string[] = [];
+  if (before.length > 0) {
+    parts.push(`Comes after ${nameFiles(before)}, which it imports`);
+  }
+  if (after.length > 0) {
+    const verb = after.length === 1 ? 'imports' : 'import';
+    parts.push(`comes before ${nameFiles(after)}, which ${verb} it`);
+  }
+  if (parts.length === 0) {
+    return (
+      'Does not import or get imported by the other results, ' +
+      'so it is placed by how strongly it matches.'
+    );
+  }
+  const sentence = parts.join('; ');
+  return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`;
+}
+
+function nameFiles(files: FixtureFile[]): string {
+  const [first, second] = files;
+  if (files.length === 1) return first?.path ?? '';
+  if (files.length === 2) return `${first?.path} and ${second?.path}`;
+  return `${first?.path}, ${second?.path} and ${files.length - 2} more`;
 }
 
 function matchFile(file: FixtureFile, terms: string[]): SearchMatch[] {

@@ -81,10 +81,24 @@
   text-align: center;
 }
 
-.reading-list__reason {
+.reading-list__why {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   margin: 4px 0 0;
   padding-left: calc(1.5em + 8px);
   color: var(--color-muted);
+}
+
+.reading-list__why dt {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.reading-list__why dd {
+  margin: 0;
 }
 
 .reading-list__links {

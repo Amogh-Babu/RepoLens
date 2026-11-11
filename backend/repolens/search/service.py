@@ -1,6 +1,7 @@
 import heapq
 import re
 from collections.abc import Iterable
+from dataclasses import replace
 
 from repolens.search.models import (
     MatchEvidence,
@@ -110,45 +111,57 @@ class SearchService:
         ranked: list[RankedFile],
         candidates: list[tuple[SearchDocument, tuple[MatchEvidence, ...], float]],
     ) -> list[RankedFile]:
+        """Order results dependencies first, and say why each file is placed.
+
+        A Kahn topological sort over the imports between matching files:
+        a file is ready once every matching file it imports has been placed,
+        and among ready files the stronger match goes first. When only
+        import cycles remain, the strongest remaining match is placed next.
+        """
         results_by_path = {result.path: result for result in ranked}
         dependents: dict[str, set[str]] = {path: set() for path in results_by_path}
-        prerequisite_count = {path: 0 for path in results_by_path}
+        prerequisites: dict[str, set[str]] = {path: set() for path in results_by_path}
 
         for document, _, _ in candidates:
             dependency_path = document.path
             for dependent_path in document.depended_on_by:
                 if dependent_path not in results_by_path:
                     continue
-                if dependent_path in dependents[dependency_path]:
+                if dependent_path == dependency_path:
                     continue
                 dependents[dependency_path].add(dependent_path)
-                prerequisite_count[dependent_path] += 1
+                prerequisites[dependent_path].add(dependency_path)
 
+        prerequisite_count = {path: len(deps) for path, deps in prerequisites.items()}
         ready: list[tuple[float, str, str]] = []
         for path, count in prerequisite_count.items():
             if count == 0:
                 result = results_by_path[path]
                 heapq.heappush(ready, (-result.score, path.casefold(), path))
 
-        ordered: list[RankedFile] = []
-        ordered_paths: set[str] = set()
-        while len(ordered) < len(ranked):
+        ordered_paths: list[str] = []
+        placed: set[str] = set()
+        cycle_partners: dict[str, tuple[list[str], list[str]]] = {}
+        while len(ordered_paths) < len(ranked):
             if not ready:
-                remaining_paths = set(results_by_path).difference(ordered_paths)
+                remaining_paths = set(results_by_path).difference(placed)
                 cycle_break = min(
                     remaining_paths,
                     key=lambda path: (-results_by_path[path].score, path.casefold()),
+                )
+                cycle_partners[cycle_break] = SearchService._cycle_partners(
+                    cycle_break, prerequisites, placed
                 )
                 result = results_by_path[cycle_break]
                 heapq.heappush(ready, (-result.score, cycle_break.casefold(), cycle_break))
 
             _, _, path = heapq.heappop(ready)
-            if path in ordered_paths:
+            if path in placed:
                 continue
-            ordered.append(results_by_path[path])
-            ordered_paths.add(path)
+            ordered_paths.append(path)
+            placed.add(path)
             for dependent_path in dependents[path]:
-                if dependent_path in ordered_paths:
+                if dependent_path in placed:
                     continue
                 prerequisite_count[dependent_path] -= 1
                 if prerequisite_count[dependent_path] == 0:
@@ -158,7 +171,105 @@ class SearchService:
                         (-result.score, dependent_path.casefold(), dependent_path),
                     )
 
+        position = {path: index for index, path in enumerate(ordered_paths)}
+        ordered: list[RankedFile] = []
+        for path in ordered_paths:
+            before = sorted(
+                (dep for dep in prerequisites[path] if position[dep] < position[path]),
+                key=lambda dep: position[dep],
+            )
+            after = sorted(
+                (dep for dep in dependents[path] if position[dep] > position[path]),
+                key=lambda dep: position[dep],
+            )
+            in_cycle, held_back = cycle_partners.get(path, ([], []))
+            reason = SearchService._build_order_reason(before, after, in_cycle, held_back)
+            ordered.append(replace(results_by_path[path], order_reason=reason))
         return ordered
+
+    @staticmethod
+    def _cycle_partners(
+        path: str, prerequisites: dict[str, set[str]], placed: set[str]
+    ) -> tuple[list[str], list[str]]:
+        """Split the unplaced files `path` imports by why they could not go first.
+
+        The first list imports `path` back, directly or through other
+        unplaced files, so they share an import cycle with it. The second
+        list waits on some other cycle.
+        """
+        in_cycle: list[str] = []
+        held_back: list[str] = []
+        for dependency in sorted(prerequisites[path].difference(placed), key=str.casefold):
+            seen: set[str] = set()
+            stack = [dependency]
+            loops_back = False
+            while stack and not loops_back:
+                current = stack.pop()
+                for upstream in prerequisites[current]:
+                    if upstream == path:
+                        loops_back = True
+                        break
+                    if upstream not in placed and upstream not in seen:
+                        seen.add(upstream)
+                        stack.append(upstream)
+            (in_cycle if loops_back else held_back).append(dependency)
+        return in_cycle, held_back
+
+    @staticmethod
+    def _build_order_reason(
+        imports_before: list[str],
+        imported_by_after: list[str],
+        cycle_with: list[str],
+        held_back: list[str],
+    ) -> str:
+        """Explain a file's place in the reading order in one sentence.
+
+        `imports_before` are matching files it imports that come earlier and
+        `imported_by_after` are matching files that import it and come later.
+        `cycle_with` and `held_back` are files it imports that still come
+        later: the first share an import cycle with it, and the second are
+        held back by a cycle elsewhere.
+        """
+        parts: list[str] = []
+        if cycle_with:
+            parts.append(
+                f"Part of an import cycle with {SearchService._name_files(cycle_with)}, "
+                "so it is placed by how strongly it matches"
+            )
+        if held_back:
+            verb = "is" if len(held_back) == 1 else "are"
+            parts.append(
+                f"Comes before {SearchService._name_files(held_back)}, which it imports, "
+                f"because {'that file' if len(held_back) == 1 else 'they'} {verb} "
+                "held back by an import cycle"
+            )
+        if imports_before:
+            parts.append(
+                f"Comes after {SearchService._name_files(imports_before)}, "
+                f"which it imports"
+            )
+        if imported_by_after:
+            verb = "imports" if len(imported_by_after) == 1 else "import"
+            parts.append(
+                f"Comes before {SearchService._name_files(imported_by_after)}, "
+                f"which {verb} it"
+            )
+        if not parts:
+            return (
+                "Does not import or get imported by the other results, "
+                "so it is placed by how strongly it matches."
+            )
+        sentence = "; ".join(parts[:1] + [part[0].lower() + part[1:] for part in parts[1:]])
+        return sentence + "."
+
+    @staticmethod
+    def _name_files(paths: list[str]) -> str:
+        """Name up to two files, then count the rest."""
+        if len(paths) == 1:
+            return paths[0]
+        if len(paths) == 2:
+            return f"{paths[0]} and {paths[1]}"
+        return f"{paths[0]}, {paths[1]} and {len(paths) - 2} more"
 
     @staticmethod
     def _validate_pagination(offset: int, limit: int) -> None:

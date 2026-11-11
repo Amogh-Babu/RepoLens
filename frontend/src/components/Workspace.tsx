@@ -162,6 +162,7 @@ function readingOrderFor(
     position: entry.position,
     total: search.total,
     reason: entry.reason,
+    orderReason: entry.orderReason,
     onNext: next === undefined ? null : () => selectFile(next.path),
   };
 }

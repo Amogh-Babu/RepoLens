@@ -168,8 +168,13 @@ export interface RankedFile {
   position: number;
   path: string;
   score: number;
-  /** One-line reason citing evidence. */
+  /** One-line reason citing evidence: why the file matched. */
   reason: string;
+  /**
+   * Why the file sits at this position: which matching files it comes
+   * after (it imports them) or before (they import it).
+   */
+  orderReason: string;
   /** Every match in this file, for the expanded reason view. */
   matches: SearchMatch[];
 }

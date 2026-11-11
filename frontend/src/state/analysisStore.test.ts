@@ -276,6 +276,7 @@ describe('createAnalysisStore search', () => {
         path: `${query}/${offset + i}.py`,
         score: 1,
         reason: 'r',
+        orderReason: '',
         matches: [],
       })),
     };

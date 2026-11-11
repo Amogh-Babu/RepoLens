@@ -48,6 +48,7 @@ class RankedFileResponse(BaseModel):
     score: float
     reason: str
     matches: list[MatchEvidenceResponse]
+    order_reason: str
 
 
 class SearchPageResponse(BaseModel):
