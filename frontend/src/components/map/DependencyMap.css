@@ -1,4 +1,6 @@
 .map {
+  --map-imports-color: #1a7f37;
+  --map-imported-by-color: #9a6700;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -52,13 +54,44 @@
 }
 
 .map__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
   font-size: 0.75rem;
   color: var(--color-muted);
+}
+
+.map__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.map__legend-swatch {
+  width: 14px;
+  border-top: 2px solid currentColor;
+}
+
+.map__legend-swatch--imports {
+  color: var(--map-imports-color);
+}
+
+.map__legend-swatch--imported-by {
+  color: var(--map-imported-by-color);
 }
 
 .map__canvas {
   flex: 1;
   min-height: 0;
+}
+
+.map__selection-hint {
+  margin: 0;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-muted);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
 }
 
 .map .react-flow {
@@ -165,11 +198,23 @@
   stroke: var(--color-muted);
 }
 
-.react-flow__edge.map-edge--highlighted path.react-flow__edge-path {
-  stroke: var(--color-accent);
-  stroke-width: 2;
+.react-flow__edge.map-edge--imports path.react-flow__edge-path {
+  stroke: var(--map-imports-color);
+  stroke-width: 2.5;
+}
+
+.react-flow__edge.map-edge--imported-by path.react-flow__edge-path {
+  stroke: var(--map-imported-by-color);
+  stroke-width: 2.5;
 }
 
 .react-flow__edge.map-edge--dimmed {
   opacity: 0.15;
+}
+
+@media (prefers-color-scheme: dark) {
+  .map {
+    --map-imports-color: #3fb950;
+    --map-imported-by-color: #d29922;
+  }
 }
