@@ -2,16 +2,24 @@ from dataclasses import dataclass
 from typing import Literal
 
 
-MatchKind = Literal["filename", "symbol", "reference", "comment"]
+MatchKind = Literal["filename", "symbol", "member", "reference", "docstring", "comment"]
 
 
 @dataclass(frozen=True)
 class SearchDocument:
+    """Everything search can match in one file.
+
+    `symbols` are module-level names; `members` are methods and class-level
+    attributes written as `Owner.name`; `docstrings` and `comments` are prose.
+    """
+
     path: str
     symbols: tuple[str, ...] = ()
     references: tuple[str, ...] = ()
     comments: tuple[str, ...] = ()
     depended_on_by: tuple[str, ...] = ()
+    members: tuple[str, ...] = ()
+    docstrings: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

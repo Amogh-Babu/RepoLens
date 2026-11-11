@@ -24,6 +24,7 @@ language maps onto `ImportRecord` the same way but has its own layout rules,
 so it would bring its own resolver.
 """
 
+import dataclasses
 from collections.abc import Iterable
 
 from repolens.graph.models import AnalyzedFile, ImportRecord
@@ -132,15 +133,7 @@ class ImportClassifier:
                     seen_targets.add(record.target_path)
                 classified.append(record)
 
-        return AnalyzedFile(
-            path=file.path,
-            module=file.module,
-            parsed=file.parsed,
-            line_count=file.line_count,
-            symbols=file.symbols,
-            imports=tuple(classified),
-            comments=file.comments,
-        )
+        return dataclasses.replace(file, imports=tuple(classified))
 
     def classify_files(
         self, files: Iterable[AnalyzedFile]

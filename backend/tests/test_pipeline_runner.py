@@ -142,7 +142,14 @@ def test_analyzes_a_repository_into_graph_files_and_search(tmp_path: Path) -> No
 
     search = client.get(f"/analyses/{analysis_id}/search", params={"q": "billing"})
     assert search.status_code == 200
-    assert search.json()["results"][0]["path"] == "app/services/billing.py"
+    results = search.json()["results"]
+    # The strongest match is the billing module itself. Results are listed in
+    # reading order, so app/config.py, which billing.py imports and whose
+    # docstring mentions billing, may come before it.
+    best = max(results, key=lambda result: result["score"])
+    assert best["path"] == "app/services/billing.py"
+    paths = [result["path"] for result in results]
+    assert paths.index("app/config.py") < paths.index("app/services/billing.py")
 
 
 def test_removes_the_snapshot_after_analyzing(tmp_path: Path) -> None:

@@ -15,16 +15,30 @@ python -m pytest tests/test_search_precision.py  # check and reproduce it
 
 | repository           | queries | indexed files | RepoLens | grep  | grep+rank | ideal |
 | -------------------- | ------: | ------------: | -------: | ----: | --------: | ----: |
-| `search_mini_repo`   |       6 |             8 |    0.167 | 0.033 |     0.033 | 0.267 |
-| `analysis_mini_repo` |       6 |             7 |    0.167 | 0.000 |     0.000 | 0.233 |
-| `e2e_reference`      |       7 |            14 |    0.286 | 0.086 |     0.114 | 0.457 |
-| **overall**          |  **19** |               |**0.211** |**0.042**| **0.053**|**0.326**|
+| `search_mini_repo`   |       6 |             8 |    0.200 | 0.033 |     0.033 | 0.267 |
+| `analysis_mini_repo` |       6 |             7 |    0.233 | 0.000 |     0.000 | 0.233 |
+| `e2e_reference`      |       7 |            14 |    0.343 | 0.086 |     0.114 | 0.457 |
+| **overall**          |  **19** |               |**0.263** |**0.042**| **0.053**|**0.326**|
 
-RepoLens beats the grep filename baseline on all three repositories: 0.211
-versus 0.042 overall, five times the baseline, and it never scores below it on
+RepoLens beats the grep filename baseline on all three repositories: 0.263
+versus 0.042 overall, six times the baseline, and it never scores below it on
 a single query. Read as a share of what a perfect ranker could score on these
-labels, RepoLens recovers 65% of the achievable precision and grep recovers
-13%.
+labels, RepoLens recovers 81% of the achievable precision and grep recovers
+13%. On `analysis_mini_repo` it reaches the ceiling.
+
+### History
+
+| change | overall RepoLens | labeled files found | queries with no results |
+| ------ | ---------------: | ------------------: | ----------------------: |
+| First measurement (#37, PR #67): paths, module-level symbols, import names | 0.211 | 20 / 31 | 4 |
+| #77 part 1: also class members, docstrings, and comments | 0.263 | 25 / 31 | 1 |
+
+No query scored lower after #77. Its reading orders changed in two places,
+both because a newly matched file is a dependency of a stronger match and is
+therefore listed first: `cart total` now starts with `bookshop/catalog/models.py`
+(the `User.cart` field that `checkout.py` sums), and `token` lists
+`bookshop/auth/__init__.py` (whose docstring mentions tokens) before
+`checkout.py`.
 
 Per-query results, including every path each system returned, are in
 `measured_precision.json`.
@@ -43,22 +57,29 @@ every system shares that ceiling. Compare systems to each other and to
 grep never wins a query outright, and RepoLens scores at least as well as both
 baselines on all 19. The ties are the three queries whose answer is named in a
 filename -- `payments`, `user account lookup`, and `login` on `e2e_reference`
--- which is exactly the case grep handles.
+-- which is exactly the case grep handles -- plus `tax`, which no system
+finds.
 
-Across the 19 queries, RepoLens finds 20 of the 31 labeled files a perfect
-ranker would have returned. Every one of the 11 it misses is a recall failure,
+Across the 19 queries, RepoLens finds 25 of the 31 labeled files a perfect
+ranker would have returned. Each of the 6 it misses is still a recall failure,
 not a ranking failure: the file is never a candidate, because no query term
-appears in its path, its module-level symbol names, or its import names, which
-is all the index holds.
+appears anywhere the index reaches, and no keyword index can bridge a
+difference in wording.
 
-- Four queries return **nothing at all**: `http request handler`, `tax`,
-  `command line arguments`, and `command line entry point`. Together they
-  account for 5 of the 11 misses.
-- The other 6 are files whose matching text sits somewhere the index does not
-  reach -- a dataclass field (`Settings.tax_rate`, `User.cart`), a method
-  (`User.check_password`), a dict key (`password_hash`), or an imported name
-  (`from bookshop.config import SECRET_KEY`, where only the module
-  `bookshop.config` is stored).
+- `tax` returns **nothing at all**: the word only appears as a function
+  parameter in `app/billing/service.py`, and identifiers inside function
+  bodies are not indexed.
+- `login` misses `bookshop/auth/tokens.py` and `bookshop/catalog/models.py`,
+  and `password verification` misses `app/users/repository.py`: each is part
+  of the feature but never uses the query's words.
+- `secret key` misses `bookshop/auth/tokens.py`, which only takes the name in
+  `from bookshop.config import SECRET_KEY`; imported names are not stored,
+  only the module `bookshop.config`.
+- `command line entry point` misses `bookshop/app.py`, whose entry-point role
+  is structural rather than written down.
+
+These are the cases the embedding-based search in #77 part 2 and the
+entry-point detection in #79 are meant to reach.
 
 ## Method
 
@@ -69,12 +90,11 @@ index: `AnalysisService` parses the tree, `classify_imports` resolves its
 imports, the result is stored in an in-memory `SqliteGraphStore`, and that
 store serves `SearchService` as the `SearchIndex`. This is the sequence
 `PipelineAnalysisRunner` runs for a real repository, so the measurement sees
-the same documents the API serves. It notably means comments are not indexed:
-`SearchService` scores a `comment` field, but
-`repolens.analysis.adapter.to_analyzed_file` never produces a `CommentRecord`,
-so in production that field is always empty. Measuring against
-`tests/fixtures/search_mini_repo/search_index.json`, whose comments are
-hand-written, would have overstated RepoLens.
+the same documents the API serves: paths, module-level symbols, import names,
+and (since #77) the class members, docstrings, and comments the analyzer
+extracts. Measuring against `tests/fixtures/search_mini_repo/search_index.json`,
+whose comments are hand-written rather than extracted, would have measured the
+fixture instead of the pipeline.
 
 **grep** is the baseline the issue names, a grep of the file list:
 

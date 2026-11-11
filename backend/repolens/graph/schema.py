@@ -60,6 +60,17 @@ CREATE TABLE IF NOT EXISTS comments (
     file_id INTEGER NOT NULL,
     line INTEGER NOT NULL,
     text TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'comment',
+    FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS members (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    file_id INTEGER NOT NULL,
+    owner TEXT NOT NULL,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    line INTEGER NOT NULL,
     FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
 );
 
@@ -69,6 +80,7 @@ CREATE INDEX IF NOT EXISTS idx_symbols_file_id ON symbols(file_id);
 CREATE INDEX IF NOT EXISTS idx_imports_file_id ON imports(file_id);
 CREATE INDEX IF NOT EXISTS idx_imports_target_file_id ON imports(target_file_id);
 CREATE INDEX IF NOT EXISTS idx_comments_file_id ON comments(file_id);
+CREATE INDEX IF NOT EXISTS idx_members_file_id ON members(file_id);
 """
 
 

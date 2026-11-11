@@ -218,8 +218,8 @@
       "readingOrder": [
         "bookshop/auth/tokens.py",
         "bookshop/auth/login.py",
-        "bookshop/orders/checkout.py",
         "bookshop/auth/__init__.py",
+        "bookshop/orders/checkout.py",
         "tests/test_checkout.py"
       ]
     },
@@ -234,7 +234,11 @@
     },
     {
       "query": "cart total",
-      "readingOrder": ["bookshop/orders/checkout.py", "tests/test_checkout.py"]
+      "readingOrder": [
+        "bookshop/catalog/models.py",
+        "bookshop/orders/checkout.py",
+        "tests/test_checkout.py"
+      ]
     },
     {
       "query": "login",

@@ -18,8 +18,10 @@ from repolens.analysis.classifier import (
 )
 from repolens.analysis.models import (
     ImportForm,
+    ParsedComment,
     ParsedFile,
     ParsedImport,
+    ParsedMember,
     ParsedSymbol,
     ParseError,
     RepositoryAnalysis,
@@ -46,8 +48,10 @@ __all__ = [
     "PYTHON_FILE_EXTENSIONS",
     "PYTHON_LANGUAGE",
     "ParseError",
+    "ParsedComment",
     "ParsedFile",
     "ParsedImport",
+    "ParsedMember",
     "ParsedSymbol",
     "PythonAnalyzer",
     "RepositoryAnalysis",

@@ -9,7 +9,9 @@ from repolens.analysis.models import ParsedFile, RepositoryAnalysis
 from repolens.graph.models import (
     AnalysisCounts,
     AnalyzedFile,
+    CommentRecord,
     ImportRecord,
+    MemberRecord,
     SymbolRecord,
 )
 
@@ -44,6 +46,19 @@ def to_analyzed_file(parsed: ParsedFile) -> AnalyzedFile:
                 symbols=imported.symbols,
             )
             for imported in parsed.imports
+        ),
+        comments=tuple(
+            CommentRecord(line=comment.line, text=comment.text, kind=comment.kind)
+            for comment in parsed.comments
+        ),
+        members=tuple(
+            MemberRecord(
+                owner=member.owner,
+                name=member.name,
+                kind=member.kind,
+                line=member.line,
+            )
+            for member in parsed.members
         ),
     )
 

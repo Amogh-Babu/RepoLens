@@ -10,7 +10,7 @@ pipeline (see `repolens.analysis.classifier`).
 from dataclasses import dataclass
 from typing import Literal
 
-from repolens.graph.models import SymbolKind
+from repolens.graph.models import CommentKind, MemberKind, SymbolKind
 
 
 ImportForm = Literal["import", "from"]
@@ -23,6 +23,29 @@ class ParsedSymbol:
     name: str
     kind: SymbolKind
     line: int
+
+
+@dataclass(frozen=True)
+class ParsedMember:
+    """A method or class-level attribute declared inside a top-level class."""
+
+    owner: str
+    name: str
+    kind: MemberKind
+    line: int
+
+
+@dataclass(frozen=True)
+class ParsedComment:
+    """Prose a source file carries: a comment block or a docstring.
+
+    `text` holds the prose only, without comment markers or quotes. It is read
+    from tokens or the syntax tree; nothing in it is ever evaluated.
+    """
+
+    line: int
+    text: str
+    kind: CommentKind = "comment"
 
 
 @dataclass(frozen=True)
@@ -64,10 +87,14 @@ class ParseError:
 
 @dataclass(frozen=True)
 class ParsedFile:
-    """Imports and top-level symbols extracted from a single source file.
+    """Imports, symbols, and prose extracted from a single source file.
+
+    `symbols` are the top-level declarations; `members` are the methods and
+    class-level attributes inside top-level classes; `comments` holds comment
+    blocks and docstrings in line order.
 
     An unparsable file is still reported, with `parsed=False`, an `error`, and
-    empty imports and symbols, so that one bad file never hides the rest of a
+    nothing else extracted, so that one bad file never hides the rest of a
     repository.
     """
 
@@ -77,6 +104,8 @@ class ParsedFile:
     line_count: int = 0
     imports: tuple[ParsedImport, ...] = ()
     symbols: tuple[ParsedSymbol, ...] = ()
+    members: tuple[ParsedMember, ...] = ()
+    comments: tuple[ParsedComment, ...] = ()
     error: ParseError | None = None
 
 
