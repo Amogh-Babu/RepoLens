@@ -84,38 +84,45 @@ export function RepoInputForm({
         )}
       </div>
 
-      <div className="repo-form__field">
-        <label htmlFor={refId}>
-          Branch, tag or commit <span className="optional">(optional)</span>
-        </label>
-        <input
-          id={refId}
-          type="text"
-          autoComplete="off"
-          spellCheck={false}
-          placeholder={refFromUrl ?? 'Default branch'}
-          value={value.ref}
-          onChange={event => onChange({...value, ref: event.target.value})}
-          aria-invalid={refError !== null}
-          aria-describedby={
-            refError !== null
-              ? refErrorId
-              : refFromUrl !== null
-                ? refNoteId
-                : undefined
-          }
-        />
-        {refError !== null && (
-          <p id={refErrorId} className="repo-form__error">
-            {refError}
-          </p>
-        )}
-        {refError === null && refFromUrl !== null && (
-          <p id={refNoteId} className="repo-form__note">
-            Using <code>{refFromUrl}</code> from the URL.
-          </p>
-        )}
-      </div>
+      {/* Most people analyze the default branch, so this starts folded. */}
+      <details
+        className="repo-form__more"
+        open={value.ref !== '' || refError !== null || undefined}
+      >
+        <summary>Analyze a specific branch, tag or commit</summary>
+        <div className="repo-form__field">
+          <label htmlFor={refId}>
+            Branch, tag or commit <span className="optional">(optional)</span>
+          </label>
+          <input
+            id={refId}
+            type="text"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder={refFromUrl ?? 'Default branch'}
+            value={value.ref}
+            onChange={event => onChange({...value, ref: event.target.value})}
+            aria-invalid={refError !== null}
+            aria-describedby={
+              refError !== null
+                ? refErrorId
+                : refFromUrl !== null
+                  ? refNoteId
+                  : undefined
+            }
+          />
+          {refError !== null && (
+            <p id={refErrorId} className="repo-form__error">
+              {refError}
+            </p>
+          )}
+          {refError === null && refFromUrl !== null && (
+            <p id={refNoteId} className="repo-form__note">
+              Using <code>{refFromUrl}</code> from the URL.
+            </p>
+          )}
+        </div>
+      </details>
 
       <button
         type="submit"

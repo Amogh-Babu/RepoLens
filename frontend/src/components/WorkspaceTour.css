@@ -1,0 +1,87 @@
+.tour {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+}
+
+.tour__backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgb(0 0 0 / 45%);
+}
+
+/* The page stays visible through the outlined area; the rest is dimmed. */
+.tour__spotlight {
+  position: fixed;
+  border: 2px solid var(--color-accent);
+  border-radius: 10px;
+  box-shadow: 0 0 0 9999px rgb(0 0 0 / 45%);
+  pointer-events: none;
+  transition:
+    top 150ms ease,
+    left 150ms ease,
+    width 150ms ease,
+    height 150ms ease;
+}
+
+.tour__card {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 20%);
+  font-size: 0.9375rem;
+}
+
+.tour__card:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.tour__count {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--color-muted);
+}
+
+.tour__title {
+  margin: 0;
+  font-size: 1.0625rem;
+}
+
+.tour__body p {
+  margin: 0 0 6px;
+}
+
+.tour__body p:last-child {
+  margin-bottom: 0;
+}
+
+.tour__body ul {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.tour__actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.tour__nav {
+  display: flex;
+  gap: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tour__spotlight {
+    transition: none;
+  }
+}

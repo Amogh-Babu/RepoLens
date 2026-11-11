@@ -4,6 +4,7 @@ import {encodeFilePath} from '../api/client.ts';
 import type {Analysis, DependencyGraph} from '../api/types.ts';
 import type {SearchState} from '../state/analysisStore.ts';
 import {useAnalysisStore} from '../state/analysisStoreContext.ts';
+import {hasSeen, markSeen} from '../utils/seenFlags.ts';
 import {ErrorBanner} from './ErrorBanner.tsx';
 import type {ReadingOrderInfo} from './FileDetailPanel.tsx';
 import {FileDetailPanel} from './FileDetailPanel.tsx';
@@ -13,6 +14,8 @@ import {MapErrorBoundary} from './map/MapErrorBoundary.tsx';
 import {ReadingList} from './ReadingList.tsx';
 import {ReanalyzeButton} from './ReanalyzeButton.tsx';
 import {SearchBar} from './SearchBar.tsx';
+import type {TourStep} from './WorkspaceTour.tsx';
+import {WorkspaceTour} from './WorkspaceTour.tsx';
 import './Workspace.css';
 
 // React Flow and dagre are most of the bundle, so the map loads on demand.
@@ -45,6 +48,12 @@ export function Workspace({analysis}: {analysis: Analysis}) {
   const clearSearch = useAnalysisStore(state => state.clearSearch);
   const expired = useAnalysisStore(state => state.expired);
   const [tab, setTab] = useState<SidebarTab>('files');
+  // The tour opens by itself the first time a viewer reaches a workspace.
+  const [touring, setTouring] = useState(() => !hasSeen('workspace-tour'));
+  const endTour = useCallback(() => {
+    markSeen('workspace-tour');
+    setTouring(false);
+  }, []);
 
   const sourceUrlFor = useCallback(
     (path: string) =>
@@ -72,19 +81,31 @@ export function Workspace({analysis}: {analysis: Analysis}) {
   return (
     <div className="workspace-area">
       {expiredBanner}
-      <SearchBar
-        active={search !== null}
-        disabled={expired}
-        searching={search?.pendingQuery != null}
-        onSearch={query => {
-          setTab('reading');
-          runSearch(query);
-        }}
-        onClear={() => {
-          setTab('files');
-          clearSearch();
-        }}
-      />
+      <div className="workspace__top">
+        <div className="workspace__search" data-tour="search">
+          <SearchBar
+            active={search !== null}
+            disabled={expired}
+            searching={search?.pendingQuery != null}
+            onSearch={query => {
+              setTab('reading');
+              runSearch(query);
+            }}
+            onClear={() => {
+              setTab('files');
+              clearSearch();
+            }}
+          />
+        </div>
+        <button
+          type="button"
+          className="button"
+          onClick={() => setTouring(true)}
+          title="Take the tour of this page again"
+        >
+          Help
+        </button>
+      </div>
 
       <div className="workspace">
         <Sidebar
@@ -101,7 +122,7 @@ export function Workspace({analysis}: {analysis: Analysis}) {
           matchedPaths={matchedPaths}
         />
 
-        <div className="workspace__detail">
+        <div className="workspace__detail" data-tour="detail">
           {selectedPath === null ? (
             <p className="workspace__hint">
               Select a file to see its symbols, imports and the files that
@@ -122,9 +143,81 @@ export function Workspace({analysis}: {analysis: Analysis}) {
           )}
         </div>
       </div>
+      {touring && <WorkspaceTour steps={TOUR_STEPS} onClose={endTour} />}
     </div>
   );
 }
+
+/** The first-run tour: one stop per area of the workspace. */
+const TOUR_STEPS: readonly TourStep[] = [
+  {
+    target: null,
+    title: 'Welcome to RepoLens',
+    body: (
+      <>
+        <p>
+          RepoLens has mapped which files in this repository import which. This
+          short tour shows where everything is.
+        </p>
+        <p>You can take it again at any time with the Help button.</p>
+      </>
+    ),
+  },
+  {
+    target: 'search',
+    title: 'Start with a search',
+    body: (
+      <p>
+        Type the feature you want to understand, like “checkout”, or a function
+        or class name. RepoLens lists the files involved, in the order to read
+        them.
+      </p>
+    ),
+  },
+  {
+    target: 'sidebar',
+    title: 'Reading list and files',
+    body: (
+      <>
+        <p>
+          After a search, the <strong>Reading list</strong> shows each file with
+          why it matches and why it comes at that spot in the order.
+        </p>
+        <p>
+          <strong>Files</strong> lists every analyzed file by folder.
+        </p>
+      </>
+    ),
+  },
+  {
+    target: 'map',
+    title: 'The dependency map',
+    body: (
+      <>
+        <p>
+          Each box is a folder. Click one to open it and see its files. Arrows
+          point from a file to the files it imports.
+        </p>
+        <p>
+          During a search the map shows only the matching files. Untick
+          <strong> Only show matches</strong> to see everything again.
+        </p>
+      </>
+    ),
+  },
+  {
+    target: 'detail',
+    title: 'File details',
+    body: (
+      <p>
+        Select a file, in the list or on the map, to see what it defines, what
+        it imports and what imports it, with links to its source on GitHub. From
+        a reading list, <strong>Next in reading order</strong> takes you to the
+        next file.
+      </p>
+    ),
+  },
+];
 
 /**
  * Shown once the cached analysis has expired (Use Cases 2-4): what is on
@@ -209,7 +302,7 @@ function Sidebar({
   }
 
   return (
-    <div className="workspace__sidebar">
+    <div className="workspace__sidebar" data-tour="sidebar">
       <div
         className="workspace__tabs"
         role="tablist"
@@ -358,7 +451,11 @@ function MapPanel({
   );
 
   return (
-    <section className="workspace__map" aria-label="Dependency map">
+    <section
+      className="workspace__map"
+      aria-label="Dependency map"
+      data-tour="map"
+    >
       {showList ? (
         <ListFallback
           graph={graph}
