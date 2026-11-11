@@ -33,6 +33,7 @@ from fastapi.staticfiles import StaticFiles
 from repolens.api.app import AnalysisRunner, create_app
 from repolens.graph.store import SqliteGraphStore
 from repolens.pipeline import PipelineAnalysisRunner
+from repolens.search.embedding import FastEmbedEmbedder
 
 
 API_PREFIX = "/api"
@@ -110,7 +111,13 @@ def create_server_from_environment(
         if origin.strip()
     )
     return create_server(
-        store=SqliteGraphStore(db_path),
+        store=SqliteGraphStore(
+            db_path,
+            embedder=FastEmbedEmbedder(
+                cache_dir=environ.get("REPOLENS_EMBEDDING_CACHE", "").strip()
+                or None
+            ),
+        ),
         runner=runner if runner is not None else PipelineAnalysisRunner(),
         frontend_dir=Path(frontend) if frontend else None,
         cors_origins=origins,

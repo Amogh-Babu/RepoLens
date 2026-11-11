@@ -4,7 +4,7 @@ import time
 from fastapi.testclient import TestClient
 
 from repolens.api.app import create_app
-from repolens.graph import SqliteGraphStore
+from repolens.graph import AnalysisRecord, AnalyzedFile, CommentRecord, SqliteGraphStore
 from test_graph_validation import (
     FLASK_AUTH_REPO_URL,
     FLASK_AUTH_SHA,
@@ -182,6 +182,58 @@ def test_completed_analysis_end_to_end_contract() -> None:
     assert overview_body["coreFiles"]
     assert overview_body["architecture"]["packages"]
     assert overview_body["tour"]
+
+
+def test_vague_query_returns_semantic_evidence_over_the_api() -> None:
+    class FixedEmbedder:
+        @property
+        def model_id(self) -> str:
+            return "api-test"
+
+        def embed(self, texts: list[str]) -> list[tuple[float, ...]]:
+            return [
+                (1.0, 0.0)
+                if text.startswith("query:") or "application" in text.casefold()
+                else (0.0, 1.0)
+                for text in texts
+            ]
+
+    store = SqliteGraphStore(embedder=FixedEmbedder())
+    store.save(
+        AnalysisRecord(
+            analysis_id="semantic-api",
+            repo="https://github.com/example/service",
+            sha="a" * 40,
+            files=(
+                AnalyzedFile(
+                    path="app/runtime.py",
+                    module="app",
+                    comments=(
+                        CommentRecord(1, "Boots the live web application.", "docstring"),
+                    ),
+                ),
+                AnalyzedFile(
+                    path="app/invoices.py",
+                    module="app",
+                    comments=(
+                        CommentRecord(1, "Calculates invoice totals.", "docstring"),
+                    ),
+                ),
+            ),
+        )
+    )
+    client = TestClient(create_app(store))
+
+    response = client.get(
+        "/analyses/semantic-api/search",
+        params={"q": "where should I work on production"},
+    )
+
+    assert response.status_code == 200
+    result = response.json()["results"][0]
+    assert result["path"] == "app/runtime.py"
+    assert result["matches"][0]["kind"] == "semantic"
+    assert "web application" in result["reason"]
 
 
 def test_expired_analysis_returns_410_across_all_endpoints() -> None:

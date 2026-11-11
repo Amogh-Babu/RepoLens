@@ -2,6 +2,7 @@
 
 import hashlib
 import logging
+import os
 import re
 from collections.abc import Sequence
 from typing import Any, Literal, Protocol
@@ -40,6 +41,7 @@ from repolens.search import (
     QueryValidationError,
     SearchService,
 )
+from repolens.search.embedding import FastEmbedEmbedder
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -47,7 +49,7 @@ _LOGGER = logging.getLogger(__name__)
 _GITHUB_PATH_RE = re.compile(r"^/([^/\s]+)/([^/\s]+)/?$")
 _FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
 
-FrontendMatchKind = Literal["filename", "symbol", "import", "comment"]
+FrontendMatchKind = Literal["filename", "symbol", "import", "comment", "semantic"]
 
 # The contract keeps four match kinds: a method or class attribute is shown
 # as a symbol, and a docstring as a comment.
@@ -58,6 +60,7 @@ _FRONTEND_MATCH_KINDS: dict[str, FrontendMatchKind] = {
     "reference": "import",
     "docstring": "comment",
     "comment": "comment",
+    "semantic": "semantic",
 }
 
 # Characters of prose shown around the first matched term in search evidence.
@@ -616,4 +619,11 @@ def _error_response(
 
 # The server analyzes real repositories. `create_app()` without a runner keeps
 # the offline stub for tests.
-app = create_app(runner=PipelineAnalysisRunner())
+app = create_app(
+    store=SqliteGraphStore(
+        embedder=FastEmbedEmbedder(
+            cache_dir=os.environ.get("REPOLENS_EMBEDDING_CACHE") or None
+        )
+    ),
+    runner=PipelineAnalysisRunner(),
+)

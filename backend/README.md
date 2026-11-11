@@ -414,6 +414,7 @@ by environment variables:
 | `REPOLENS_DB_PATH` | in memory | SQLite file for the graph store; the image uses `/data/repolens.db` on a volume, so analyses survive restarts until they expire |
 | `REPOLENS_FRONTEND_DIR` | unset (API only) | The built frontend to serve; the image uses `/app/frontend/dist` |
 | `REPOLENS_CORS_ORIGINS` | none | Comma-separated origins allowed to call the API cross-origin |
+| `REPOLENS_EMBEDDING_CACHE` | FastEmbed default | Directory containing the local BGE-small ONNX model |
 | `GITHUB_TOKEN` | unset | Raises GitHub's API rate limit |
 
 A file-backed store uses write-ahead logging. Its schema version is checked
@@ -473,17 +474,18 @@ to the file they reach. Its rules are documented under
 ## Search and Ranking
 
 `repolens.search.SearchService` accepts the user's query and an `analysis_id`.
-It asks an injected `SearchIndex` for normalized records, checks each path,
-symbol, reference (such as an import), and comment for query terms, ranks the
-matches using textual evidence and dependency relationships, and returns a
-page of files with evidence and explanations. The query is not inferred by
-the service; the API caller passes it from the search box.
+It asks an injected `SearchIndex` for normalized records and stored vectors.
+Keyword matches in paths, symbols, members, references and prose are fused
+with local `BAAI/bge-small-en-v1.5` cosine similarity using weighted reciprocal
+rank fusion. Exact-match results keep their dependency-first reading order;
+semantic-only suggestions follow them in their own dependency-aware order.
+Each result includes its matching evidence and an explanation.
 
 The search records are language-neutral. An analyzer and graph adapter for
 another language can map its paths, symbols, references, comments, and
 dependency relationships to the same `SearchDocument` without changing
-ranking. Search only reads the index; it does not download, parse, or execute
-the source repository.
+ranking. Repository files are parsed as text and never executed. Embedding
+inference is local; no repository content is sent to a hosted model service.
 
 Reading order respects matched dependency edges: when one matched file
 depends on another matched file, the dependency comes first. Among files whose
@@ -495,15 +497,12 @@ docstrings, and 2 for comments, plus 3 per distinct matched query term.
 An additional 1.5 points per matching dependent breaks ties and informs the
 reason; dependency order itself is enforced separately.
 
-Queries are case-insensitive substring matches over distinct word terms and
-are limited to 200 characters. Docstrings and comments are prose, so there a
-term must start a word (`auth` matches "Authenticate" but not "reauthorize";
-`rate` matches `tax_rate`), and single letters and common English stop words
-("where", "do", "the", ...) are ignored. The HTTP API reports member matches
-as `symbol` and docstring matches as `comment`, and shortens long prose to a
-snippet around the first matched term in `text` while `value` keeps it whole. Whitespace-only queries are rejected. The
-default page size is 20 and the maximum is 100. Reasons are single-line and
-cite up to two matching values; the full match list is returned separately.
+Keyword matching is case-insensitive over distinct word terms; prose matches
+must start at a word boundary. Common English stop words and single-letter
+terms are ignored. Queries are limited to 200 characters. The API reports
+member matches as `symbol`, docstrings as `comment`, and embedding-only evidence
+as `semantic`. Whitespace-only queries are rejected; the default page size is
+20 and the maximum is 100.
 
 ## Search API
 
@@ -562,8 +561,8 @@ The fixture queries and expected orders are in
 
 ## Search Precision Measurement (`benchmarks`)
 
-`benchmarks/search_precision.py` answers Risk 1 -- does RepoLens search beat
-grep? -- on 19 hand-labeled queries over three fixture repositories
+`benchmarks/search_precision.py` compares keyword-only and hybrid search with
+grep on 20 hand-labeled queries over three fixture repositories
 (`labeled_queries.json`), and compares top-5 precision with a grep filename
 baseline. RepoLens is measured through its production path: parse, classify,
 store, then search the store, so the measurement sees the documents the API
@@ -574,11 +573,11 @@ python -m benchmarks.search_precision            # print the comparison table
 python -m benchmarks.search_precision --write    # refresh measured_precision.json
 ```
 
-Measured top-5 precision, overall: **RepoLens 0.211, grep 0.042**, against an
-ideal ceiling of 0.326 for these labels. `tests/test_search_precision.py`
-checks the labels and reproduces the run against the recorded numbers in
-`benchmarks/measured_precision.json`. `benchmarks/README.md` has the
-per-repository table, the labeling rule, and what the misses show.
+Measured top-5 precision, overall: **RepoLens-hybrid 0.310, keyword-only 0.250,
+grep 0.040**, against an ideal ceiling of 0.340. Hybrid is no worse than
+keyword-only on any labeled query. Tests check labels, keyword reproducibility,
+and the recorded per-query hybrid gate without downloading a model.
+`benchmarks/README.md` has the per-repository table and labeling details.
 
 ## Import Classification Measurement (`benchmarks`)
 

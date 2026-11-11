@@ -54,12 +54,16 @@ restarts until they expire after 24 hours. Press `Ctrl+C` to stop.
 * The API and its health check live under `/api` (for example
   `http://localhost:8000/api/health`).
 
+The Docker image includes the 67 MB local search model. A development server
+downloads it the first time an analysis is indexed; set
+`REPOLENS_EMBEDDING_CACHE` to choose where those model files are stored.
+
 ### Using RepoLens in the Browser
 
 1. Open **http://localhost:8000** (or **http://localhost:5173** when running the development servers below).
 2. Paste any public Python GitHub repository URL (for example, `https://github.com/pallets/itsdangerous` or `https://github.com/pallets/click`) and optionally specify a branch, tag, or commit SHA.
 3. Click **Analyze** to download, filter, parse, and store the repository's dependency graph.
-4. Explore the **File Explorer**, click module groups on the **Interactive Dependency Map** to inspect file relationships and open pinned GitHub source links, or describe what you are looking for in the **Search Bar** (a feature name or a plain question such as "where do I check if a signature expired") to get a ranked reading order with explanations.
+4. Start with a task in the **Search Bar**, in your own words (for example, "where do I start if I'm working on production?"). RepoLens combines exact matches with a local embedding model, then gives you a ranked reading order with explanations. Search runs locally; repository text is not sent to an embedding service.
 
 ---
 
@@ -140,13 +144,13 @@ First-version implementations of all major system components (**React Frontend**
 * **How to Verify**:
   1. Run `docker compose up --build` and open **http://localhost:8000** (or start the development servers and open **http://localhost:5173**).
   2. Enter a public Python repository URL (e.g., `https://github.com/pallets/itsdangerous`) and click **Analyze**.
-  3. Observe the pipeline stage indicator (`resolving` $\rightarrow$ `downloading` $\rightarrow$ `filtering` $\rightarrow$ `parsing` $\rightarrow$ `classifying` $\rightarrow$ `storing`) and the resulting summary bar (analyzed, excluded, and unparsed file counts), file explorer tree, and module dependency map.
+  3. Observe the pipeline stage indicator (`resolving` $\rightarrow$ `downloading` $\rightarrow$ `filtering` $\rightarrow$ `parsing` $\rightarrow$ `classifying` $\rightarrow$ `indexing` $\rightarrow$ `storing`) and the resulting summary bar (analyzed, excluded, and unparsed file counts), file explorer tree, and module dependency map.
 
 ### 2. Use Case 2: Search for a Feature and Get a Ranked Reading List *(Operational — Prototype)*
 * **Components Touched**: React Search Bar & Reading List $\rightarrow$ FastAPI (`GET /analyses/{id}/search`) $\rightarrow$ `SearchService` (`repolens.search`) querying `SqliteGraphStore` (`SearchIndex`) $\rightarrow$ DependencyMap search highlighting.
 * **How to Verify**:
-  1. After Use Case 1 completes, type a feature keyword (e.g., `signer`, `serializer`, or `timed` for `pallets/itsdangerous`) into the search bar and submit.
-  2. The backend matches filenames, symbols, class members, imports, docstrings, and comments (ignoring filler words such as "where" or "do" in a question), orders matched dependencies ahead of callers, and returns a ranked reading list with one-line explanations and expandable match evidence while highlighting matching files on the map.
+  1. After Use Case 1 completes, describe a task in the search bar (e.g., "where do I check if a signature expired" or "where do I start with production").
+  2. The backend combines keyword matches in filenames, symbols, members, imports and prose with local BGE-small semantic similarity. It returns matching evidence, explains semantic matches, and orders exact-match dependencies before their callers while highlighting results on the map.
 
 ### 3. Use Case 3: Explore the Dependency Map and Open a File's Source *(Operational — Prototype)*
 * **Components Touched**: React Flow Dependency Map / File Explorer / Reading List $\rightarrow$ FastAPI (`GET /analyses/{id}/graph`, `GET /analyses/{id}/files/{path}`) $\rightarrow$ `SqliteGraphStore` $\rightarrow$ File Detail Panel & pinned GitHub source links.

@@ -3,7 +3,13 @@
 from collections.abc import Iterable
 from typing import Protocol
 
-from repolens.graph.models import AnalysisRecord, DependencyGraph, FileDetail
+from repolens.graph.models import (
+    AnalysisRecord,
+    AnalyzedFile,
+    DependencyGraph,
+    FileDetail,
+    FileEmbeddingRecord,
+)
 from repolens.search.models import SearchDocument
 
 
@@ -12,6 +18,11 @@ class GraphStore(Protocol):
 
     def save(self, analysis: AnalysisRecord) -> None:
         """Persist a complete repository analysis atomically."""
+
+    def build_embeddings(
+        self, files: tuple[AnalyzedFile, ...]
+    ) -> tuple[FileEmbeddingRecord, ...]:
+        """Create bounded search vectors for parsed files."""
 
     def get_graph(self, analysis_id: str) -> DependencyGraph:
         """Return module groups, file nodes, and internal import edges."""

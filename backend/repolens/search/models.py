@@ -2,7 +2,9 @@ from dataclasses import dataclass
 from typing import Literal
 
 
-MatchKind = Literal["filename", "symbol", "member", "reference", "docstring", "comment"]
+MatchKind = Literal[
+    "filename", "symbol", "member", "reference", "docstring", "comment", "semantic"
+]
 
 
 @dataclass(frozen=True)

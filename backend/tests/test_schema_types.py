@@ -74,7 +74,15 @@ def test_every_declared_status_and_stage_is_accepted() -> None:
     for index, status in enumerate(("queued", "running", "completed", "failed", "cancelled")):
         _insert_analysis(conn, id=f"s-{index}", status=status)
     for index, stage in enumerate(
-        ("resolving", "downloading", "filtering", "parsing", "classifying", "storing")
+        (
+            "resolving",
+            "downloading",
+            "filtering",
+            "parsing",
+            "classifying",
+            "indexing",
+            "storing",
+        )
     ):
         _insert_analysis(conn, id=f"t-{index}", status="running", stage=stage)
 

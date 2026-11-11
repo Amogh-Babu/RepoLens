@@ -160,6 +160,15 @@
           "rationale": "manage.main reads sys.argv; App.run is what it hands the arguments to."
         },
         {
+          "query": "if I'm meant to work on prod, where do I start?",
+          "relevant": [
+            "manage.py",
+            "bookshop/app.py",
+            "bookshop/config.py"
+          ],
+          "rationale": "manage.py is the command entry point, bookshop/app.py assembles the application, and config.py defines its runtime settings."
+        },
+        {
           "query": "payments",
           "relevant": [
             "bookshop/legacy/payments.py"
