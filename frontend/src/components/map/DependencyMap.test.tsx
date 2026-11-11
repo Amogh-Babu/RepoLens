@@ -115,6 +115,32 @@ describe('DependencyMap', () => {
     expect(nodeOf(/Module app,/)).toHaveClass('map-node--dimmed');
   });
 
+  it('keeps a selected file visible through its collapsed module', () => {
+    renderMap({selectedPath: 'app/auth/tokens.py'});
+
+    expect(nodeOf(/Module app\/auth,/)).toHaveClass('map-node--selected');
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Inside app/auth/ (collapsed). Expand to see app/auth/tokens.py.',
+    );
+  });
+
+  it('distinguishes imports from imported-by edges around the selection', () => {
+    renderMap({
+      expandedModules: new Set(['app/auth']),
+      selectedPath: 'app/auth/service.py',
+    });
+
+    expect(
+      document.querySelector('.react-flow__edge.map-edge--imports'),
+    ).toBeInTheDocument();
+    expect(
+      document.querySelector('.react-flow__edge.map-edge--imported-by'),
+    ).toBeInTheDocument();
+    const toolbar = screen.getByRole('toolbar', {name: 'Map controls'});
+    expect(toolbar).toHaveTextContent('Imports');
+    expect(toolbar).toHaveTextContent('Imported by');
+  });
+
   it('highlights search matches when nothing is selected', () => {
     renderMap({
       expandedModules: new Set(['app/auth']),

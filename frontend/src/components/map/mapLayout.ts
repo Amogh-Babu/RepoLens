@@ -117,8 +117,10 @@ export function layoutMap(
   const layout = new dagre.graphlib.Graph({compound: true});
   layout.setGraph({
     rankdir: 'LR',
-    nodesep: 32,
-    ranksep: 80,
+    nodesep: 48,
+    edgesep: 24,
+    ranksep: 96,
+    ranker: 'network-simplex',
     marginx: 24,
     marginy: 24 + GROUP_HEADER,
   });
@@ -241,8 +243,9 @@ export function layoutMap(
       id: `${source}->${target}`,
       source,
       target,
+      type: 'smoothstep',
       label: count > 1 ? String(count) : undefined,
-      markerEnd: {type: MarkerType.ArrowClosed, width: 16, height: 16},
+      markerEnd: {type: MarkerType.ArrowClosed, width: 24, height: 24},
       data: {count},
     }),
   );

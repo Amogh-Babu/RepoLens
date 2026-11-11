@@ -37,6 +37,7 @@ export function Workspace({analysis}: {analysis: Analysis}) {
   const graphFailure = useAnalysisStore(state => state.graphFailure);
   const loadGraph = useAnalysisStore(state => state.loadGraph);
   const selectedPath = useAnalysisStore(state => state.selectedPath);
+  const selectionRevision = useAnalysisStore(state => state.selectionRevision);
   const selectFile = useAnalysisStore(state => state.selectFile);
   const detail = useAnalysisStore(state =>
     state.selectedPath === null
@@ -121,6 +122,7 @@ export function Workspace({analysis}: {analysis: Analysis}) {
         <MapPanel
           graph={graph}
           selectedPath={selectedPath}
+          selectionRevision={selectionRevision}
           matchedPaths={matchedPaths}
         />
 
@@ -414,10 +416,12 @@ const FAILED_MESSAGE =
 function MapPanel({
   graph,
   selectedPath,
+  selectionRevision,
   matchedPaths,
 }: {
   graph: DependencyGraph;
   selectedPath: string | null;
+  selectionRevision: number;
   matchedPaths: ReadonlySet<string> | null;
 }) {
   const expandedModules = useAnalysisStore(state => state.expandedModules);
@@ -487,6 +491,7 @@ function MapPanel({
               graph={graph}
               expandedModules={expandedModules}
               selectedPath={selectedPath}
+              selectionRevision={selectionRevision}
               matchedPaths={matchedPaths}
               matchesOnly={matchesOnly}
               onMatchesOnlyChange={setMatchesOnly}

@@ -19,6 +19,9 @@ export const DEFAULT_POLL_INTERVAL_MS = 1_000;
 /** How many search results to fetch at a time (Use Case 2, 6a). */
 export const SEARCH_PAGE_SIZE = 20;
 
+/** Modules above this size stay collapsed when a file is selected. */
+export const MAX_AUTO_EXPAND_FILES = 80;
+
 /** A request failure, ready to show in an ErrorBanner. */
 export interface RequestFailure {
   code: string;
@@ -63,6 +66,8 @@ export interface AnalysisState {
 
   /** Path of the selected file, shown in the detail panel. */
   selectedPath: string | null;
+  /** Increments on every file selection, including reselecting the same file. */
+  selectionRevision: number;
   /** File details fetched so far, by path. */
   fileDetails: Readonly<Record<string, FileDetail>>;
   /** Set when fetching the selected file's details failed. */
@@ -363,6 +368,7 @@ export function createAnalysisStore(
       graph: null,
       graphFailure: null,
       selectedPath: null,
+      selectionRevision: 0,
       fileDetails: {},
       fileFailure: null,
       expandedDirs: new Set(),
@@ -415,20 +421,29 @@ export function createAnalysisStore(
         // Once expired, only files whose details are already here can open.
         if (get().expired && get().fileDetails[path] === undefined) return;
         set(state => {
-          const moduleId = state.graph?.files.find(
-            f => f.path === path,
-          )?.module;
+          const module = state.graph?.modules.find(group =>
+            group.filePaths.includes(path),
+          );
+          const moduleId = module?.id;
+          const canExpand =
+            module !== undefined &&
+            module.filePaths.length <= MAX_AUTO_EXPAND_FILES;
+          const expandedModules = state.expandedModules;
+          const nextExpandedModules =
+            moduleId === undefined ||
+            expandedModules.has(moduleId) ||
+            !canExpand
+              ? expandedModules
+              : new Set([...expandedModules, moduleId]);
           return {
             selectedPath: path,
+            selectionRevision: state.selectionRevision + 1,
             fileFailure: null,
             expandedDirs: new Set([
               ...state.expandedDirs,
               ...ancestorDirs(path),
             ]),
-            expandedModules:
-              moduleId === undefined || state.expandedModules.has(moduleId)
-                ? state.expandedModules
-                : new Set([...state.expandedModules, moduleId]),
+            expandedModules: nextExpandedModules,
           };
         });
         if (get().fileDetails[path] === undefined) {

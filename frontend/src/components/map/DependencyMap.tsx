@@ -1,6 +1,7 @@
 import type {NodeChange} from '@xyflow/react';
 import {
   applyNodeChanges,
+  MarkerType,
   ReactFlow,
   ReactFlowProvider,
   useNodesInitialized,
@@ -18,6 +19,7 @@ import {
   focusGraph,
   highlightAround,
   layoutMap,
+  moduleNodeId,
   moduleIndex,
   unitFor,
 } from './mapLayout.ts';
@@ -39,6 +41,7 @@ interface DependencyMapProps {
   graph: DependencyGraph;
   expandedModules: ReadonlySet<string>;
   selectedPath: string | null;
+  selectionRevision?: number;
   /** Files matching the current search, or null without a search. */
   matchedPaths: ReadonlySet<string> | null;
   /**
@@ -75,6 +78,7 @@ function MapCanvas({
   graph,
   expandedModules,
   selectedPath,
+  selectionRevision = 0,
   matchedPaths,
   matchesOnly = false,
   onMatchesOnlyChange,
@@ -150,6 +154,12 @@ function MapCanvas({
     selectedPath === null
       ? null
       : unitFor(selectedPath, moduleOf, shownExpanded);
+  const selectedModuleId =
+    selectedPath === null ? undefined : moduleOf.get(selectedPath);
+  const selectedModuleIsCollapsed =
+    focusKey === null &&
+    selectedModuleId !== undefined &&
+    !shownExpanded.has(selectedModuleId);
   const highlight = useMemo(
     () => highlightAround(layout.edges, selectedUnit),
     [layout.edges, selectedUnit],
@@ -192,6 +202,12 @@ function MapCanvas({
       layout.edges.map(edge => ({
         ...edge,
         className: edgeClass(edge, highlight, matchedUnits),
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          width: 24,
+          height: 24,
+          color: edgeColor(edge, highlight),
+        },
       })),
     [layout.edges, highlight, matchedUnits],
   );
@@ -199,7 +215,12 @@ function MapCanvas({
   // Bring the selected file into view, e.g. when chosen in the explorer.
   useEffect(() => {
     if (selectedPath === null || !initialized) return;
-    const node = flow.getInternalNode(fileNodeId(selectedPath));
+    const moduleId = moduleOf.get(selectedPath);
+    const node =
+      flow.getInternalNode(fileNodeId(selectedPath)) ??
+      (moduleId === undefined
+        ? undefined
+        : flow.getInternalNode(moduleNodeId(moduleId)));
     if (node === undefined) return;
     const {x, y} = node.internals.positionAbsolute;
     void flow.setCenter(
@@ -207,7 +228,7 @@ function MapCanvas({
       y + (node.measured.height ?? 0) / 2,
       {zoom: Math.max(flow.getZoom(), 0.8), duration: 300},
     );
-  }, [selectedPath, initialized, layout, flow]);
+  }, [selectedPath, selectionRevision, initialized, layout, flow, moduleOf]);
 
   // Fit the whole map whenever its shape changes.
   useEffect(() => {
@@ -277,11 +298,24 @@ function MapCanvas({
               Only show matches
             </label>
           )}
-          <span className="map__legend">
-            Arrows point from a file to what it imports.
+          <span className="map__legend" aria-label="Selected file dependencies">
+            <span className="map__legend-item">
+              <span className="map__legend-swatch map__legend-swatch--imports" />
+              Imports
+            </span>
+            <span className="map__legend-item">
+              <span className="map__legend-swatch map__legend-swatch--imported-by" />
+              Imported by
+            </span>
           </span>
           {toolbarEnd}
         </div>
+        {selectedModuleIsCollapsed && selectedPath !== null && (
+          <p className="map__selection-hint" role="status">
+            Inside <code>{selectedModuleId}/</code> (collapsed). Expand to see{' '}
+            <code>{selectedPath}</code>.
+          </p>
+        )}
         <div className="map__canvas">
           <ReactFlow
             nodes={displayNodes}
@@ -312,9 +346,10 @@ function edgeClass(
   matchedUnits: ReadonlySet<string> | null,
 ): string {
   if (highlight.selected !== null) {
-    return highlight.edges.has(edge.id)
-      ? 'map-edge map-edge--highlighted'
-      : 'map-edge map-edge--dimmed';
+    if (!highlight.edges.has(edge.id)) return 'map-edge map-edge--dimmed';
+    return edge.source === highlight.selected
+      ? 'map-edge map-edge--imports'
+      : 'map-edge map-edge--imported-by';
   }
   if (matchedUnits !== null) {
     return matchedUnits.has(edge.source) && matchedUnits.has(edge.target)
@@ -322,4 +357,13 @@ function edgeClass(
       : 'map-edge map-edge--dimmed';
   }
   return 'map-edge';
+}
+
+function edgeColor(edge: MapEdge, highlight: MapHighlight): string {
+  if (highlight.selected === null || !highlight.edges.has(edge.id)) {
+    return 'var(--color-muted)';
+  }
+  return edge.source === highlight.selected
+    ? 'var(--map-imports-color)'
+    : 'var(--map-imported-by-color)';
 }
