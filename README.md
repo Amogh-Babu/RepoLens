@@ -178,7 +178,7 @@ The backend and frontend workflows run on pull requests and on pushes to `main` 
 
 ## Documentation & Links
 
-* **Living Document**: [RepoLens Requirements Specification (Google Docs)](https://docs.google.com/document/d/1ZTgu6tfoWwx9FWWS-5DqG5CtgXJ-zucDNXEEca_Qy4s/edit?tab=t.sql8ybk4ej5d#heading=h.18mw63g8e8ay) | [Snapshot in `docs/`](docs/RepoLens%20-%20CSE%20403.md)
+* **Living Document**: [RepoLens Requirements Specification (Google Docs)](https://docs.google.com/document/d/1ZTgu6tfoWwx9FWWS-5DqG5CtgXJ-zucDNXEEca_Qy4s/edit?tab=t.sql8ybk4ej5d#heading=h.18mw63g8e8ay) | [Snapshot in `docs/`](docs/LivingDoc.md)
 * **Issue Tracker**: [GitHub Issues](https://github.com/Amogh-Babu/RepoLens/issues)
 * **Coding Guidelines**: [`coding-guidelines.md`](coding-guidelines.md)
 * **Component Docs**: [`backend/README.md`](backend/README.md) | [`frontend/README.md`](frontend/README.md)
