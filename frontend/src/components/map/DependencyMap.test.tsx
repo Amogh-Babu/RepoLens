@@ -1,4 +1,4 @@
-import {act, fireEvent, render, screen} from '@testing-library/react';
+import {act, fireEvent, render, screen, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type {DependencyGraph} from '../../api/types.ts';
 import {DependencyMap, RENDER_BUDGET_MS} from './DependencyMap.tsx';
@@ -147,6 +147,76 @@ describe('DependencyMap', () => {
       'map-node--selected',
     );
     expect(nodeOf(/Module app,/)).not.toHaveClass('map-node--match');
+  });
+
+  it('draws only the matches, with their modules open, in matches-only mode', () => {
+    renderMap({
+      matchedPaths: new Set(['app/auth/tokens.py']),
+      matchesOnly: true,
+      onMatchesOnlyChange: vi.fn(),
+    });
+
+    expect(
+      screen.getByRole('button', {name: 'File app/auth/tokens.py, not parsed'}),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', {name: 'File app/auth/service.py'}),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', {name: /Module app,/}),
+    ).not.toBeInTheDocument();
+    // Modules cannot be collapsed while only matches are shown.
+    expect(
+      screen.queryByRole('button', {name: /Collapse/}),
+    ).not.toBeInTheDocument();
+  });
+
+  it('keeps the selected file on the map even if it is not a match', () => {
+    renderMap({
+      matchedPaths: new Set(['app/auth/tokens.py']),
+      selectedPath: 'app/views.py',
+      matchesOnly: true,
+      onMatchesOnlyChange: vi.fn(),
+    });
+
+    expect(nodeOf(/File app\/views\.py/)).toHaveClass('map-node--selected');
+  });
+
+  it('switches matches-only off from the toolbar', async () => {
+    const user = userEvent.setup();
+    const onMatchesOnlyChange = vi.fn();
+    renderMap({
+      matchedPaths: new Set(['app/auth/tokens.py']),
+      matchesOnly: true,
+      onMatchesOnlyChange,
+    });
+
+    await user.click(screen.getByRole('checkbox', {name: 'Only show matches'}));
+
+    expect(onMatchesOnlyChange).toHaveBeenCalledWith(false);
+  });
+
+  it('shows the whole map and no matches toggle without a search', () => {
+    renderMap({matchesOnly: true, onMatchesOnlyChange: vi.fn()});
+
+    expect(
+      screen.queryByRole('checkbox', {name: 'Only show matches'}),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', {name: /Module app,/}),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps zoom and fit in the one toolbar', () => {
+    renderMap();
+
+    const toolbar = screen.getByRole('toolbar', {name: 'Map controls'});
+    for (const name of ['Zoom out', 'Zoom in', 'Fit', 'Collapse all']) {
+      expect(within(toolbar).getByRole('button', {name})).toBeInTheDocument();
+    }
+    expect(
+      document.querySelector('.react-flow__controls'),
+    ).not.toBeInTheDocument();
   });
 
   it('collapses every module from the toolbar', async () => {

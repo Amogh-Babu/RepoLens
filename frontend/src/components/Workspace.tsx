@@ -325,6 +325,9 @@ function MapPanel({
   );
   // 'list' when chosen by the user; a message when the map failed.
   const [view, setView] = useState<'map' | 'list'>('map');
+  // During a search the map shows only the matches unless the user asks
+  // for everything (user test feedback, #92).
+  const [matchesOnly, setMatchesOnly] = useState(true);
   const [fallbackMessage, setFallbackMessage] = useState<string | null>(null);
   const onTooSlow = useCallback(() => setFallbackMessage(TOO_SLOW_MESSAGE), []);
   const onMapError = useCallback(() => setFallbackMessage(FAILED_MESSAGE), []);
@@ -378,6 +381,8 @@ function MapPanel({
               expandedModules={expandedModules}
               selectedPath={selectedPath}
               matchedPaths={matchedPaths}
+              matchesOnly={matchesOnly}
+              onMatchesOnlyChange={setMatchesOnly}
               onSelectFile={selectFile}
               onToggleModule={toggleModule}
               onCollapseAll={collapseAllModules}

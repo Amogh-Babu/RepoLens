@@ -208,7 +208,7 @@ describe('AnalysisPage map', () => {
 
     await user.click(screen.getByRole('button', {name: 'Map'}));
     expect(
-      await screen.findByRole('button', {name: 'Reset view'}),
+      await screen.findByRole('button', {name: 'Fit'}),
     ).toBeInTheDocument();
   });
 });

@@ -61,6 +61,9 @@ export function FileNode({data}: NodePropsOf<'file'>) {
 /** The box around an expanded module's files, with a collapse control. */
 export function ModuleGroupNode({data}: NodePropsOf<'moduleGroup'>) {
   const {toggleModule} = useMapActions();
+  if (!data.collapsible) {
+    return <span className="map-group__header">{data.name}</span>;
+  }
   return (
     <button
       type="button"

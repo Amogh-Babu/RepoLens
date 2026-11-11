@@ -19,6 +19,38 @@
   font-size: 0.875rem;
 }
 
+.map__group {
+  display: flex;
+}
+
+.map__group .button {
+  min-width: 2em;
+}
+
+.map__group .button:not(:first-child) {
+  border-left: none;
+}
+
+.map__group .button:first-child {
+  border-radius: 6px 0 0 6px;
+}
+
+.map__group .button:last-child {
+  border-radius: 0 6px 6px 0;
+}
+
+.map__group .button:not(:first-child):not(:last-child) {
+  border-radius: 0;
+}
+
+.map__toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
 .map__legend {
   font-size: 0.75rem;
   color: var(--color-muted);

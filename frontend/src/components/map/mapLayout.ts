@@ -28,6 +28,8 @@ export type GroupNodeData = {
   moduleId: string;
   name: string;
   fileCount: number;
+  /** False when the map shows only search matches and modules stay open. */
+  collapsible: boolean;
 };
 
 export type MapNode =
@@ -77,6 +79,28 @@ export function moduleIndex(graph: DependencyGraph): Map<string, string> {
 }
 
 /**
+ * The part of the graph made of `keep`: those files, the modules that hold
+ * them, and the imports between them. Used to show only search matches.
+ */
+export function focusGraph(
+  graph: DependencyGraph,
+  keep: ReadonlySet<string>,
+): DependencyGraph {
+  return {
+    modules: graph.modules
+      .map(module => ({
+        ...module,
+        filePaths: module.filePaths.filter(path => keep.has(path)),
+      }))
+      .filter(module => module.filePaths.length > 0),
+    files: graph.files.filter(file => keep.has(file.path)),
+    edges: graph.edges.filter(
+      edge => keep.has(edge.source) && keep.has(edge.target),
+    ),
+  };
+}
+
+/**
  * Lays out the dependency map: collapsed modules as single nodes, expanded
  * modules as a box of file nodes, and import edges between whatever is
  * visible (several file imports between two units become one edge with a
@@ -85,6 +109,7 @@ export function moduleIndex(graph: DependencyGraph): Map<string, string> {
 export function layoutMap(
   graph: DependencyGraph,
   expandedModules: ReadonlySet<string>,
+  {collapsible = true}: {collapsible?: boolean} = {},
 ): MapLayout {
   const moduleOf = moduleIndex(graph);
   const files = new Map(graph.files.map(file => [file.path, file]));
@@ -157,6 +182,7 @@ export function layoutMap(
         moduleId: module.id,
         name: module.id === '.' ? module.name : module.id,
         fileCount: module.filePaths.length,
+        collapsible,
       },
       selectable: false,
     });
