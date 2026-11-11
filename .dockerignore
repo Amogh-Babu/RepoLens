@@ -10,7 +10,10 @@ docs
 **/__pycache__
 **/.pytest_cache
 **/*.pyc
-**/node_modules
+# Only the real dependency folders: the ingestion tests' fixture repo has a
+# node_modules/ of its own, to check that RepoLens skips vendored code.
+node_modules
+frontend/node_modules
 frontend/dist
 **/.env
 **/.env.*
