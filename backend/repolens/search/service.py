@@ -1,8 +1,14 @@
 import heapq
+import logging
 import re
 from collections.abc import Iterable
 from dataclasses import replace
 
+from repolens.search.embedding import (
+    Embedder,
+    HashEmbedder,
+    cosine_similarity,
+)
 from repolens.search.models import (
     MatchEvidence,
     MatchKind,
@@ -26,6 +32,11 @@ _FIELD_WEIGHTS = {
     "comment": 2.0,
 }
 _TOKEN_PATTERN = re.compile(r"[\w]+", re.UNICODE)
+_LOGGER = logging.getLogger(__name__)
+_RRF_K = 60
+_KEYWORD_RRF_WEIGHT = 8
+_SEMANTIC_RRF_WEIGHT = 1
+_SEMANTIC_RESULT_LIMIT = 100
 
 # Docstrings and comments are sentences, so a short term would match inside
 # almost every one of them ("i" in "this", "in" in "using"). In these fields a
@@ -53,8 +64,9 @@ class PaginationValidationError(ValueError):
 class SearchService:
     """Search analyzed repository records and suggest a reading order."""
 
-    def __init__(self, index: SearchIndex) -> None:
+    def __init__(self, index: SearchIndex, embedder: Embedder | None = None) -> None:
         self._index = index
+        self._embedder = embedder or getattr(index, "embedder", None) or HashEmbedder()
 
     def search(
         self,
@@ -63,11 +75,14 @@ class SearchService:
         *,
         offset: int = 0,
         limit: int = _DEFAULT_PAGE_SIZE,
+        include_semantic: bool = True,
     ) -> SearchPage:
         terms = self._topic_terms(self._parse_query(query))
         self._validate_pagination(offset, limit)
-        documents = self._index.get_search_documents(analysis_id)
-        candidates: list[tuple[SearchDocument, tuple[MatchEvidence, ...], float]] = []
+        documents = list(self._index.get_search_documents(analysis_id))
+        documents_by_path = {document.path: document for document in documents}
+        keyword_matches: dict[str, tuple[MatchEvidence, ...]] = {}
+        keyword_scores: dict[str, float] = {}
 
         for document in documents:
             matches = self._match_document(document, terms)
@@ -80,13 +95,62 @@ class SearchService:
                 for match in matches
             )
             score += len(matched_terms) * 3.0
-            candidates.append((document, matches, score))
+            keyword_matches[document.path] = matches
+            keyword_scores[document.path] = score
 
-        candidate_paths = {document.path for document, _, _ in candidates}
+        semantic_scores = (
+            self._semantic_scores(analysis_id, query, documents)
+            if include_semantic
+            else {}
+        )
+        keyword_paths = set(keyword_scores)
+        keyword_order = sorted(
+            keyword_scores,
+            key=lambda path: (
+                -(
+                    keyword_scores[path]
+                    + len(
+                        keyword_paths.intersection(
+                            documents_by_path[path].depended_on_by
+                        )
+                    )
+                    * 1.5
+                ),
+                path.casefold(),
+            ),
+        )
+        semantic_order = sorted(
+            semantic_scores,
+            key=lambda path: (-semantic_scores[path][0], path.casefold()),
+        )[:_SEMANTIC_RESULT_LIMIT]
+        keyword_ranks = {path: rank for rank, path in enumerate(keyword_order, 1)}
+        semantic_ranks = {path: rank for rank, path in enumerate(semantic_order, 1)}
+        candidate_paths = set(keyword_ranks) | set(semantic_ranks)
+        candidates: list[tuple[SearchDocument, tuple[MatchEvidence, ...], float]] = []
         ranked: list[RankedFile] = []
-        for document, matches, score in candidates:
+        for path in candidate_paths:
+            document = documents_by_path[path]
+            matches = keyword_matches.get(path, ())
+            if not matches:
+                matches = (
+                    MatchEvidence(
+                        "semantic",
+                        semantic_scores[path][1][:_MAX_EVIDENCE_LENGTH],
+                        (),
+                    ),
+                )
             dependency_count = len(candidate_paths.intersection(document.depended_on_by))
-            score += dependency_count * 1.5
+            keyword_rank = keyword_ranks.get(path)
+            semantic_rank = semantic_ranks.get(path)
+            if keyword_rank is not None and semantic_rank is not None:
+                score = _KEYWORD_RRF_WEIGHT / (_RRF_K + keyword_rank)
+                score += _SEMANTIC_RRF_WEIGHT / (_RRF_K + semantic_rank)
+                score += dependency_count * 0.0001
+            elif keyword_rank is not None:
+                score = keyword_scores[path] + dependency_count * 1.5
+            else:
+                score = _SEMANTIC_RRF_WEIGHT / (_RRF_K + (semantic_rank or 0))
+            candidates.append((document, matches, score))
             ranked.append(
                 RankedFile(
                     path=document.path,
@@ -96,7 +160,21 @@ class SearchService:
                 )
             )
 
-        ordered = self._reading_order(ranked, candidates)
+        keyword_candidates = [
+            candidate for candidate in candidates if candidate[0].path in keyword_ranks
+        ]
+        semantic_candidates = [
+            candidate for candidate in candidates if candidate[0].path not in keyword_ranks
+        ]
+        keyword_ranked = [
+            result for result in ranked if result.path in keyword_ranks
+        ]
+        semantic_ranked = [
+            result for result in ranked if result.path not in keyword_ranks
+        ]
+        ordered = self._reading_order(keyword_ranked, keyword_candidates)
+        if semantic_ranked:
+            ordered.extend(self._reading_order(semantic_ranked, semantic_candidates))
         page_results = tuple(ordered[offset : offset + limit])
         return SearchPage(
             results=page_results,
@@ -105,6 +183,39 @@ class SearchService:
             limit=limit,
             has_more=offset + len(page_results) < len(ordered),
         )
+
+    def _semantic_scores(
+        self,
+        analysis_id: str,
+        query: str,
+        documents: list[SearchDocument],
+    ) -> dict[str, tuple[float, str]]:
+        get_embeddings = getattr(self._index, "get_search_embeddings", None)
+        if get_embeddings is None:
+            return {}
+        try:
+            embeddings = get_embeddings(analysis_id)
+            query_vector = self._embedder.embed([f"query: {query}"])[0]
+        except Exception:
+            _LOGGER.warning(
+                "Semantic search unavailable for analysis %s", analysis_id, exc_info=True
+            )
+            return {}
+        scores: dict[str, tuple[float, str]] = {}
+        for document in documents:
+            chunks = embeddings.get(document.path)
+            if not chunks:
+                continue
+            best_score, best_text = max(
+                (
+                    (cosine_similarity(query_vector, vector), text)
+                    for text, vector in chunks
+                ),
+                key=lambda item: item[0],
+            )
+            if best_score > 0:
+                scores[document.path] = (best_score, best_text)
+        return scores
 
     @staticmethod
     def _reading_order(
@@ -346,6 +457,12 @@ class SearchService:
 
     @staticmethod
     def _build_reason(matches: tuple[MatchEvidence, ...], dependency_count: int) -> str:
+        if matches and matches[0].kind == "semantic":
+            reason = (
+                "Semantically related prose or symbols: "
+                f"'{SearchService._one_line(matches[0].value)}'"
+            )
+            return reason + "."
         evidence = [
             f"{match.kind} '{SearchService._one_line(match.value)}'"
             for match in matches[:2]

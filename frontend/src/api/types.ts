@@ -18,6 +18,7 @@ export type AnalysisStage =
   | 'filtering'
   | 'parsing'
   | 'classifying'
+  | 'indexing'
   | 'storing';
 
 /** Every pipeline stage, in order. Useful for progress displays. */
@@ -27,6 +28,7 @@ export const ANALYSIS_STAGES: readonly AnalysisStage[] = [
   'filtering',
   'parsing',
   'classifying',
+  'indexing',
   'storing',
 ];
 
@@ -152,7 +154,8 @@ export interface FileDetail {
   sourceUrl: string;
 }
 
-export type MatchKind = 'filename' | 'symbol' | 'import' | 'comment';
+export type MatchKind =
+  'filename' | 'symbol' | 'import' | 'comment' | 'semantic';
 
 /** One piece of evidence for why a file matched a query. */
 export interface SearchMatch {

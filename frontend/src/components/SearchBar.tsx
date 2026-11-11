@@ -63,7 +63,7 @@ export function SearchBar({
           placeholder={
             disabled
               ? 'Re-analyze the repository to search again'
-              : 'Search for a feature, file or function, e.g. login'
+              : 'Describe what you want to work on, e.g. checkout'
           }
           disabled={disabled}
           value={value}

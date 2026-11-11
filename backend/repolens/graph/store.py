@@ -4,18 +4,21 @@ from collections import defaultdict
 from collections.abc import Callable
 from datetime import datetime, timezone
 import functools
+import struct
 import sqlite3
 import threading
 import time
 from typing import Concatenate, ParamSpec, TypeVar
 
 from repolens.graph.models import (
+    AnalyzedFile,
     AnalysisErrorRecord,
     AnalysisRecord,
     AnalysisStage,
     DependencyGraph,
     ExternalImportDetail,
     FileDetail,
+    FileEmbeddingRecord,
     GraphEdge,
     GraphNode,
     ImportKind,
@@ -25,6 +28,10 @@ from repolens.graph.models import (
     SymbolDetail,
 )
 from repolens.graph.schema import init_schema
+from repolens.search.embedding import (
+    Embedder,
+    document_chunks,
+)
 from repolens.search.models import SearchDocument
 from repolens.search.ports import AnalysisUnavailableError
 
@@ -197,8 +204,13 @@ class SqliteGraphStore:
     half-written analysis, and two writers never interleave transactions.
     """
 
-    def __init__(self, db_path: str = ":memory:") -> None:
+    def __init__(
+        self,
+        db_path: str = ":memory:",
+        embedder: Embedder | None = None,
+    ) -> None:
         self._db_path = db_path
+        self.embedder = embedder
         self._lock = threading.RLock()
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
@@ -217,6 +229,51 @@ class SqliteGraphStore:
         """Close the underlying SQLite connection."""
         self._conn.close()
 
+    def build_embeddings(
+        self, files: tuple[AnalyzedFile, ...]
+    ) -> tuple[FileEmbeddingRecord, ...]:
+        """Create bounded search vectors for parsed files."""
+        if self.embedder is None:
+            return ()
+        searchable = [file for file in files if file.parsed]
+        documents = {
+            file.path: SearchDocument(
+                path=file.path,
+                symbols=tuple(symbol.name for symbol in file.symbols),
+                references=tuple(imported.raw_name for imported in file.imports),
+                comments=tuple(
+                    comment.text
+                    for comment in file.comments
+                    if comment.kind == "comment"
+                ),
+                members=tuple(member.qualified_name for member in file.members),
+                docstrings=tuple(
+                    comment.text
+                    for comment in file.comments
+                    if comment.kind == "docstring"
+                ),
+            )
+            for file in searchable
+        }
+        chunks = [
+            (file.path, index, text)
+            for file in searchable
+            for index, text in enumerate(document_chunks(documents[file.path]))
+        ]
+        vectors = self.embedder.embed([text for _, _, text in chunks])
+        if len(vectors) != len(chunks):
+            raise ValueError("The embedder returned a different number of vectors than chunks.")
+        return tuple(
+            FileEmbeddingRecord(
+                path=path,
+                chunk_index=chunk_index,
+                text=text,
+                model=self.embedder.model_id,
+                vector=vector,
+            )
+            for (path, chunk_index, text), vector in zip(chunks, vectors, strict=True)
+        )
+
     @_locked
     def save(self, analysis: AnalysisRecord) -> None:
         """Save an entire repository analysis in one atomic transaction."""
@@ -234,6 +291,11 @@ class SqliteGraphStore:
         )
         excluded_count = analysis.counts.excluded
         repo_url = normalize_repo_url(analysis.repo)
+
+        embedding_records = analysis.embeddings or self.build_embeddings(analysis.files)
+        vectors_by_path: dict[str, list[FileEmbeddingRecord]] = defaultdict(list)
+        for embedding in embedding_records:
+            vectors_by_path[embedding.path].append(embedding)
 
         error_code = analysis.error.code if analysis.error else None
         error_message = analysis.error.message if analysis.error else None
@@ -356,6 +418,27 @@ class SqliteGraphStore:
                         ) VALUES (?, ?, ?, ?, ?);
                         """,
                         import_rows,
+                    )
+
+                file_vectors = vectors_by_path.get(file_rec.path, [])
+                if file_vectors:
+                    self._conn.executemany(
+                        """INSERT INTO embeddings
+                           (file_id, chunk_index, chunk_text, model, vector)
+                           VALUES (?, ?, ?, ?, ?);""",
+                        [
+                            (
+                                file_id,
+                                chunk_index,
+                                text,
+                                self.embedder.model_id,
+                                struct.pack(f"<{len(vector)}f", *vector),
+                            )
+                            for embedding in file_vectors
+                            for chunk_index, text, vector in (
+                                (embedding.chunk_index, embedding.text, embedding.vector),
+                            )
+                        ],
                     )
 
     @_locked
@@ -809,6 +892,35 @@ class SqliteGraphStore:
             )
 
         return documents
+
+    @_locked
+    def get_search_embeddings(
+        self, analysis_id: str
+    ) -> dict[str, list[tuple[str, tuple[float, ...]]]]:
+        """Return current-model chunk text and vectors for a completed analysis."""
+        self._get_valid_analysis_row(analysis_id, require_completed=True)
+        if self.embedder is None:
+            return {}
+        rows = self._conn.execute(
+            """
+            SELECT f.path, e.chunk_text, e.vector
+            FROM embeddings e
+            JOIN files f ON f.id = e.file_id
+            WHERE f.analysis_id = ? AND e.model = ?
+            ORDER BY f.path ASC;
+            """,
+            (analysis_id, self.embedder.model_id),
+        ).fetchall()
+        embeddings: dict[str, list[tuple[str, tuple[float, ...]]]] = defaultdict(list)
+        for row in rows:
+            data = bytes(row["vector"])
+            if len(data) % 4 != 0:
+                continue
+            dimensions = len(data) // 4
+            embeddings[str(row["path"])].append(
+                (str(row["chunk_text"]), struct.unpack(f"<{dimensions}f", data))
+            )
+        return dict(embeddings)
 
     @_locked
     def get_file_match_lines(

@@ -8,6 +8,7 @@ const STAGE_LABELS: Record<AnalysisStage, string> = {
   filtering: 'Filtering out generated files',
   parsing: 'Parsing Python files',
   classifying: 'Classifying imports',
+  indexing: 'Indexing search content',
   storing: 'Saving the results',
 };
 

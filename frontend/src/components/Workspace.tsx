@@ -176,8 +176,8 @@ const TOUR_STEPS: readonly TourStep[] = [
           order to read them.
         </p>
         <p>
-          It matches the words you type in file names, functions, classes,
-          imports, docstrings and comments, not their meaning.{' '}
+          It combines exact matches in names, code and prose with local semantic
+          search, so plain-language questions can find related files.{' '}
           <strong>How search works</strong>, next to the search bar, explains
           how results are ranked and ordered.
         </p>

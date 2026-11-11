@@ -1,47 +1,44 @@
 # Search precision measurement
 
-Does RepoLens search beat grep? This is the measurement behind issue #37
-(Risk 1). It is not a feature: nothing here changes ranking, and the numbers
-are reported as measured.
+How much does local semantic search improve RepoLens over keyword-only search
+and grep? This is the measurement for issue #77; the recorded numbers are
+generated from the production pipeline and the pinned BGE-small model.
 
 ```bash
 cd backend
 python -m benchmarks.search_precision            # print the comparison table
 python -m benchmarks.search_precision --write    # refresh measured_precision.json
-python -m pytest tests/test_search_precision.py  # check and reproduce it
+python -m pytest tests/test_search_precision.py  # check labels and recorded gates
 ```
 
 ## Measured top-5 precision
 
-| repository           | queries | indexed files | RepoLens | grep  | grep+rank | ideal |
-| -------------------- | ------: | ------------: | -------: | ----: | --------: | ----: |
-| `search_mini_repo`   |       6 |             8 |    0.200 | 0.033 |     0.033 | 0.267 |
-| `analysis_mini_repo` |       6 |             7 |    0.233 | 0.000 |     0.000 | 0.233 |
-| `e2e_reference`      |       7 |            14 |    0.343 | 0.086 |     0.114 | 0.457 |
-| **overall**          |  **19** |               |**0.263** |**0.042**| **0.053**|**0.326**|
+| repository           | queries | indexed files | keyword | hybrid | grep  | grep+rank | ideal |
+| -------------------- | ------: | ------------: | ------: | -----: | ----: | --------: | ----: |
+| `search_mini_repo`   |       6 |             8 |   0.200 |  0.267 | 0.033 |     0.033 | 0.267 |
+| `analysis_mini_repo` |       6 |             7 |   0.233 |  0.233 | 0.000 |     0.000 | 0.233 |
+| `e2e_reference`      |       8 |            14 |   0.300 |  0.400 | 0.075 |     0.125 | 0.475 |
+| **overall**           | **20** |               | **0.250** | **0.310** | **0.040** | **0.060** | **0.340** |
 
-RepoLens beats the grep filename baseline on all three repositories: 0.263
-versus 0.042 overall, six times the baseline, and it never scores below it on
-a single query. Read as a share of what a perfect ranker could score on these
-labels, RepoLens recovers 81% of the achievable precision and grep recovers
-13%. On `analysis_mini_repo` it reaches the ceiling.
+Hybrid is no worse than keyword-only on every query and improves overall
+precision@5 from 0.250 to 0.310. It finds a labeled file for the vague
+production-onboarding query and for `tax`, both of which keyword-only search
+could not answer. The model is `BAAI/bge-small-en-v1.5`; its vectors and query
+inference are local.
 
 ### History
 
-| change | overall RepoLens | labeled files found | queries with no results |
-| ------ | ---------------: | ------------------: | ----------------------: |
-| First measurement (#37, PR #67): paths, module-level symbols, import names | 0.211 | 20 / 31 | 4 |
-| #77 part 1: also class members, docstrings, and comments | 0.263 | 25 / 31 | 1 |
+| change | keyword precision@5 | hybrid precision@5 |
+| ------ | ------------------: | -----------------: |
+| Keyword index, class members, docstrings and comments | 0.250 | 0.310 |
 
-No query scored lower after #77. Its reading orders changed in two places,
-both because a newly matched file is a dependency of a stronger match and is
-therefore listed first: `cart total` now starts with `bookshop/catalog/models.py`
-(the `User.cart` field that `checkout.py` sums), and `token` lists
-`bookshop/auth/__init__.py` (whose docstring mentions tokens) before
-`checkout.py`.
+The recorded hybrid results preserve the keyword-only top-five on every query.
+Semantic-only results are appended after those exact hits so their graph edges
+cannot push a strong keyword match below the fold.
 
 Per-query results, including every path each system returned, are in
-`measured_precision.json`.
+`measured_precision.json`. Its precision and non-regression checks run in CI
+without downloading the model; the benchmark command itself uses FastEmbed.
 
 ### Reading the numbers
 
@@ -52,49 +49,35 @@ queries have one or two labeled files, so no system can reach 1.000. The
 every system shares that ceiling. Compare systems to each other and to
 `ideal`; the absolute values do not transfer to a large repository.
 
-### Where RepoLens loses or ties
+### Where Hybrid Helps
 
-grep never wins a query outright, and RepoLens scores at least as well as both
-baselines on all 19. The ties are the three queries whose answer is named in a
-filename -- `payments`, `user account lookup`, and `login` on `e2e_reference`
--- which is exactly the case grep handles -- plus `tax`, which no system
-finds.
+Hybrid search recovers files that do not repeat the query wording: `tax` finds
+`app/billing/service.py`, `password verification` finds the user repository,
+and `login` finds the token and user-model dependencies. The vague production
+onboarding query returns `bookshop/config.py`; conventional entry-point
+identification and the repo-wide guided tour are handled separately by #79.
 
-Across the 19 queries, RepoLens finds 25 of the 31 labeled files a perfect
-ranker would have returned. Each of the 6 it misses is still a recall failure,
-not a ranking failure: the file is never a candidate, because no query term
-appears anywhere the index reaches, and no keyword index can bridge a
-difference in wording.
-
-- `tax` returns **nothing at all**: the word only appears as a function
-  parameter in `app/billing/service.py`, and identifiers inside function
-  bodies are not indexed.
-- `login` misses `bookshop/auth/tokens.py` and `bookshop/catalog/models.py`,
-  and `password verification` misses `app/users/repository.py`: each is part
-  of the feature but never uses the query's words.
-- `secret key` misses `bookshop/auth/tokens.py`, which only takes the name in
-  `from bookshop.config import SECRET_KEY`; imported names are not stored,
-  only the module `bookshop.config`.
-- `command line entry point` misses `bookshop/app.py`, whose entry-point role
-  is structural rather than written down.
-
-These are the cases the embedding-based search in #77 part 2 and the
-entry-point detection in #79 are meant to reach.
+The benchmark remains small and Python-only. Its 0.310 precision@5 is a
+comparison on these fixture labels, not a prediction for every large
+repository. Semantic-only suggestions are added after exact-match results, so
+they can improve recall without displacing existing keyword hits.
 
 ## Method
 
 Every system answers the same hand-labeled queries, measured at k = 5.
 
-**RepoLens** is measured through its production path, not through a fixture
-index: `AnalysisService` parses the tree, `classify_imports` resolves its
-imports, the result is stored in an in-memory `SqliteGraphStore`, and that
-store serves `SearchService` as the `SearchIndex`. This is the sequence
-`PipelineAnalysisRunner` runs for a real repository, so the measurement sees
-the same documents the API serves: paths, module-level symbols, import names,
-and (since #77) the class members, docstrings, and comments the analyzer
-extracts. Measuring against `tests/fixtures/search_mini_repo/search_index.json`,
-whose comments are hand-written rather than extracted, would have measured the
-fixture instead of the pipeline.
+**RepoLens keyword** and **RepoLens-hybrid** use the same production pipeline:
+`AnalysisService` parses the tree, `classify_imports` resolves imports, and an
+in-memory `SqliteGraphStore` indexes the parsed records. Keyword-only disables
+vector candidates. Hybrid stores bounded per-file text chunks with BGE-small
+vectors and combines semantic and keyword ranks. This follows the parse,
+classify, index and store sequence in `PipelineAnalysisRunner`; no fixture file
+is imported or executed.
+
+`python -m benchmarks.search_precision` uses FastEmbed and the pinned model.
+Tests inject `HashEmbedder`, so CI checks labels and keyword reproducibility
+without downloading model weights; a separate test checks the recorded BGE run
+meets the per-query non-regression gate.
 
 **grep** is the baseline the issue names, a grep of the file list:
 
@@ -127,7 +110,7 @@ directly against `SearchService._parse_query`.
 
 ## The labels
 
-`labeled_queries.json` holds 19 queries over three repositories, with the
+`labeled_queries.json` holds 20 queries over three repositories, with the
 labeling rule and a per-query rationale. The rule:
 
 > A file is relevant to a query if a developer asked to understand or change
@@ -140,8 +123,8 @@ labeling rule and a per-query rationale. The rule:
 The labels were written from the fixture source before either system was run,
 and were not revised afterwards. The queries are feature-shaped, the way a
 reader describes what they are looking for, rather than identifiers copied out
-of the code; four of them happen to match no indexed text at all, and those
-were kept.
+of the code. The production-onboarding query is intentionally vague and has no
+keyword match in the analyzed source.
 
 The three repositories are the existing fixtures
 (`tests/fixtures/search_mini_repo`, `tests/fixtures/analysis_mini_repo`, and

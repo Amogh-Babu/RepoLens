@@ -15,6 +15,7 @@ AnalysisStage = Literal[
     "filtering",
     "parsing",
     "classifying",
+    "indexing",
     "storing",
 ]
 
@@ -117,6 +118,17 @@ class AnalysisErrorRecord:
 
 
 @dataclass(frozen=True)
+class FileEmbeddingRecord:
+    """One vectorized text chunk belonging to an analyzed file."""
+
+    path: str
+    chunk_index: int
+    text: str
+    model: str
+    vector: tuple[float, ...]
+
+
+@dataclass(frozen=True)
 class AnalysisRecord:
     """Complete analysis payload to persist in the graph store."""
 
@@ -132,6 +144,7 @@ class AnalysisRecord:
     counts: AnalysisCounts = AnalysisCounts()
     error: AnalysisErrorRecord | None = None
     files: tuple[AnalyzedFile, ...] = ()
+    embeddings: tuple[FileEmbeddingRecord, ...] = ()
 
 
 @dataclass(frozen=True)

@@ -8,6 +8,7 @@ description = "RepoLens API: repository ingestion, static analysis, graph store,
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115,<1",
+    "fastembed==0.7.4",
     "uvicorn>=0.30,<1",
 ]
 

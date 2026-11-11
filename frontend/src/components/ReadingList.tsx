@@ -18,6 +18,7 @@ const MATCH_LABELS: Record<MatchKind, string> = {
   symbol: 'symbol',
   import: 'import',
   comment: 'comment',
+  semantic: 'semantic match',
 };
 
 /**

@@ -22,6 +22,7 @@ import argparse
 from collections.abc import Iterable
 from dataclasses import dataclass
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -30,6 +31,7 @@ import sys
 from repolens.analysis import AnalysisService, classify_imports, to_analyzed_files
 from repolens.graph import AnalysisRecord, SqliteGraphStore
 from repolens.search import SearchService
+from repolens.search.embedding import Embedder, FastEmbedEmbedder, HashEmbedder
 
 
 BENCHMARK_ROOT = Path(__file__).parent
@@ -38,13 +40,15 @@ QUERIES_PATH = BENCHMARK_ROOT / "labeled_queries.json"
 RECORD_PATH = BENCHMARK_ROOT / "measured_precision.json"
 
 REPOLENS = "repolens"
+REPOLENS_HYBRID = "repolens_hybrid"
 GREP = "grep"
 GREP_RANKED = "grep_ranked"
 
 # The systems compared, in the order the table reports them.
-SYSTEMS: tuple[str, ...] = (REPOLENS, GREP, GREP_RANKED)
+SYSTEMS: tuple[str, ...] = (REPOLENS, REPOLENS_HYBRID, GREP, GREP_RANKED)
 SYSTEM_LABELS = {
-    REPOLENS: "RepoLens",
+    REPOLENS: "RepoLens keyword",
+    REPOLENS_HYBRID: "RepoLens-hybrid",
     GREP: "grep",
     GREP_RANKED: "grep+rank",
 }
@@ -139,6 +143,7 @@ class Measurement:
 
     top_k: int
     repos: tuple[RepoResult, ...]
+    embedding_model: str = ""
 
     @property
     def results(self) -> tuple[QueryResult, ...]:
@@ -184,7 +189,10 @@ def load_query_sets(
     return int(data["top_k"]), repos
 
 
-def build_search_service(root: Path) -> tuple[SearchService, tuple[str, ...]]:
+def build_search_service(
+    root: Path,
+    embedder: Embedder | None = None,
+) -> tuple[SearchService, tuple[str, ...]]:
     """Index a repository tree the way the analysis pipeline does.
 
     The tree is parsed and its imports classified, then stored in an in-memory
@@ -195,7 +203,7 @@ def build_search_service(root: Path) -> tuple[SearchService, tuple[str, ...]]:
       The search service, and the repository-relative paths it indexed.
     """
     analysis = AnalysisService().analyze_repository(root)
-    store = SqliteGraphStore()
+    store = SqliteGraphStore(embedder=embedder or HashEmbedder())
     store.save(
         AnalysisRecord(
             analysis_id=_ANALYSIS_ID,
@@ -212,10 +220,16 @@ def build_search_service(root: Path) -> tuple[SearchService, tuple[str, ...]]:
 
 
 def repolens_top_paths(
-    service: SearchService, query: str, top_k: int
+    service: SearchService,
+    query: str,
+    top_k: int,
+    *,
+    include_semantic: bool = True,
 ) -> tuple[str, ...]:
     """Return the paths RepoLens puts first for a query."""
-    page = service.search(_ANALYSIS_ID, query, limit=top_k)
+    page = service.search(
+        _ANALYSIS_ID, query, limit=top_k, include_semantic=include_semantic
+    )
     return tuple(result.path for result in page.results)
 
 
@@ -298,19 +312,31 @@ def ranked_baseline_top_paths(
     return tuple(ordered[:top_k])
 
 
-def measure(queries_path: Path = QUERIES_PATH) -> Measurement:
+def measure(
+    queries_path: Path = QUERIES_PATH,
+    *,
+    embedder: Embedder | None = None,
+) -> Measurement:
     """Run every labeled query through RepoLens search and the baselines."""
+    active_embedder = embedder or FastEmbedEmbedder(
+        cache_dir=os.environ.get("REPOLENS_EMBEDDING_CACHE") or None
+    )
     top_k, repos = load_query_sets(queries_path)
     repo_results: list[RepoResult] = []
     for repo in repos:
-        service, indexed = build_search_service(repo.root)
+        service, indexed = build_search_service(repo.root, active_embedder)
         listed = list_repository_paths(repo.root)
         results = tuple(
             QueryResult(
                 query=case.query,
                 relevant=case.relevant,
                 rankings={
-                    REPOLENS: repolens_top_paths(service, case.query, top_k),
+                    REPOLENS: repolens_top_paths(
+                        service, case.query, top_k, include_semantic=False
+                    ),
+                    REPOLENS_HYBRID: repolens_top_paths(
+                        service, case.query, top_k, include_semantic=True
+                    ),
                     GREP: baseline_top_paths(listed, case.query, top_k),
                     GREP_RANKED: ranked_baseline_top_paths(listed, case.query, top_k),
                 },
@@ -323,13 +349,18 @@ def measure(queries_path: Path = QUERIES_PATH) -> Measurement:
                 repo=repo, indexed_paths=indexed, listed_paths=listed, results=results
             )
         )
-    return Measurement(top_k=top_k, repos=tuple(repo_results))
+    return Measurement(
+        top_k=top_k,
+        repos=tuple(repo_results),
+        embedding_model=active_embedder.model_id,
+    )
 
 
 def to_record(measurement: Measurement) -> dict:
     """Describe a measurement as the JSON the recorded results file holds."""
     return {
         "top_k": measurement.top_k,
+        "embedding_model": measurement.embedding_model,
         "overall": {
             "queries": len(measurement.results),
             "precision": {

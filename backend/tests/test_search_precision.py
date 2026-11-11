@@ -1,11 +1,9 @@
 """Reproduce the top-5 search precision measurement (issue #37, Risk 1).
 
-These tests do two jobs. First they check the measurement is sound: every
-label names a file that exists and that RepoLens actually indexes, and the
-grep baseline searches for the same terms `SearchService` does, so neither
-system is handed an advantage. Then they re-run the whole measurement and
-compare it with `benchmarks/measured_precision.json`, so a change in ranking
-or indexing that moves the numbers fails here instead of going unnoticed.
+These tests check that labels name files RepoLens indexes, that the grep
+baseline uses the same query terms, and that keyword results remain reproducible.
+The recorded BGE measurement is checked for its per-query non-regression gate
+without downloading model weights during tests.
 
 Refresh the recorded numbers deliberately, from `backend/`:
 
@@ -22,6 +20,7 @@ from benchmarks.search_precision import (
     GREP,
     GREP_RANKED,
     REPOLENS,
+    REPOLENS_HYBRID,
     SYSTEMS,
     LabeledQuery,
     Measurement,
@@ -36,9 +35,9 @@ from benchmarks.search_precision import (
     measure,
     query_terms,
     ranked_baseline_top_paths,
-    to_record,
 )
 from repolens.search import SearchService
+from repolens.search.embedding import HashEmbedder
 
 
 TOP_K, QUERY_SETS = load_query_sets()
@@ -54,8 +53,8 @@ QUERY_IDS = [f"{repo.id}:{case.query}" for repo, case in ALL_QUERIES]
 
 @pytest.fixture(scope="module")
 def measurement() -> Iterator[Measurement]:
-    """Measure once; every test below reads the same run."""
-    yield measure()
+    """Measure once with deterministic embeddings; this never downloads a model."""
+    yield measure(embedder=HashEmbedder())
 
 
 def test_three_repositories_are_labeled() -> None:
@@ -173,11 +172,43 @@ def test_hits_never_exceed_what_a_perfect_ranker_could_do(
             assert 0.0 <= result.precision(system) <= result.ideal_precision
 
 
-def test_the_measurement_matches_the_recorded_numbers(
+def test_keyword_measurement_matches_the_recorded_rankings(
     measurement: Measurement,
 ) -> None:
-    """The recorded run is the written-down answer to issue #37."""
-    assert to_record(measurement) == load_record()
+    """Keyword results are independent of the model used for the hybrid pass."""
+    record = load_record()
+    for repo in measurement.repos:
+        recorded_repo = next(item for item in record["repos"] if item["id"] == repo.repo.id)
+        for result in repo.results:
+            recorded_result = next(
+                item for item in recorded_repo["queries"] if item["query"] == result.query
+            )
+            assert list(result.rankings[REPOLENS]) == recorded_result["top"][REPOLENS]
+
+
+def test_recorded_hybrid_meets_keyword_precision_on_every_query() -> None:
+    record = load_record()
+
+    assert record["embedding_model"] == "BAAI/bge-small-en-v1.5"
+    for repo in record["repos"]:
+        for result in repo["queries"]:
+            assert result["hits"][REPOLENS_HYBRID] >= result["hits"][REPOLENS], (
+                repo["id"],
+                result["query"],
+            )
+
+
+def test_vague_onboarding_query_returns_labeled_files() -> None:
+    record = load_record()
+    repo = next(item for item in record["repos"] if item["id"] == "e2e_reference")
+    result = next(
+        item
+        for item in repo["queries"]
+        if item["query"] == "if I'm meant to work on prod, where do I start?"
+    )
+
+    assert result["hits"][REPOLENS] == 0
+    assert result["hits"][REPOLENS_HYBRID] > 0
 
 
 def test_the_report_names_every_system_and_its_overall_precision(
