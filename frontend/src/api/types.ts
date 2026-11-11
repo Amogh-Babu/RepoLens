@@ -117,6 +117,51 @@ export interface DependencyGraph {
   edges: ImportEdge[];
 }
 
+export interface OverviewFile {
+  path: string;
+  reason: string;
+  summary: string;
+  score?: number;
+}
+
+export interface OverviewPackage {
+  id: string;
+  name: string;
+  fileCount: number;
+  layer: number;
+  cyclic: boolean;
+}
+
+export interface OverviewArchitecture {
+  packages: OverviewPackage[];
+  edges: Array<{source: string; target: string; count: number}>;
+  layers: Array<{depth: number; name: string; packages: string[]}>;
+  hasCycles: boolean;
+}
+
+export interface OverviewArea {
+  id: string;
+  name: string;
+  files: string[];
+  summary: string;
+}
+
+export interface OverviewCategory {
+  path: string;
+  category:
+    'source' | 'test' | 'tool' | 'docs' | 'example' | 'config' | 'migration';
+}
+
+/** GET /analyses/{id}/overview response body. */
+export interface RepositoryOverview {
+  entryPoints: OverviewFile[];
+  coreFiles: OverviewFile[];
+  architecture: OverviewArchitecture;
+  areas: OverviewArea[];
+  tour: OverviewFile[];
+  categories: OverviewCategory[];
+}
+
 export type SymbolKind = 'function' | 'class' | 'variable';
 
 export interface SymbolInfo {

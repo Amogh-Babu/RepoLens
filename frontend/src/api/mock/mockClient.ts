@@ -7,6 +7,7 @@ import type {
   ApiErrorBody,
   DependencyGraph,
   FileDetail,
+  RepositoryOverview,
   ModuleGroup,
   RankedFile,
   SearchMatch,
@@ -249,6 +250,125 @@ export class MockApiClient implements ApiClient {
             : [],
         ),
       ),
+    };
+  }
+
+  async getOverview(
+    analysisId: string,
+    options?: RequestOptions,
+  ): Promise<RepositoryOverview> {
+    await this.delay(options);
+    this.findCompleted(analysisId);
+
+    const categories = this.repo.files.map(file => {
+      const path = file.path.toLowerCase();
+      const category =
+        path.includes('/test') || path.startsWith('tests/') ? 'test' : 'source';
+      return {path: file.path, category} as const;
+    });
+    const sourceFiles = this.repo.files.filter(
+      file =>
+        categories.find(item => item.path === file.path)?.category === 'source',
+    );
+    const entryPoints = sourceFiles
+      .filter(file =>
+        ['manage.py', 'main.py', 'app.py', '__main__.py'].includes(
+          file.path.split('/').at(-1)?.toLowerCase() ?? '',
+        ),
+      )
+      .map(file => ({
+        path: file.path,
+        reason: 'Conventional application or command entry-point filename.',
+        summary:
+          file.comments[0]?.text ?? `Defines ${file.symbols.length} symbols.`,
+      }));
+    const coreFiles = sourceFiles
+      .map(file => ({
+        path: file.path,
+        score: this.importersOf(file.path).length,
+        reason: `Imported by ${this.importersOf(file.path).length} analyzed files.`,
+        summary:
+          file.comments[0]?.text ?? `Defines ${file.symbols.length} symbols.`,
+      }))
+      .sort(
+        (left, right) =>
+          right.score - left.score || left.path.localeCompare(right.path),
+      )
+      .slice(0, 8);
+    const modules = new Map<string, string[]>();
+    for (const file of sourceFiles) {
+      const module = moduleOf(file.path);
+      const paths = modules.get(module) ?? [];
+      paths.push(file.path);
+      modules.set(module, paths);
+    }
+    const packages = [...modules].map(([id, paths]) => ({
+      id,
+      name: moduleName(id),
+      fileCount: paths.length,
+      layer: 0,
+      cyclic: false,
+    }));
+    const areas = packages.map(module => ({
+      id: module.id,
+      name: module.name,
+      files: modules.get(module.id) ?? [],
+      summary: `${modules.get(module.id)?.length ?? 0} files in this module.`,
+    }));
+    const tourPaths: string[] = [];
+    const visited = new Set<string>();
+    const visit = (path: string) => {
+      if (visited.has(path)) return;
+      visited.add(path);
+      const file = sourceFiles.find(candidate => candidate.path === path);
+      for (const dependency of file?.imports ?? []) {
+        if (
+          dependency.kind === 'internal' &&
+          dependency.targetPath !== undefined
+        ) {
+          visit(dependency.targetPath);
+        }
+      }
+      tourPaths.push(path);
+    };
+    for (const entry of entryPoints) visit(entry.path);
+    for (const file of coreFiles) {
+      if (tourPaths.length >= 12) break;
+      visit(file.path);
+    }
+    for (const file of sourceFiles) {
+      if (tourPaths.length >= 12) break;
+      visit(file.path);
+    }
+
+    return {
+      entryPoints,
+      coreFiles,
+      architecture: {
+        packages,
+        edges: [],
+        layers:
+          packages.length > 0
+            ? [
+                {
+                  depth: 0,
+                  name: 'Foundations',
+                  packages: packages.map(item => item.id),
+                },
+              ]
+            : [],
+        hasCycles: false,
+      },
+      areas,
+      tour: tourPaths.map(path => ({
+        path,
+        reason: entryPoints.some(entry => entry.path === path)
+          ? 'Start here: this is a conventional application entry point.'
+          : 'Read this file to understand the repository structure.',
+        summary:
+          sourceFiles.find(file => file.path === path)?.comments[0]?.text ?? '',
+      })),
+      categories,
     };
   }
 
