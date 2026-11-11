@@ -15,6 +15,7 @@ from fastapi.routing import APIRoute
 from pydantic import BaseModel
 
 from repolens.graph.endpoints import (
+    AnalysisIdPath,
     DependencyGraphResponse,
     FileDetailResponse,
     create_graph_router,
@@ -256,7 +257,9 @@ class _ContractRoute(APIRoute):
         async def route_handler(request: Request):
             try:
                 return await original_handler(request)
-            except RequestValidationError:
+            except RequestValidationError as exc:
+                if _is_analysis_id_error(exc):
+                    return _analysis_id_not_found()
                 if request.url.path.endswith("/search"):
                     return _error_response(
                         422,
@@ -272,6 +275,42 @@ class _ContractRoute(APIRoute):
                 )
 
         return route_handler
+
+
+def _is_analysis_id_error(exc: RequestValidationError) -> bool:
+    """Return whether validation failed on the `analysis_id` path parameter."""
+    return any(
+        tuple(error.get("loc", ()))[:2] == ("path", "analysis_id")
+        for error in exc.errors()
+    )
+
+
+def _analysis_id_not_found() -> JSONResponse:
+    """Answer a malformed analysis id the way an unknown one is answered.
+
+    A malformed id cannot name an analysis, so to the client it is simply not
+    found; the id itself is not echoed back, since it may be arbitrary input.
+    """
+    return _error_response(
+        404,
+        "ANALYSIS_NOT_FOUND",
+        "That analysis was not found.",
+        "Start a new analysis from the home page.",
+    )
+
+
+async def _contract_validation_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """Give routes outside `_ContractRoute` the same `{code, message, hint}` errors."""
+    if _is_analysis_id_error(exc):
+        return _analysis_id_not_found()
+    return _error_response(
+        422,
+        "INVALID_REQUEST",
+        "The request contains invalid parameters.",
+        "Check the request path and query parameters against the API docs.",
+    )
 
 
 def create_analysis_router(
@@ -306,7 +345,7 @@ def create_analysis_router(
         response_model=AnalysisResponse,
         summary="Get the status, stage, and summary of an analysis",
     )
-    def get_analysis(analysis_id: str) -> Any:
+    def get_analysis(analysis_id: AnalysisIdPath) -> Any:
         try:
             return store.get_analysis(analysis_id)
         except GraphStoreError as exc:
@@ -320,7 +359,7 @@ def create_analysis_router(
         status_code=204,
         summary="Cancel a queued or running analysis",
     )
-    def cancel_analysis(analysis_id: str) -> Response:
+    def cancel_analysis(analysis_id: AnalysisIdPath) -> Response:
         try:
             store.cancel_analysis(analysis_id)
             return Response(status_code=204)
@@ -336,7 +375,7 @@ def create_analysis_router(
         summary="Search an analyzed repository and return a ranked reading list",
     )
     def search_analysis(
-        analysis_id: str,
+        analysis_id: AnalysisIdPath,
         q: str,
         offset: int = Query(default=0, ge=0),
         limit: int = Query(default=20, ge=1, le=100),
@@ -442,6 +481,7 @@ def create_app(
         allow_headers=["*"],
     )
 
+    application.add_exception_handler(RequestValidationError, _contract_validation_handler)
     application.state.store = graph_store
     application.include_router(create_analysis_router(graph_store, runner=runner))
     application.include_router(create_graph_router(graph_store))
