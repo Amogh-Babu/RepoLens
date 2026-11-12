@@ -243,10 +243,16 @@ const TOUR_STEPS: readonly TourStep[] = [
           toolbar explains the colors.
         </p>
         <p>
-          During a search the map shows only the matching files. Untick
-          <strong> Only show matches</strong> to see everything again. With a
-          file selected, tick <strong>Hide unrelated files</strong> to see only
-          the files it is connected to.
+          <strong>Only show matches</strong> shows all search results, including
+          files that are not directly connected to the selected file. Untick it
+          to see the whole repository.
+        </p>
+        <p>
+          <strong>Hide unrelated files</strong> shows the selected file and its
+          direct imports and importers. During a search, it keeps only those
+          connections that match the search, even if Only show matches is off.
+          The selected file remains visible. Turn it off to see all search
+          matches.
         </p>
       </>
     ),

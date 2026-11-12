@@ -159,6 +159,21 @@
   font-weight: 600;
 }
 
+.map-key__filters {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border);
+}
+
+.map-key__filters h3 {
+  margin: 0;
+  font-size: 0.75rem;
+}
+
+.map-key__filters p {
+  margin: 6px 0 0;
+}
+
 .map__selection-hint {
   margin: 0;
   padding: 4px 8px;

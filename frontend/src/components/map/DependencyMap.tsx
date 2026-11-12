@@ -61,7 +61,8 @@ interface DependencyMapProps {
   onMatchesOnlyChange?: (matchesOnly: boolean) => void;
   /**
    * With a file selected, draw only it and the files it imports or is
-   * imported by, instead of greying out the rest.
+   * imported by, instead of greying out the rest. During a search, those
+   * connections must also match the search.
    */
   hideUnrelated?: boolean;
   onHideUnrelatedChange?: (hideUnrelated: boolean) => void;
@@ -117,7 +118,16 @@ function MapCanvas({
   // so selecting another match does not lay the map out again.
   let focusKey: string | null = null;
   if (hidingUnrelated && selectedPath !== null) {
-    focusKey = [...neighborhood(graph, selectedPath)].sort().join('\n');
+    const neighbors = neighborhood(graph, selectedPath);
+    focusKey = [...neighbors]
+      .filter(
+        path =>
+          path === selectedPath ||
+          matchedPaths === null ||
+          matchedPaths.has(path),
+      )
+      .sort()
+      .join('\n');
   } else if (matchesOnly && searching) {
     focusKey = [
       ...matchedPaths,
@@ -416,7 +426,10 @@ function MapCanvas({
             </button>
           )}
           {searching && onMatchesOnlyChange !== undefined && (
-            <label className="map__toggle">
+            <label
+              className="map__toggle"
+              title="Show all search matches, including files not directly connected to the selected file"
+            >
               <input
                 type="checkbox"
                 checked={matchesOnly}
@@ -428,7 +441,7 @@ function MapCanvas({
           {selectedPath !== null && onHideUnrelatedChange !== undefined && (
             <label
               className="map__toggle"
-              title="Show only the selected file and the files it imports or is imported by"
+              title="Show the selected file and its direct imports and importers; during a search, show only connections that match"
             >
               <input
                 type="checkbox"
@@ -454,6 +467,14 @@ function MapCanvas({
           <p className="map__selection-hint" role="status">
             Inside <code>{selectedModuleId}/</code> (collapsed). Expand to see{' '}
             <code>{selectedPath}</code>.
+          </p>
+        )}
+        {hidingUnrelated && searching && (
+          <p className="map__selection-hint" role="status">
+            {shownGraph.files.length === 1
+              ? 'No direct connections match this search.'
+              : 'Showing direct connections that match this search.'}{' '}
+            Turn off Hide unrelated files to see all search matches.
           </p>
         )}
         <div className="map__canvas">

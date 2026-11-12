@@ -1,5 +1,6 @@
 import {act, fireEvent, render, screen, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import {useState} from 'react';
 import type {DependencyGraph} from '../../api/types.ts';
 import {DependencyMap, RENDER_BUDGET_MS} from './DependencyMap.tsx';
 import {ListFallback} from './ListFallback.tsx';
@@ -192,14 +193,36 @@ describe('DependencyMap', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('shows only the neighbors of the selection even during a search', () => {
+  it.each([true, false])(
+    'hides nonmatching neighbors during a search when matchesOnly is %s',
+    matchesOnly => {
+      renderMap({
+        selectedPath: 'app/views.py',
+        matchedPaths: new Set(['app/auth/tokens.py']),
+        matchesOnly,
+        onMatchesOnlyChange: vi.fn(),
+        hideUnrelated: true,
+        onHideUnrelatedChange: vi.fn(),
+      });
+
+      expect(
+        screen.getByRole('button', {name: 'File app/views.py'}),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', {name: 'File app/auth/service.py'}),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', {name: /tokens\.py/}),
+      ).not.toBeInTheDocument();
+    },
+  );
+
+  it('keeps matching direct connections but hides other search results', () => {
     renderMap({
       selectedPath: 'app/views.py',
-      matchedPaths: new Set(['app/auth/tokens.py']),
+      matchedPaths: new Set(['app/auth/service.py', 'app/auth/tokens.py']),
       matchesOnly: true,
-      onMatchesOnlyChange: vi.fn(),
       hideUnrelated: true,
-      onHideUnrelatedChange: vi.fn(),
     });
 
     expect(
@@ -207,6 +230,59 @@ describe('DependencyMap', () => {
     ).toBeInTheDocument();
     expect(
       screen.queryByRole('button', {name: /tokens\.py/}),
+    ).not.toBeInTheDocument();
+  });
+
+  it('switches between matching connections and all search matches', async () => {
+    function InteractiveMap() {
+      const [matchesOnly, setMatchesOnly] = useState(false);
+      const [hideUnrelated, setHideUnrelated] = useState(false);
+      return (
+        <div style={{width: '800px', height: '600px'}}>
+          <DependencyMap
+            graph={GRAPH}
+            expandedModules={new Set(['app', 'app/auth'])}
+            selectedPath="app/views.py"
+            matchedPaths={new Set(['app/views.py', 'app/auth/tokens.py'])}
+            matchesOnly={matchesOnly}
+            onMatchesOnlyChange={setMatchesOnly}
+            hideUnrelated={hideUnrelated}
+            onHideUnrelatedChange={setHideUnrelated}
+            onSelectFile={vi.fn()}
+            onToggleModule={vi.fn()}
+            onCollapseAll={vi.fn()}
+            onTooSlow={vi.fn()}
+          />
+        </div>
+      );
+    }
+    const user = userEvent.setup();
+    render(<InteractiveMap />);
+
+    await user.click(
+      screen.getByRole('checkbox', {name: 'Hide unrelated files'}),
+    );
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'No direct connections match this search.',
+    );
+    expect(
+      screen.queryByRole('button', {name: /service\.py/}),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', {name: /tokens\.py/}),
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole('checkbox', {name: 'Only show matches'}));
+    expect(
+      screen.queryByRole('button', {name: /tokens\.py/}),
+    ).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole('checkbox', {name: 'Hide unrelated files'}),
+    );
+    expect(
+      screen.getByRole('button', {name: /tokens\.py/}),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', {name: /service\.py/}),
     ).not.toBeInTheDocument();
   });
 
@@ -246,6 +322,8 @@ describe('DependencyMap', () => {
       'Not connected to the selection or search',
       'The arrow points to the file being imported.',
       'Number of imports along one line',
+      'search results across the repository',
+      'only connections that match the search are shown',
     ]) {
       expect(key).toHaveTextContent(text);
     }
