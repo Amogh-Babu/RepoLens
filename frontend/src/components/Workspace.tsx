@@ -237,12 +237,15 @@ const TOUR_STEPS: readonly TourStep[] = [
     body: (
       <>
         <p>
-          Each box is a folder. Click one to open it and see its files. Arrows
-          point from a file to the files it imports.
+          Each box is a folder. Click one to zoom in and see its files. Arrows
+          point from a file to the files it imports. <strong>Key</strong> in the
+          toolbar explains the colors.
         </p>
         <p>
           During a search the map shows only the matching files. Untick
-          <strong> Only show matches</strong> to see everything again.
+          <strong> Only show matches</strong> to see everything again. With a
+          file selected, tick <strong>Hide unrelated files</strong> to see only
+          the files it is connected to.
         </p>
       </>
     ),
@@ -485,6 +488,8 @@ function MapPanel({
   // During a search the map shows only the matches unless the user asks
   // for everything (user test feedback, #92).
   const [matchesOnly, setMatchesOnly] = useState(true);
+  // A selection greys out unrelated files; this hides them instead.
+  const [hideUnrelated, setHideUnrelated] = useState(false);
   const [fallbackMessage, setFallbackMessage] = useState<string | null>(null);
   const onTooSlow = useCallback(() => setFallbackMessage(TOO_SLOW_MESSAGE), []);
   const onMapError = useCallback(() => setFallbackMessage(FAILED_MESSAGE), []);
@@ -569,6 +574,8 @@ function MapPanel({
               matchedPaths={matchedPaths}
               matchesOnly={matchesOnly}
               onMatchesOnlyChange={setMatchesOnly}
+              hideUnrelated={hideUnrelated}
+              onHideUnrelatedChange={setHideUnrelated}
               onSelectFile={selectFile}
               onToggleModule={toggleModule}
               onCollapseAll={collapseAllModules}

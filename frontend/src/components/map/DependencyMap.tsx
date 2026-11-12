@@ -6,21 +6,26 @@ import {
   ReactFlowProvider,
   useNodesInitialized,
   useReactFlow,
+  useStoreApi,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import type {ReactNode} from 'react';
-import {useEffect, useMemo, useState} from 'react';
+import {useEffect, useId, useMemo, useRef, useState} from 'react';
 import type {DependencyGraph} from '../../api/types.ts';
+import {loadKeyOpen, saveKeyOpen} from '../../utils/mapKeyPreference.ts';
 import type {MapActions} from './mapActions.ts';
 import {MapActionsContext} from './mapActions.ts';
+import {MapKey} from './MapKey.tsx';
 import type {MapEdge, MapHighlight, MapNode} from './mapLayout.ts';
 import {
   fileNodeId,
   focusGraph,
+  groupNodeId,
   highlightAround,
   layoutMap,
   moduleNodeId,
   moduleIndex,
+  neighborhood,
   unitFor,
 } from './mapLayout.ts';
 import {FileNode, ModuleGroupNode, ModuleNode} from './MapNodes.tsx';
@@ -36,6 +41,10 @@ const NODE_TYPES = {
 };
 
 const FIT_VIEW_OPTIONS = {padding: 0.15, maxZoom: 1.2};
+/** The smallest zoom at which file names on the map can still be read. */
+const READABLE_ZOOM = 0.75;
+/** Room left above and beside a folder shown from its top-left corner. */
+const FOLDER_MARGIN = 24;
 
 interface DependencyMapProps {
   graph: DependencyGraph;
@@ -50,6 +59,12 @@ interface DependencyMapProps {
    */
   matchesOnly?: boolean;
   onMatchesOnlyChange?: (matchesOnly: boolean) => void;
+  /**
+   * With a file selected, draw only it and the files it imports or is
+   * imported by, instead of greying out the rest.
+   */
+  hideUnrelated?: boolean;
+  onHideUnrelatedChange?: (hideUnrelated: boolean) => void;
   onSelectFile: (path: string) => void;
   onToggleModule: (moduleId: string, expanded?: boolean) => void;
   onCollapseAll: () => void;
@@ -64,7 +79,9 @@ interface DependencyMapProps {
  * expanding one shows its files and the imports between them. Selecting a
  * file highlights what it imports and what imports it, and dims the rest.
  * Without a selection, files matching the search are highlighted instead
- * (Use Case 2). With `matchesOnly`, a search hides every other file.
+ * (Use Case 2). With `matchesOnly`, a search hides every other file; with
+ * `hideUnrelated`, a selection hides every file it is not connected to.
+ * Opening a folder zooms in on it.
  */
 export function DependencyMap(props: DependencyMapProps) {
   return (
@@ -82,6 +99,8 @@ function MapCanvas({
   matchedPaths,
   matchesOnly = false,
   onMatchesOnlyChange,
+  hideUnrelated = false,
+  onHideUnrelatedChange,
   onSelectFile,
   onToggleModule,
   onCollapseAll,
@@ -90,21 +109,33 @@ function MapCanvas({
 }: DependencyMapProps) {
   const flow = useReactFlow();
   const initialized = useNodesInitialized();
+  const moduleOf = useMemo(() => moduleIndex(graph), [graph]);
   const searching = matchedPaths !== null && matchedPaths.size > 0;
-  const focused = matchesOnly && searching;
-  // The files to draw when focused, as a stable key so selecting another
-  // match does not lay the map out again.
-  const focusKey = focused
-    ? [...matchedPaths, ...(selectedPath === null ? [] : [selectedPath])]
-        .sort()
-        .join('\n')
-    : null;
+  const hidingUnrelated =
+    hideUnrelated && selectedPath !== null && moduleOf.has(selectedPath);
+  // The files to draw when only part of the map is shown, as a stable key
+  // so selecting another match does not lay the map out again.
+  let focusKey: string | null = null;
+  if (hidingUnrelated && selectedPath !== null) {
+    focusKey = [...neighborhood(graph, selectedPath)].sort().join('\n');
+  } else if (matchesOnly && searching) {
+    focusKey = [
+      ...matchedPaths,
+      ...(selectedPath === null ? [] : [selectedPath]),
+    ]
+      .sort()
+      .join('\n');
+  }
+  const focused = focusKey !== null;
+  // When hiding unrelated files, only the selected file's own imports are
+  // drawn: its importers left of it, what it imports right of it.
+  const center = hidingUnrelated ? (selectedPath ?? undefined) : undefined;
   const shownGraph = useMemo(
     () =>
       focusKey === null
         ? graph
-        : focusGraph(graph, new Set(focusKey.split('\n'))),
-    [graph, focusKey],
+        : focusGraph(graph, new Set(focusKey.split('\n')), center),
+    [graph, focusKey, center],
   );
   // Every module stays open when focused, so each match is its own node.
   const shownExpanded = useMemo(
@@ -119,7 +150,6 @@ function MapCanvas({
       layoutMap(shownGraph, shownExpanded, {collapsible: focusKey === null}),
     [shownGraph, shownExpanded, focusKey],
   );
-  const moduleOf = useMemo(() => moduleIndex(graph), [graph]);
   // Positions the user dragged nodes to; reset whenever the layout changes.
   const [nodes, setNodes] = useState<MapNode[]>(layout.nodes);
   const [layoutShown, setLayoutShown] = useState(layout);
@@ -212,9 +242,22 @@ function MapCanvas({
     [layout.edges, highlight, matchedUnits],
   );
 
+  // The folder the user just opened on the map, to zoom in on once its
+  // files are drawn.
+  const zoomToModule = useRef<string | null>(null);
+
   // Bring the selected file into view, e.g. when chosen in the explorer.
+  // Not while zooming to a folder or while only its neighbors are drawn:
+  // then the whole view is fitted instead.
   useEffect(() => {
-    if (selectedPath === null || !initialized) return;
+    if (
+      selectedPath === null ||
+      !initialized ||
+      hidingUnrelated ||
+      zoomToModule.current !== null
+    ) {
+      return;
+    }
     const moduleId = moduleOf.get(selectedPath);
     const node =
       flow.getInternalNode(fileNodeId(selectedPath)) ??
@@ -228,11 +271,80 @@ function MapCanvas({
       y + (node.measured.height ?? 0) / 2,
       {zoom: Math.max(flow.getZoom(), 0.8), duration: 300},
     );
-  }, [selectedPath, selectionRevision, initialized, layout, flow, moduleOf]);
+  }, [
+    selectedPath,
+    selectionRevision,
+    initialized,
+    layout,
+    flow,
+    moduleOf,
+    hidingUnrelated,
+  ]);
 
-  // Fit the whole map whenever its shape changes.
+  // Fit an opened folder on screen. A folder too big to fit at a readable
+  // size is shown at the smallest readable zoom from its leftmost file
+  // (importers sit left of what they import, so that is where reading
+  // starts); the rest is a drag away.
+  const store = useStoreApi();
+  function zoomToFolder(groupId: string) {
+    const node = flow.getInternalNode(groupId);
+    const {width: paneWidth, height: paneHeight} = store.getState();
+    if (node === undefined) return;
+    const width = node.measured.width ?? 0;
+    const height = node.measured.height ?? 0;
+    const fitZoom = Math.min(
+      (paneWidth * (1 - 2 * FIT_VIEW_OPTIONS.padding)) / width,
+      (paneHeight * (1 - 2 * FIT_VIEW_OPTIONS.padding)) / height,
+    );
+    if (fitZoom >= READABLE_ZOOM) {
+      void flow.fitView({
+        ...FIT_VIEW_OPTIONS,
+        nodes: [{id: groupId}],
+        duration: 300,
+      });
+      return;
+    }
+    let first: {x: number; y: number; height: number} | null = null;
+    for (const child of layout.nodes) {
+      if (child.parentId !== groupId) continue;
+      const placed = flow.getInternalNode(child.id);
+      if (placed === undefined) continue;
+      const {x, y} = placed.internals.positionAbsolute;
+      if (first === null || x < first.x || (x === first.x && y < first.y)) {
+        first = {x, y, height: placed.measured.height ?? 0};
+      }
+    }
+    const anchor = first ?? {...node.internals.positionAbsolute, height: 0};
+    void flow.setViewport(
+      {
+        x: FOLDER_MARGIN - anchor.x * READABLE_ZOOM,
+        y: paneHeight / 2 - (anchor.y + anchor.height / 2) * READABLE_ZOOM,
+        zoom: READABLE_ZOOM,
+      },
+      {duration: 300},
+    );
+  }
+
+  // When the map's shape changes: zoom in on a folder that was just
+  // opened, otherwise fit everything drawn (unless a file is selected on
+  // the full map, which the effect above brings into view).
   useEffect(() => {
-    if (initialized && selectedPath === null) {
+    if (!initialized) return;
+    const moduleId = zoomToModule.current;
+    if (moduleId !== null) {
+      const groupId = groupNodeId(moduleId);
+      if (layout.nodes.some(node => node.id === groupId)) {
+        // Wait until the folder's box has been drawn and measured.
+        if (flow.getInternalNode(groupId)?.measured.width === undefined) {
+          return;
+        }
+        zoomToModule.current = null;
+        zoomToFolder(groupId);
+        return;
+      }
+      zoomToModule.current = null;
+    }
+    if (selectedPath === null || hidingUnrelated) {
       void flow.fitView({...FIT_VIEW_OPTIONS, duration: 200});
     }
     // Only on layout changes, not on every selection change.
@@ -240,9 +352,22 @@ function MapCanvas({
   }, [layout, initialized]);
 
   const actions = useMemo<MapActions>(
-    () => ({selectFile: onSelectFile, toggleModule: onToggleModule}),
+    () => ({
+      selectFile: onSelectFile,
+      toggleModule(moduleId, expanded) {
+        if (expanded === true) zoomToModule.current = moduleId;
+        onToggleModule(moduleId, expanded);
+      },
+    }),
     [onSelectFile, onToggleModule],
   );
+
+  const keyId = useId();
+  const [keyOpen, setKeyOpen] = useState(loadKeyOpen);
+  function showKey(open: boolean) {
+    setKeyOpen(open);
+    saveKeyOpen(open);
+  }
 
   function resetView() {
     setNodes(layout.nodes);
@@ -298,16 +423,29 @@ function MapCanvas({
               Only show matches
             </label>
           )}
-          <span className="map__legend" aria-label="Selected file dependencies">
-            <span className="map__legend-item">
-              <span className="map__legend-swatch map__legend-swatch--imports" />
-              Imports
-            </span>
-            <span className="map__legend-item">
-              <span className="map__legend-swatch map__legend-swatch--imported-by" />
-              Imported by
-            </span>
-          </span>
+          {selectedPath !== null && onHideUnrelatedChange !== undefined && (
+            <label
+              className="map__toggle"
+              title="Show only the selected file and the files it imports or is imported by"
+            >
+              <input
+                type="checkbox"
+                checked={hideUnrelated}
+                onChange={event => onHideUnrelatedChange(event.target.checked)}
+              />
+              Hide unrelated files
+            </label>
+          )}
+          <button
+            type="button"
+            className="button"
+            aria-expanded={keyOpen}
+            aria-controls={keyId}
+            onClick={() => showKey(!keyOpen)}
+            title="What the boxes, colors and lines mean"
+          >
+            Key
+          </button>
           {toolbarEnd}
         </div>
         {selectedModuleIsCollapsed && selectedPath !== null && (
@@ -317,6 +455,7 @@ function MapCanvas({
           </p>
         )}
         <div className="map__canvas">
+          {keyOpen && <MapKey id={keyId} onClose={() => showKey(false)} />}
           <ReactFlow
             nodes={displayNodes}
             edges={displayEdges}

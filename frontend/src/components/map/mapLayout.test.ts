@@ -1,6 +1,11 @@
 import type {DependencyGraph} from '../../api/types.ts';
 import type {MapNode} from './mapLayout.ts';
-import {highlightAround, layoutMap} from './mapLayout.ts';
+import {
+  focusGraph,
+  highlightAround,
+  layoutMap,
+  neighborhood,
+} from './mapLayout.ts';
 
 const GRAPH: DependencyGraph = {
   modules: [
@@ -42,6 +47,48 @@ const GRAPH: DependencyGraph = {
 function ids(nodes: MapNode[]) {
   return nodes.map(n => n.id).sort();
 }
+
+describe('neighborhood', () => {
+  it('is a file plus the files it imports and the files that import it', () => {
+    expect([...neighborhood(GRAPH, 'app/auth/service.py')].sort()).toEqual([
+      'app/auth/service.py',
+      'app/auth/tokens.py',
+      'app/db.py',
+      'app/views.py',
+    ]);
+  });
+});
+
+describe('focusGraph', () => {
+  const keep = neighborhood(GRAPH, 'app/auth/service.py');
+
+  it('keeps the imports between the kept files', () => {
+    const edges = focusGraph(GRAPH, keep).edges;
+
+    expect(edges).toContainEqual({
+      source: 'app/views.py',
+      target: 'app/db.py',
+    });
+    expect(edges).toHaveLength(5);
+  });
+
+  it('keeps only the imports to and from the center when given one', () => {
+    const focused = focusGraph(GRAPH, keep, 'app/auth/service.py');
+
+    expect(focused.edges).toEqual([
+      {source: 'app/views.py', target: 'app/auth/service.py'},
+      {source: 'app/auth/service.py', target: 'app/auth/tokens.py'},
+      {source: 'app/auth/service.py', target: 'app/db.py'},
+    ]);
+    expect(focused.files.map(file => file.path).sort()).toEqual(
+      [...keep].sort(),
+    );
+    expect(focused.modules.map(module => module.id)).toEqual([
+      'app',
+      'app/auth',
+    ]);
+  });
+});
 
 describe('layoutMap', () => {
   it('shows one node per module when everything is collapsed', () => {
