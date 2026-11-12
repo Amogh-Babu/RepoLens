@@ -40,6 +40,7 @@ function renderList(search: SearchState, selectedPath: string | null = null) {
   const handlers = {
     onSelectFile: vi.fn(),
     onLoadMore: vi.fn(),
+    onRefine: vi.fn(),
     onRetry: vi.fn(),
   };
   render(
@@ -100,6 +101,22 @@ describe('ReadingList', () => {
     await user.click(screen.getByRole('button', {name: /service\.py/}));
 
     expect(onSelectFile).toHaveBeenCalledWith('app/auth/service.py');
+  });
+
+  it('lets the reader refine and reset the reading goal', async () => {
+    const user = userEvent.setup();
+    const {onRefine} = renderList(searchState());
+
+    await user.selectOptions(
+      screen.getByLabelText('What would you like to understand?'),
+      'tests',
+    );
+    expect(onRefine).toHaveBeenCalledWith('tests');
+    await user.selectOptions(
+      screen.getByLabelText('What would you like to understand?'),
+      '',
+    );
+    expect(onRefine).toHaveBeenLastCalledWith(undefined);
   });
 
   it('offers Show more when more results exist', async () => {

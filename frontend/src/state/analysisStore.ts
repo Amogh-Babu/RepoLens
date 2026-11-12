@@ -10,6 +10,7 @@ import type {
   DependencyGraph,
   FileDetail,
   RankedFile,
+  SearchIntent,
 } from '../api/types.ts';
 import {ancestorDirs, topLevelDirs} from '../utils/fileTree.ts';
 
@@ -18,6 +19,9 @@ export const DEFAULT_POLL_INTERVAL_MS = 1_000;
 
 /** How many search results to fetch at a time (Use Case 2, 6a). */
 export const SEARCH_PAGE_SIZE = 20;
+
+/** Modules above this size stay collapsed when a file is selected. */
+export const MAX_AUTO_EXPAND_FILES = 80;
 
 /** A request failure, ready to show in an ErrorBanner. */
 export interface RequestFailure {
@@ -31,6 +35,8 @@ export interface SearchState {
   query: string;
   /** Results loaded so far, in reading order. */
   results: RankedFile[];
+  matchedPaths?: string[];
+  intent?: SearchIntent;
   /** Total number of matching files, including ones not loaded yet. */
   total: number;
   /** Query being fetched (a new search or a retry), if any. */
@@ -42,7 +48,11 @@ export interface SearchState {
    * (Use Case 2 exceptions).
    */
   failure:
-    | (RequestFailure & {request: 'search'; query: string})
+    | (RequestFailure & {
+        request: 'search';
+        query: string;
+        intent?: SearchIntent;
+      })
     | (RequestFailure & {request: 'more'})
     | null;
 }
@@ -63,6 +73,8 @@ export interface AnalysisState {
 
   /** Path of the selected file, shown in the detail panel. */
   selectedPath: string | null;
+  /** Increments on every file selection, including reselecting the same file. */
+  selectionRevision: number;
   /** File details fetched so far, by path. */
   fileDetails: Readonly<Record<string, FileDetail>>;
   /** Set when fetching the selected file's details failed. */
@@ -107,7 +119,7 @@ export interface AnalysisActions {
    * Searches for an already trimmed and checked query. A response to an
    * earlier search that arrives late is ignored.
    */
-  runSearch(query: string): void;
+  runSearch(query: string, intent?: SearchIntent): void;
   /** Fetches the next page of results for the current search. */
   loadMoreResults(): void;
   /** Ends the search: the reading list closes and highlighting is removed. */
@@ -229,11 +241,20 @@ export function createAnalysisStore(
       }
     }
 
-    async function fetchSearch(query: string, signal: AbortSignal) {
+    async function fetchSearch(
+      query: string,
+      signal: AbortSignal,
+      intent?: SearchIntent,
+    ) {
       try {
         const response = await api.search(
           analysisId,
-          {q: query, limit: SEARCH_PAGE_SIZE, offset: 0},
+          {
+            q: query,
+            limit: SEARCH_PAGE_SIZE,
+            offset: 0,
+            ...(intent ? {intent} : {}),
+          },
           {signal},
         );
         if (signal.aborted) return;
@@ -241,6 +262,8 @@ export function createAnalysisStore(
           search: {
             query,
             results: response.results,
+            matchedPaths: response.matchedPaths,
+            intent,
             total: response.total,
             pendingQuery: null,
             loadingMore: false,
@@ -257,7 +280,7 @@ export function createAnalysisStore(
           search: {
             ...current,
             pendingQuery: null,
-            failure: {...failure, request: 'search', query},
+            failure: {...failure, request: 'search', query, intent},
           },
         });
       }
@@ -269,6 +292,7 @@ export function createAnalysisStore(
           analysisId,
           {
             q: search.query,
+            ...(search.intent ? {intent: search.intent} : {}),
             limit: SEARCH_PAGE_SIZE,
             offset: search.results.length,
           },
@@ -363,6 +387,7 @@ export function createAnalysisStore(
       graph: null,
       graphFailure: null,
       selectedPath: null,
+      selectionRevision: 0,
       fileDetails: {},
       fileFailure: null,
       expandedDirs: new Set(),
@@ -415,20 +440,29 @@ export function createAnalysisStore(
         // Once expired, only files whose details are already here can open.
         if (get().expired && get().fileDetails[path] === undefined) return;
         set(state => {
-          const moduleId = state.graph?.files.find(
-            f => f.path === path,
-          )?.module;
+          const module = state.graph?.modules.find(group =>
+            group.filePaths.includes(path),
+          );
+          const moduleId = module?.id;
+          const canExpand =
+            module !== undefined &&
+            module.filePaths.length <= MAX_AUTO_EXPAND_FILES;
+          const expandedModules = state.expandedModules;
+          const nextExpandedModules =
+            moduleId === undefined ||
+            expandedModules.has(moduleId) ||
+            !canExpand
+              ? expandedModules
+              : new Set([...expandedModules, moduleId]);
           return {
             selectedPath: path,
+            selectionRevision: state.selectionRevision + 1,
             fileFailure: null,
             expandedDirs: new Set([
               ...state.expandedDirs,
               ...ancestorDirs(path),
             ]),
-            expandedModules:
-              moduleId === undefined || state.expandedModules.has(moduleId)
-                ? state.expandedModules
-                : new Set([...state.expandedModules, moduleId]),
+            expandedModules: nextExpandedModules,
           };
         });
         if (get().fileDetails[path] === undefined) {
@@ -453,7 +487,7 @@ export function createAnalysisStore(
         set({expandedModules: new Set()});
       },
 
-      runSearch(query) {
+      runSearch(query, intent) {
         if (get().expired) return;
         abortSearches();
         searchController = new AbortController();
@@ -462,13 +496,15 @@ export function createAnalysisStore(
           search: {
             query: current?.query ?? '',
             results: current?.results ?? [],
+            matchedPaths: current?.matchedPaths,
+            intent: current?.intent,
             total: current?.total ?? 0,
             pendingQuery: query,
             loadingMore: false,
             failure: null,
           },
         });
-        void fetchSearch(query, searchController.signal);
+        void fetchSearch(query, searchController.signal, intent);
       },
 
       loadMoreResults() {

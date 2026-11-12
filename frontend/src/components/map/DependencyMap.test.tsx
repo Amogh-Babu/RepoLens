@@ -1,5 +1,6 @@
 import {act, fireEvent, render, screen, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import {useState} from 'react';
 import type {DependencyGraph} from '../../api/types.ts';
 import {DependencyMap, RENDER_BUDGET_MS} from './DependencyMap.tsx';
 import {ListFallback} from './ListFallback.tsx';
@@ -66,6 +67,23 @@ function nodeOf(name: RegExp) {
 }
 
 describe('DependencyMap', () => {
+  it('shows an empty map for a search without results', () => {
+    renderMap({
+      matchedPaths: new Set(),
+      matchesOnly: true,
+      onMatchesOnlyChange: vi.fn(),
+    });
+
+    expect(
+      screen.getByText('No matching files to show on the map.'),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', {name: /Module app/}),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('checkbox', {name: 'Only show matches'}),
+    ).toBeChecked();
+  });
   // Map nodes are clicked with fireEvent: d3-drag reads event.view on
   // mousedown, which user-event leaves null in jsdom.
   it('starts with collapsed modules that expand when activated', () => {
@@ -113,6 +131,230 @@ describe('DependencyMap', () => {
       'map-node--related',
     );
     expect(nodeOf(/Module app,/)).toHaveClass('map-node--dimmed');
+  });
+
+  it('keeps a selected file visible through its collapsed module', () => {
+    renderMap({selectedPath: 'app/auth/tokens.py'});
+
+    expect(nodeOf(/Module app\/auth,/)).toHaveClass('map-node--selected');
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Inside app/auth/ (collapsed). Expand to see app/auth/tokens.py.',
+    );
+  });
+
+  it('distinguishes imports from imported-by edges around the selection', () => {
+    renderMap({
+      expandedModules: new Set(['app/auth']),
+      selectedPath: 'app/auth/service.py',
+    });
+
+    expect(
+      document.querySelector('.react-flow__edge.map-edge--imports'),
+    ).toBeInTheDocument();
+    expect(
+      document.querySelector('.react-flow__edge.map-edge--imported-by'),
+    ).toBeInTheDocument();
+    const key = screen.getByRole('region', {name: 'Map key'});
+    expect(key).toHaveTextContent('The selected file imports this');
+    expect(key).toHaveTextContent('This imports the selected file');
+  });
+
+  it('greys out unrelated files by default and offers to hide them', () => {
+    renderMap({
+      expandedModules: new Set(['app/auth']),
+      selectedPath: 'app/auth/tokens.py',
+      onHideUnrelatedChange: vi.fn(),
+    });
+
+    expect(
+      screen.getByRole('checkbox', {name: 'Hide unrelated files'}),
+    ).not.toBeChecked();
+    expect(nodeOf(/Module app,/)).toHaveClass('map-node--dimmed');
+  });
+
+  it('draws only the selected file and its neighbors when hiding unrelated files', () => {
+    renderMap({
+      selectedPath: 'app/auth/tokens.py',
+      hideUnrelated: true,
+      onHideUnrelatedChange: vi.fn(),
+    });
+
+    expect(nodeOf(/File app\/auth\/tokens\.py/)).toHaveClass(
+      'map-node--selected',
+    );
+    expect(nodeOf(/File app\/auth\/service\.py/)).toHaveClass(
+      'map-node--related',
+    );
+    expect(
+      screen.queryByRole('button', {name: /views\.py|Module app,/}),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', {name: 'Collapse all'}),
+    ).not.toBeInTheDocument();
+  });
+
+  it.each([true, false])(
+    'hides nonmatching neighbors during a search when matchesOnly is %s',
+    matchesOnly => {
+      renderMap({
+        selectedPath: 'app/views.py',
+        matchedPaths: new Set(['app/auth/tokens.py']),
+        matchesOnly,
+        onMatchesOnlyChange: vi.fn(),
+        hideUnrelated: true,
+        onHideUnrelatedChange: vi.fn(),
+      });
+
+      expect(
+        screen.getByRole('button', {name: 'File app/views.py'}),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', {name: 'File app/auth/service.py'}),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', {name: /tokens\.py/}),
+      ).not.toBeInTheDocument();
+    },
+  );
+
+  it('keeps matching direct connections but hides other search results', () => {
+    renderMap({
+      selectedPath: 'app/views.py',
+      matchedPaths: new Set(['app/auth/service.py', 'app/auth/tokens.py']),
+      matchesOnly: true,
+      hideUnrelated: true,
+    });
+
+    expect(
+      screen.getByRole('button', {name: 'File app/auth/service.py'}),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', {name: /tokens\.py/}),
+    ).not.toBeInTheDocument();
+  });
+
+  it('switches between matching connections and all search matches', async () => {
+    function InteractiveMap() {
+      const [matchesOnly, setMatchesOnly] = useState(false);
+      const [hideUnrelated, setHideUnrelated] = useState(false);
+      return (
+        <div style={{width: '800px', height: '600px'}}>
+          <DependencyMap
+            graph={GRAPH}
+            expandedModules={new Set(['app', 'app/auth'])}
+            selectedPath="app/views.py"
+            matchedPaths={new Set(['app/views.py', 'app/auth/tokens.py'])}
+            matchesOnly={matchesOnly}
+            onMatchesOnlyChange={setMatchesOnly}
+            hideUnrelated={hideUnrelated}
+            onHideUnrelatedChange={setHideUnrelated}
+            onSelectFile={vi.fn()}
+            onToggleModule={vi.fn()}
+            onCollapseAll={vi.fn()}
+            onTooSlow={vi.fn()}
+          />
+        </div>
+      );
+    }
+    const user = userEvent.setup();
+    render(<InteractiveMap />);
+
+    await user.click(
+      screen.getByRole('checkbox', {name: 'Hide unrelated files'}),
+    );
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'No direct connections match this search.',
+    );
+    expect(
+      screen.queryByRole('button', {name: /service\.py/}),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', {name: /tokens\.py/}),
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole('checkbox', {name: 'Only show matches'}));
+    expect(
+      screen.queryByRole('button', {name: /tokens\.py/}),
+    ).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole('checkbox', {name: 'Hide unrelated files'}),
+    );
+    expect(
+      screen.getByRole('button', {name: /tokens\.py/}),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', {name: /service\.py/}),
+    ).not.toBeInTheDocument();
+  });
+
+  it('switches hiding unrelated files from the toolbar', async () => {
+    const user = userEvent.setup();
+    const onHideUnrelatedChange = vi.fn();
+    renderMap({selectedPath: 'app/views.py', onHideUnrelatedChange});
+
+    await user.click(
+      screen.getByRole('checkbox', {name: 'Hide unrelated files'}),
+    );
+
+    expect(onHideUnrelatedChange).toHaveBeenCalledWith(true);
+  });
+
+  it('offers to hide unrelated files only while a file is selected', () => {
+    renderMap({hideUnrelated: true, onHideUnrelatedChange: vi.fn()});
+
+    expect(
+      screen.queryByRole('checkbox', {name: 'Hide unrelated files'}),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', {name: /Module app,/}),
+    ).toBeInTheDocument();
+  });
+
+  it('explains every box, color and line in a key that starts open', () => {
+    renderMap();
+
+    const key = screen.getByRole('region', {name: 'Map key'});
+    for (const text of [
+      'Folder. Click to open it.',
+      'Open folder. Click its name to close it.',
+      'Selected file',
+      'Imports or is imported by the selected file',
+      'Matches your search',
+      'Not connected to the selection or search',
+      'The arrow points to the file being imported.',
+      'Number of imports along one line',
+      'search results across the repository',
+      'only connections that match the search are shown',
+    ]) {
+      expect(key).toHaveTextContent(text);
+    }
+    expect(screen.getByRole('button', {name: 'Key'})).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+  });
+
+  it('hides the key and remembers it', async () => {
+    const user = userEvent.setup();
+    renderMap();
+
+    await user.click(screen.getByRole('button', {name: 'Hide the key'}));
+
+    expect(
+      screen.queryByRole('region', {name: 'Map key'}),
+    ).not.toBeInTheDocument();
+    expect(localStorage.getItem('repolens.map-key')).toBe('closed');
+
+    await user.click(screen.getByRole('button', {name: 'Key'}));
+    expect(screen.getByRole('region', {name: 'Map key'})).toBeInTheDocument();
+  });
+
+  it('starts with the key closed if the viewer closed it before', () => {
+    localStorage.setItem('repolens.map-key', 'closed');
+    renderMap();
+
+    expect(
+      screen.queryByRole('region', {name: 'Map key'}),
+    ).not.toBeInTheDocument();
   });
 
   it('highlights search matches when nothing is selected', () => {

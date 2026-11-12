@@ -4,7 +4,7 @@ import time
 from fastapi.testclient import TestClient
 
 from repolens.api.app import create_app
-from repolens.graph import SqliteGraphStore
+from repolens.graph import AnalysisRecord, AnalyzedFile, CommentRecord, SqliteGraphStore
 from test_graph_validation import (
     FLASK_AUTH_REPO_URL,
     FLASK_AUTH_SHA,
@@ -34,6 +34,9 @@ def test_openapi_schema_exposes_all_frontend_contract_routes() -> None:
 
     assert "/analyses/{analysis_id}/search" in paths
     assert "get" in paths["/analyses/{analysis_id}/search"]
+
+    assert "/analyses/{analysis_id}/overview" in paths
+    assert "get" in paths["/analyses/{analysis_id}/overview"]
 
 
 def test_post_get_and_delete_analyses_lifecycle() -> None:
@@ -170,6 +173,75 @@ def test_completed_analysis_end_to_end_contract() -> None:
     assert search["total"] >= 4
     assert search["results"][0]["position"] == 1
     assert all(result["orderReason"] for result in search["results"])
+    assert len(search["matchedPaths"]) == search["total"]
+
+    focused = client.get(
+        "/analyses/flask-1/search", params={"q": "login", "intent": "tests", "limit": 1}
+    )
+    assert focused.status_code == 200
+    assert focused.json()["query"] == "login"
+    assert len(focused.json()["matchedPaths"]) == focused.json()["total"]
+
+    # 5. GET /analyses/{id}/overview
+    overview = client.get("/analyses/flask-1/overview")
+    assert overview.status_code == 200
+    overview_body = overview.json()
+    assert overview_body["entryPoints"]
+    assert overview_body["coreFiles"]
+    assert overview_body["architecture"]["packages"]
+    assert overview_body["tour"]
+
+
+def test_vague_query_returns_semantic_evidence_over_the_api() -> None:
+    class FixedEmbedder:
+        @property
+        def model_id(self) -> str:
+            return "api-test"
+
+        def embed(self, texts: list[str]) -> list[tuple[float, ...]]:
+            return [
+                (1.0, 0.0)
+                if text.startswith("query:") or "application" in text.casefold()
+                else (0.0, 1.0)
+                for text in texts
+            ]
+
+    store = SqliteGraphStore(embedder=FixedEmbedder())
+    store.save(
+        AnalysisRecord(
+            analysis_id="semantic-api",
+            repo="https://github.com/example/service",
+            sha="a" * 40,
+            files=(
+                AnalyzedFile(
+                    path="app/runtime.py",
+                    module="app",
+                    comments=(
+                        CommentRecord(1, "Boots the live web application.", "docstring"),
+                    ),
+                ),
+                AnalyzedFile(
+                    path="app/invoices.py",
+                    module="app",
+                    comments=(
+                        CommentRecord(1, "Calculates invoice totals.", "docstring"),
+                    ),
+                ),
+            ),
+        )
+    )
+    client = TestClient(create_app(store))
+
+    response = client.get(
+        "/analyses/semantic-api/search",
+        params={"q": "where should I work on production"},
+    )
+
+    assert response.status_code == 200
+    result = response.json()["results"][0]
+    assert result["path"] == "app/runtime.py"
+    assert result["matches"][0]["kind"] == "semantic"
+    assert "web application" in result["reason"]
 
 
 def test_expired_analysis_returns_410_across_all_endpoints() -> None:

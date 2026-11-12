@@ -1,4 +1,4 @@
-import type {MatchKind, RankedFile} from '../api/types.ts';
+import type {MatchKind, RankedFile, SearchIntent} from '../api/types.ts';
 import type {SearchState} from '../state/analysisStore.ts';
 import {ErrorBanner} from './ErrorBanner.tsx';
 import './ReadingList.css';
@@ -10,6 +10,8 @@ interface ReadingListProps {
   sourceUrlFor: (path: string) => string;
   onSelectFile: (path: string) => void;
   onLoadMore: () => void;
+  onRefine: (intent?: SearchIntent) => void;
+  refinementDisabled?: boolean;
   onRetry: () => void;
 }
 
@@ -18,6 +20,7 @@ const MATCH_LABELS: Record<MatchKind, string> = {
   symbol: 'symbol',
   import: 'import',
   comment: 'comment',
+  semantic: 'semantic match',
 };
 
 /**
@@ -30,6 +33,8 @@ export function ReadingList({
   sourceUrlFor,
   onSelectFile,
   onLoadMore,
+  onRefine,
+  refinementDisabled = false,
   onRetry,
 }: ReadingListProps) {
   const {query, results, total, pendingQuery, loadingMore, failure} = search;
@@ -54,6 +59,26 @@ export function ReadingList({
         <ErrorBanner error={failure.error} onRetry={onRetry} />
       )}
 
+      {hasResults && (
+        <label className="reading-list__refine">
+          What would you like to understand?
+          <select
+            value={search.intent ?? ''}
+            disabled={refinementDisabled || pendingQuery !== null}
+            onChange={event =>
+              onRefine(
+                (event.target.value || undefined) as SearchIntent | undefined,
+              )
+            }
+          >
+            <option value="">The topic overall</option>
+            <option value="implementation">How it works</option>
+            <option value="configuration">Configuration and deployment</option>
+            <option value="tests">Tests and examples</option>
+          </select>
+        </label>
+      )}
+
       {hasResults && total === 0 && <NoResults query={query} />}
 
       {hasResults && total > 0 && (
@@ -61,9 +86,9 @@ export function ReadingList({
           <div className="reading-list__header">
             <h2>Reading order for “{query}”</h2>
             <p className="reading-list__meta">
-              Showing {results.length} of {total}. A suggested order to read:
-              each file comes after the matching files it imports. This is not
-              the order the code runs in.
+              Showing {results.length} of {total}. Strong starting points and
+              their dependencies shape this reading order. This is not the order
+              the code runs in.
             </p>
           </div>
           <ol className="reading-list__entries">

@@ -6,14 +6,32 @@ from repolens.search import (
     SearchDocument,
     SearchService,
 )
+from repolens.search.embedding import FastEmbedEmbedder, document_chunks
 
 
 class InMemorySearchIndex:
     def __init__(self, documents_by_analysis: dict[str, list[SearchDocument]]) -> None:
         self._documents_by_analysis = documents_by_analysis
+        self._embeddings: dict[
+            str, dict[str, list[tuple[str, tuple[float, ...]]]]
+        ] = {}
 
     def get_search_documents(self, analysis_id: str) -> list[SearchDocument]:
         return self._documents_by_analysis.get(analysis_id, [])
+
+    def get_search_embeddings(
+        self, analysis_id: str
+    ) -> dict[str, list[tuple[str, tuple[float, ...]]]]:
+        return self._embeddings.get(analysis_id, {})
+
+
+class FixedEmbedder:
+    @property
+    def model_id(self) -> str:
+        return "test"
+
+    def embed(self, texts: list[str]) -> list[tuple[float, ...]]:
+        return [(1.0, 0.0) for _ in texts]
 
 
 class SearchServiceTest(unittest.TestCase):
@@ -29,6 +47,25 @@ class SearchServiceTest(unittest.TestCase):
         self.index = InMemorySearchIndex({"analysis-1": self.documents})
         self.service = SearchService(self.index)
 
+    def test_fastembed_prefixes_queries_only_once(self) -> None:
+        class FakeModel:
+            texts = []
+
+            def embed(self, texts):
+                self.texts = texts
+                return [(1.0,)] * len(texts)
+
+        model = FakeModel()
+        embedder = FastEmbedEmbedder()
+        embedder._model = model
+
+        embedder.embed(["query: production pipeline", "pipeline implementation"])
+
+        self.assertEqual(
+            ["query: production pipeline", "passage: pipeline implementation"],
+            model.texts,
+        )
+
     def test_matches_names_symbols_references_and_comments(self) -> None:
         page = self.service.search("analysis-1", "authentication login users")
 
@@ -38,6 +75,21 @@ class SearchServiceTest(unittest.TestCase):
             {match.kind for match in page.results[0].matches},
         )
         self.assertIn("authentication.py", page.results[0].reason)
+
+    def test_large_files_keep_symbols_in_separate_search_chunks(self) -> None:
+        document = SearchDocument(
+            path="app/runtime.py",
+            symbols=("start_server", "load_config"),
+            docstrings=("Runtime details " + "context " * 200,),
+        )
+
+        chunks = document_chunks(document)
+
+        self.assertGreater(len(chunks), 2)
+        self.assertIn("app runtime py", chunks[0])
+        self.assertIn("start server", chunks[0])
+        self.assertIn("load config", chunks[1])
+        self.assertTrue(all(len(chunk.split()) <= 160 for chunk in chunks))
 
     def test_ranks_shared_dependencies_earlier_and_explains_them(self) -> None:
         documents = [
@@ -165,6 +217,83 @@ class SearchServiceTest(unittest.TestCase):
         self.assertEqual((), page.results)
         self.assertEqual(0, page.total)
         self.assertFalse(page.has_more)
+
+    def test_semantic_search_finds_a_concept_without_keyword_matches(self) -> None:
+        documents = [
+            SearchDocument(
+                path="app/runtime.py",
+                symbols=("start_server",),
+                docstrings=("Boots the live web application.",),
+            ),
+            SearchDocument(
+                path="app/logging.py",
+                symbols=("configure_logs",),
+                docstrings=("Sets up structured application logs.",),
+            ),
+        ]
+        index = InMemorySearchIndex({"analysis-1": documents})
+        index._embeddings["analysis-1"] = {
+            "app/runtime.py": [("Boots the live web application.", (1.0, 0.0))],
+            "app/logging.py": [("Sets up structured application logs.", (0.0, 1.0))],
+        }
+
+        page = SearchService(index, FixedEmbedder()).search(
+            "analysis-1", "where should I work on production"
+        )
+
+        self.assertEqual("app/runtime.py", page.results[0].path)
+        self.assertEqual("semantic", page.results[0].matches[0].kind)
+        self.assertIn("live web application", page.results[0].reason)
+
+    def test_keyword_hits_are_fused_with_semantic_candidates(self) -> None:
+        documents = [
+            SearchDocument(path="app/prod.py", symbols=("production_mode",)),
+            SearchDocument(path="app/runtime.py", docstrings=("Boots live services.",)),
+        ]
+        index = InMemorySearchIndex({"analysis-1": documents})
+        index._embeddings["analysis-1"] = {
+            "app/prod.py": [("production mode", (0.0, 1.0))],
+            "app/runtime.py": [("Boots live services.", (1.0, 0.0))],
+        }
+
+        page = SearchService(index, FixedEmbedder()).search("analysis-1", "prod")
+
+        self.assertEqual("app/prod.py", page.results[0].path)
+        self.assertEqual({"app/prod.py", "app/runtime.py"}, {
+            result.path for result in page.results
+        })
+
+    def test_keyword_only_and_hybrid_results_use_the_same_score_scale(self) -> None:
+        documents = [
+            SearchDocument(path="app/pipeline_a.py"),
+            SearchDocument(path="app/pipeline_b.py"),
+        ]
+        index = InMemorySearchIndex({"analysis-1": documents})
+        index._embeddings["analysis-1"] = {
+            "app/pipeline_a.py": [("pipeline", (1.0, 0.0))],
+        }
+
+        page = SearchService(index, FixedEmbedder()).search("analysis-1", "pipeline")
+
+        assert [result.path for result in page.results] == [
+            "app/pipeline_a.py", "app/pipeline_b.py"
+        ]
+
+    def test_strong_topic_entry_precedes_a_weak_semantic_dependency(self) -> None:
+        documents = [
+            SearchDocument(path="app/pipeline.py"),
+            SearchDocument(path="app/util.py", depended_on_by=("app/pipeline.py",)),
+        ]
+        index = InMemorySearchIndex({"analysis-1": documents})
+        index._embeddings["analysis-1"] = {
+            "app/util.py": [("general utility", (1.0, 0.0))],
+        }
+
+        page = SearchService(index, FixedEmbedder()).search("analysis-1", "pipeline")
+
+        assert [result.path for result in page.results] == ["app/pipeline.py", "app/util.py"]
+        assert "stronger starting point" in page.results[0].order_reason
+        assert "which imports it" in page.results[1].order_reason
 
     def test_searches_only_the_requested_analysis_and_paginates(self) -> None:
         documents = [SearchDocument(path=f"src/auth_{index}.py") for index in range(3)]

@@ -53,7 +53,7 @@ export function fileNodeId(path: string): string {
   return `file:${path}`;
 }
 
-function groupNodeId(moduleId: string): string {
+export function groupNodeId(moduleId: string): string {
   return `group:${moduleId}`;
 }
 
@@ -81,10 +81,13 @@ export function moduleIndex(graph: DependencyGraph): Map<string, string> {
 /**
  * The part of the graph made of `keep`: those files, the modules that hold
  * them, and the imports between them. Used to show only search matches.
+ * With a `center`, only the imports to and from that file are kept, so the
+ * layout puts its importers on one side and its imports on the other.
  */
 export function focusGraph(
   graph: DependencyGraph,
   keep: ReadonlySet<string>,
+  center?: string,
 ): DependencyGraph {
   return {
     modules: graph.modules
@@ -95,9 +98,30 @@ export function focusGraph(
       .filter(module => module.filePaths.length > 0),
     files: graph.files.filter(file => keep.has(file.path)),
     edges: graph.edges.filter(
-      edge => keep.has(edge.source) && keep.has(edge.target),
+      edge =>
+        keep.has(edge.source) &&
+        keep.has(edge.target) &&
+        (center === undefined ||
+          edge.source === center ||
+          edge.target === center),
     ),
   };
+}
+
+/**
+ * A file and its direct neighbors: the files it imports and the files that
+ * import it. Used to hide everything unrelated to the selected file.
+ */
+export function neighborhood(
+  graph: DependencyGraph,
+  path: string,
+): Set<string> {
+  const keep = new Set([path]);
+  for (const edge of graph.edges) {
+    if (edge.source === path) keep.add(edge.target);
+    else if (edge.target === path) keep.add(edge.source);
+  }
+  return keep;
 }
 
 /**
@@ -117,8 +141,10 @@ export function layoutMap(
   const layout = new dagre.graphlib.Graph({compound: true});
   layout.setGraph({
     rankdir: 'LR',
-    nodesep: 32,
-    ranksep: 80,
+    nodesep: 48,
+    edgesep: 24,
+    ranksep: 96,
+    ranker: 'network-simplex',
     marginx: 24,
     marginy: 24 + GROUP_HEADER,
   });
@@ -242,7 +268,7 @@ export function layoutMap(
       source,
       target,
       label: count > 1 ? String(count) : undefined,
-      markerEnd: {type: MarkerType.ArrowClosed, width: 16, height: 16},
+      markerEnd: {type: MarkerType.ArrowClosed, width: 24, height: 24},
       data: {count},
     }),
   );

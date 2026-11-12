@@ -3,6 +3,7 @@ import type {
   Analysis,
   DependencyGraph,
   FileDetail,
+  RepositoryOverview,
   SearchRequest,
   SearchResponse,
   StartAnalysisRequest,
@@ -48,6 +49,12 @@ export interface ApiClient {
     analysisId: string,
     options?: RequestOptions,
   ): Promise<DependencyGraph>;
+
+  /** GET /analyses/{id}/overview: onboarding guide derived from the graph. */
+  getOverview(
+    analysisId: string,
+    options?: RequestOptions,
+  ): Promise<RepositoryOverview>;
 
   /** GET /analyses/{id}/files/{path}: data for the file detail panel. */
   getFile(
@@ -126,6 +133,17 @@ export class HttpApiClient implements ApiClient {
     );
   }
 
+  getOverview(
+    analysisId: string,
+    options?: RequestOptions,
+  ): Promise<RepositoryOverview> {
+    return this.request(
+      'GET',
+      `/analyses/${encodeURIComponent(analysisId)}/overview`,
+      options,
+    );
+  }
+
   getFile(
     analysisId: string,
     path: string,
@@ -144,6 +162,9 @@ export class HttpApiClient implements ApiClient {
     options?: RequestOptions,
   ): Promise<SearchResponse> {
     const params = new URLSearchParams({q: request.q});
+    if (request.intent !== undefined) {
+      params.set('intent', request.intent);
+    }
     if (request.limit !== undefined) {
       params.set('limit', String(request.limit));
     }

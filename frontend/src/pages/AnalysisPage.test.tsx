@@ -145,6 +145,7 @@ describe('AnalysisPage workspace', () => {
   it('opens a file from the explorer and follows its imports', async () => {
     const user = userEvent.setup();
     await renderFinished('flask-auth');
+    await user.click(await screen.findByRole('tab', {name: 'Files'}));
 
     await user.click(await screen.findByRole('treeitem', {name: 'auth/'}));
     await user.click(screen.getByRole('treeitem', {name: 'service.py'}));
@@ -214,9 +215,38 @@ describe('AnalysisPage map', () => {
     ).toBeInTheDocument();
   });
 
+  it('scopes the map to a feature area and restores it on outside selection', async () => {
+    const user = userEvent.setup();
+    await renderFinished('flask-auth');
+
+    const featureAreas = await screen.findByRole('heading', {
+      name: 'Feature areas',
+    });
+    const featureAreaSection = featureAreas.closest('section');
+    if (featureAreaSection === null)
+      throw new Error('Feature area section missing.');
+    await user.click(
+      within(featureAreaSection).getByRole('button', {name: /auth.*4 files/}),
+    );
+    expect(
+      await screen.findByRole('button', {name: 'File app/auth/views.py'}),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', {name: 'Files'}));
+    await user.click(await screen.findByRole('treeitem', {name: 'db.py'}));
+
+    expect(
+      await screen.findByRole('button', {name: 'File app/db.py'}),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', {name: 'All files'}),
+    ).not.toBeInTheDocument();
+  });
+
   it('expands the module of a file selected in the explorer', async () => {
     const user = userEvent.setup();
     await renderFinished('flask-auth');
+    await user.click(await screen.findByRole('tab', {name: 'Files'}));
 
     await user.click(await screen.findByRole('treeitem', {name: 'db.py'}));
 
@@ -290,6 +320,35 @@ describe('AnalysisPage search', () => {
     expect(await screen.findByText(/No files match/)).toBeInTheDocument();
   });
 
+  it('filters the list view to search matches and can show all files', async () => {
+    const user = await search('login');
+    await user.click(await screen.findByRole('button', {name: 'List'}));
+    const map = screen.getByRole('region', {name: 'Dependency map'});
+    expect(
+      within(map).queryByRole('button', {name: /config\.py/}),
+    ).not.toBeInTheDocument();
+    await user.click(
+      within(map).getByRole('checkbox', {name: 'Only show matches'}),
+    );
+    expect(
+      within(map).getByRole('button', {name: /config\.py/}),
+    ).toBeInTheDocument();
+  });
+
+  it('reranks the same topic when the reading goal changes', async () => {
+    const user = await search('login');
+    await user.selectOptions(
+      await screen.findByLabelText('What would you like to understand?'),
+      'tests',
+    );
+    expect(
+      await screen.findByText('Prioritized for tests.', {exact: false}),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', {name: 'Reading order for “login”'}),
+    ).toBeInTheDocument();
+  });
+
   it('closes the reading list when the search is cleared', async () => {
     const user = await search('login');
     await screen.findByRole('heading', {name: /Reading order for/});
@@ -316,6 +375,7 @@ describe('AnalysisPage expiry', () => {
   });
 
   it('keeps the workspace visible but read-only after it expires', async () => {
+    const user = userEvent.setup();
     const client = new MockApiClient({latencyMs: 0, stageDurationMs: 0});
     const {analysisId} = await client.startAnalysis({
       url: 'https://github.com/someone/flask-auth',
@@ -330,6 +390,7 @@ describe('AnalysisPage expiry', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'This analysis has expired',
     );
+    await user.click(await screen.findByRole('tab', {name: 'Files'}));
     expect(
       await screen.findByRole('treeitem', {name: 'auth/'}),
     ).toBeInTheDocument();

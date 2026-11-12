@@ -1,4 +1,6 @@
 .map {
+  --map-imports-color: #1a7f37;
+  --map-imported-by-color: #9a6700;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -51,22 +53,144 @@
   cursor: pointer;
 }
 
-.map__legend {
+.map__canvas {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Key: what the boxes, colors and lines mean. Floats over the map's
+   bottom-right corner, away from the left edge where an opened folder's
+   first files are shown. */
+.map-key {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 10;
+  width: min(280px, calc(100% - 16px));
+  max-height: calc(100% - 16px);
+  overflow-y: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 12%);
   font-size: 0.75rem;
+}
+
+.map-key__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.map-key__title {
+  margin: 0;
+  font-size: 0.8125rem;
+}
+
+.map-key__close {
+  padding: 0 4px;
+  border: none;
+  background: none;
+  color: var(--color-muted);
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.map-key__close:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.map-key__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.map-key__list + .map-key__list {
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border);
+}
+
+.map-key__entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.map-key__sample {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 18px;
+}
+
+.map-key__box {
+  display: block;
+  width: 28px;
+  height: 14px;
+}
+
+.map-key__line {
+  display: block;
+  stroke-width: 2;
   color: var(--color-muted);
 }
 
-.map__canvas {
-  flex: 1;
-  min-height: 0;
+.map-key__line--imports {
+  color: var(--map-imports-color);
+}
+
+.map-key__line--imported-by {
+  color: var(--map-imported-by-color);
+}
+
+.map-key__count {
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+
+.map-key__filters {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border);
+}
+
+.map-key__filters h3 {
+  margin: 0;
+  font-size: 0.75rem;
+}
+
+.map-key__filters p {
+  margin: 6px 0 0;
+}
+
+.map__selection-hint {
+  margin: 0;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-muted);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
 }
 
 .map .react-flow {
   --xy-background-color: var(--color-bg);
 }
 
-/* Nodes. React Flow wraps each custom node in .react-flow__node. */
-.react-flow__node.map-node {
+/* Nodes. React Flow wraps each custom node in .react-flow__node. The key's
+   sample boxes (.map-key__box) share these rules so they always match. */
+.react-flow__node.map-node,
+.map-key__box {
   padding: 0;
   border: 1px solid var(--color-border);
   border-radius: 8px;
@@ -75,11 +199,17 @@
   transition: opacity 120ms ease;
 }
 
-.react-flow__node.map-node--module {
+.map-key__box {
+  border-radius: 4px;
+}
+
+.react-flow__node.map-node--module,
+.map-key__box.map-node--module {
   background: var(--color-surface);
 }
 
-.react-flow__node.map-node--moduleGroup {
+.react-flow__node.map-node--moduleGroup,
+.map-key__box.map-node--moduleGroup {
   border-style: dashed;
   background: color-mix(in srgb, var(--color-surface) 60%, transparent);
 }
@@ -138,20 +268,24 @@
   cursor: pointer;
 }
 
-.react-flow__node.map-node--selected {
+.react-flow__node.map-node--selected,
+.map-key__box.map-node--selected {
   border: 2px solid var(--color-accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 25%, transparent);
 }
 
-.react-flow__node.map-node--match {
+.react-flow__node.map-node--match,
+.map-key__box.map-node--match {
   border: 2px solid var(--color-accent);
 }
 
-.react-flow__node.map-node--related {
+.react-flow__node.map-node--related,
+.map-key__box.map-node--related {
   border-color: var(--color-accent);
 }
 
-.react-flow__node.map-node--dimmed {
+.react-flow__node.map-node--dimmed,
+.map-key__box.map-node--dimmed {
   opacity: 0.3;
 }
 
@@ -165,11 +299,23 @@
   stroke: var(--color-muted);
 }
 
-.react-flow__edge.map-edge--highlighted path.react-flow__edge-path {
-  stroke: var(--color-accent);
-  stroke-width: 2;
+.react-flow__edge.map-edge--imports path.react-flow__edge-path {
+  stroke: var(--map-imports-color);
+  stroke-width: 2.5;
+}
+
+.react-flow__edge.map-edge--imported-by path.react-flow__edge-path {
+  stroke: var(--map-imported-by-color);
+  stroke-width: 2.5;
 }
 
 .react-flow__edge.map-edge--dimmed {
   opacity: 0.15;
+}
+
+@media (prefers-color-scheme: dark) {
+  .map {
+    --map-imports-color: #3fb950;
+    --map-imported-by-color: #d29922;
+  }
 }
