@@ -64,6 +64,7 @@ downloads it the first time an analysis is indexed; set
 2. Paste any public Python GitHub repository URL (for example, `https://github.com/pallets/itsdangerous` or `https://github.com/pallets/click`) and optionally specify a branch, tag, or commit SHA.
 3. Click **Analyze** to download, filter, parse, and store the repository's dependency graph.
 4. Start with a task in the **Search Bar**, in your own words (for example, "where do I start if I'm working on production?"). RepoLens combines exact matches with a local embedding model, then gives you a ranked reading order with explanations. Search runs locally; repository text is not sent to an embedding service.
+5. In the reading list, choose whether you want the overall topic, implementation, configuration, or tests and examples. The choice prioritizes files based on their paths without excluding other results. The dependency map can show only search matches, including matches beyond the current reading-list page.
 
 ---
 

@@ -53,3 +53,4 @@ class SearchPage:
     offset: int
     limit: int
     has_more: bool
+    matched_paths: tuple[str, ...] = ()

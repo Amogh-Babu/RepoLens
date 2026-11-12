@@ -110,7 +110,7 @@ function MapCanvas({
   const flow = useReactFlow();
   const initialized = useNodesInitialized();
   const moduleOf = useMemo(() => moduleIndex(graph), [graph]);
-  const searching = matchedPaths !== null && matchedPaths.size > 0;
+  const searching = matchedPaths !== null;
   const hidingUnrelated =
     hideUnrelated && selectedPath !== null && moduleOf.has(selectedPath);
   // The files to draw when only part of the map is shown, as a stable key
@@ -121,7 +121,9 @@ function MapCanvas({
   } else if (matchesOnly && searching) {
     focusKey = [
       ...matchedPaths,
-      ...(selectedPath === null ? [] : [selectedPath]),
+      ...(matchedPaths.size === 0 || selectedPath === null
+        ? []
+        : [selectedPath]),
     ]
       .sort()
       .join('\n');
@@ -162,7 +164,7 @@ function MapCanvas({
   // first render or after expanding a module. Background tabs do not draw,
   // so the clock only runs while the page is visible.
   useEffect(() => {
-    if (initialized) return;
+    if (initialized || layout.nodes.length === 0) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
     function update() {
       if (document.visibilityState === 'visible') {
@@ -178,7 +180,7 @@ function MapCanvas({
       clearTimeout(timer);
       document.removeEventListener('visibilitychange', update);
     };
-  }, [initialized, onTooSlow]);
+  }, [initialized, layout.nodes.length, onTooSlow]);
 
   const selectedUnit =
     selectedPath === null
@@ -455,6 +457,9 @@ function MapCanvas({
           </p>
         )}
         <div className="map__canvas">
+          {focused && layout.nodes.length === 0 && (
+            <p role="status">No matching files to show on the map.</p>
+          )}
           {keyOpen && <MapKey id={keyId} onClose={() => showKey(false)} />}
           <ReactFlow
             nodes={displayNodes}

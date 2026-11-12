@@ -50,6 +50,36 @@ def test_matching_dependents_add_to_score(make_search_service):
     assert page.results[0].score - page.results[1].score == 1.5
 
 
+def test_repeated_mentions_do_not_outweigh_a_definition(make_search_service):
+    service = make_search_service(
+        SearchDocument(path="src/noisy.py", comments=("pipeline",) * 10),
+        SearchDocument(path="src/core.py", symbols=("pipeline",)),
+    )
+
+    page = service.search("analysis-1", "pipeline")
+
+    assert [result.path for result in page.results] == ["src/core.py", "src/noisy.py"]
+
+
+@pytest.mark.parametrize(
+    ("intent", "expected"),
+    [("implementation", "app/pipeline.py"), ("tests", "tests/pipeline.py"),
+     ("configuration", "config/pipeline.py")],
+)
+def test_reading_goal_prioritizes_matching_files(make_search_service, intent, expected):
+    service = make_search_service(
+        SearchDocument(path="app/pipeline.py"),
+        SearchDocument(path="tests/pipeline.py"),
+        SearchDocument(path="config/pipeline.py"),
+    )
+
+    page = service.search("analysis-1", "pipeline", intent=intent, limit=1)
+
+    assert page.results[0].path == expected
+    assert f"Prioritized for {intent}" in page.results[0].reason
+    assert len(page.matched_paths) == 3
+
+
 @pytest.mark.parametrize("bad_value", [True, 1.0, "1"])
 def test_pagination_rejects_non_integers(make_search_service, bad_value):
     service = make_search_service(SearchDocument(path="auth.py"))

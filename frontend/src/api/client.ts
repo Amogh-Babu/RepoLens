@@ -162,6 +162,9 @@ export class HttpApiClient implements ApiClient {
     options?: RequestOptions,
   ): Promise<SearchResponse> {
     const params = new URLSearchParams({q: request.q});
+    if (request.intent !== undefined) {
+      params.set('intent', request.intent);
+    }
     if (request.limit !== undefined) {
       params.set('limit', String(request.limit));
     }

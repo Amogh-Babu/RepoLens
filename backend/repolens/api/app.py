@@ -42,6 +42,7 @@ from repolens.search import (
     SearchService,
 )
 from repolens.search.embedding import FastEmbedEmbedder
+from repolens.search.service import SearchIntent
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -144,6 +145,7 @@ class SearchContractResponse(BaseModel):
     limit: int
     has_more: bool
     results: list[RankedFileContractResponse]
+    matchedPaths: list[str]
 
 
 class OverviewFileResponse(BaseModel):
@@ -441,10 +443,11 @@ def create_analysis_router(
         q: str,
         offset: int = Query(default=0, ge=0),
         limit: int = Query(default=20, ge=1, le=100),
+        intent: SearchIntent | None = None,
     ) -> Any:
         try:
             page = search_service.search(
-                analysis_id, q, offset=offset, limit=limit
+                analysis_id, q, offset=offset, limit=limit, intent=intent
             )
         except QueryValidationError as error:
             return _error_response(
@@ -520,6 +523,7 @@ def create_analysis_router(
             "limit": page.limit,
             "has_more": page.has_more,
             "results": results,
+            "matchedPaths": page.matched_paths,
         }
 
     @router.get(

@@ -228,8 +228,11 @@ export interface RankedFile {
 }
 
 /** GET /analyses/{id}/search query parameters. */
+export type SearchIntent = 'implementation' | 'configuration' | 'tests';
+
 export interface SearchRequest {
   q: string;
+  intent?: SearchIntent;
   /** Page size. Defaults to 20 on the backend. */
   limit?: number;
   /** Number of results to skip, for "Show more". */
@@ -242,4 +245,5 @@ export interface SearchResponse {
   /** Total number of matching files, across all pages. */
   total: number;
   results: RankedFile[];
+  matchedPaths?: string[];
 }

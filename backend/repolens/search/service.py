@@ -3,6 +3,7 @@ import logging
 import re
 from collections.abc import Iterable
 from dataclasses import replace
+from typing import Literal
 
 from repolens.search.embedding import (
     Embedder,
@@ -37,6 +38,7 @@ _RRF_K = 60
 _KEYWORD_RRF_WEIGHT = 8
 _SEMANTIC_RRF_WEIGHT = 1
 _SEMANTIC_RESULT_LIMIT = 100
+SearchIntent = Literal["implementation", "configuration", "tests"]
 
 # Docstrings and comments are sentences, so a short term would match inside
 # almost every one of them ("i" in "this", "in" in "using"). In these fields a
@@ -76,6 +78,7 @@ class SearchService:
         offset: int = 0,
         limit: int = _DEFAULT_PAGE_SIZE,
         include_semantic: bool = True,
+        intent: SearchIntent | None = None,
     ) -> SearchPage:
         terms = self._topic_terms(self._parse_query(query))
         self._validate_pagination(offset, limit)
@@ -90,10 +93,10 @@ class SearchService:
                 continue
 
             matched_terms = {term for match in matches for term in match.matched_terms}
-            score = sum(
-                _FIELD_WEIGHTS[match.kind] * len(match.matched_terms)
-                for match in matches
-            )
+            evidence_terms = {
+                (match.kind, term) for match in matches for term in match.matched_terms
+            }
+            score = sum(_FIELD_WEIGHTS[kind] for kind, _ in evidence_terms)
             score += len(matched_terms) * 3.0
             keyword_matches[document.path] = matches
             keyword_scores[document.path] = score
@@ -142,39 +145,35 @@ class SearchService:
             dependency_count = len(candidate_paths.intersection(document.depended_on_by))
             keyword_rank = keyword_ranks.get(path)
             semantic_rank = semantic_ranks.get(path)
-            if keyword_rank is not None and semantic_rank is not None:
-                score = _KEYWORD_RRF_WEIGHT / (_RRF_K + keyword_rank)
-                score += _SEMANTIC_RRF_WEIGHT / (_RRF_K + semantic_rank)
+            if semantic_scores:
+                score = (
+                    _KEYWORD_RRF_WEIGHT / (_RRF_K + keyword_rank)
+                    if keyword_rank is not None else 0.0
+                )
+                if semantic_rank is not None:
+                    score += _SEMANTIC_RRF_WEIGHT / (_RRF_K + semantic_rank)
                 score += dependency_count * 0.0001
-            elif keyword_rank is not None:
-                score = keyword_scores[path] + dependency_count * 1.5
             else:
-                score = _SEMANTIC_RRF_WEIGHT / (_RRF_K + (semantic_rank or 0))
+                score = keyword_scores[path] + dependency_count * 1.5
+            intent_match = self._matches_intent(document.path, intent)
+            if intent_match:
+                score *= 2
+            reason = self._build_reason(matches, dependency_count)
+            if intent_match:
+                reason += f" Prioritized for {intent}."
             candidates.append((document, matches, score))
             ranked.append(
                 RankedFile(
                     path=document.path,
                     score=score,
-                    reason=self._build_reason(matches, dependency_count),
+                    reason=reason,
                     matches=matches,
                 )
             )
 
-        keyword_candidates = [
-            candidate for candidate in candidates if candidate[0].path in keyword_ranks
-        ]
-        semantic_candidates = [
-            candidate for candidate in candidates if candidate[0].path not in keyword_ranks
-        ]
-        keyword_ranked = [
-            result for result in ranked if result.path in keyword_ranks
-        ]
-        semantic_ranked = [
-            result for result in ranked if result.path not in keyword_ranks
-        ]
-        ordered = self._reading_order(keyword_ranked, keyword_candidates)
-        if semantic_ranked:
-            ordered.extend(self._reading_order(semantic_ranked, semantic_candidates))
+        ordered = self._reading_order(
+            ranked, candidates, prioritize_relevance=bool(semantic_scores or intent)
+        )
         page_results = tuple(ordered[offset : offset + limit])
         return SearchPage(
             results=page_results,
@@ -182,7 +181,30 @@ class SearchService:
             offset=offset,
             limit=limit,
             has_more=offset + len(page_results) < len(ordered),
+            matched_paths=tuple(result.path for result in ordered),
         )
+
+    @staticmethod
+    def _matches_intent(path: str, intent: SearchIntent | None) -> bool:
+        parts = re.split(r"[/_.-]+", path.casefold())
+        is_test = any(
+            part in {"test", "tests", "spec", "specs", "example", "examples"}
+            for part in parts
+        )
+        is_config = any(
+            part in {
+                "config", "configuration", "settings", "deploy", "deployment",
+                "dockerfile", "compose", "helm", "env",
+            }
+            for part in parts
+        )
+        if intent == "tests":
+            return is_test
+        if intent == "configuration":
+            return is_config and not is_test
+        if intent == "implementation":
+            return not is_test and not is_config
+        return False
 
     def _semantic_scores(
         self,
@@ -221,17 +243,21 @@ class SearchService:
     def _reading_order(
         ranked: list[RankedFile],
         candidates: list[tuple[SearchDocument, tuple[MatchEvidence, ...], float]],
+        *,
+        prioritize_relevance: bool = False,
     ) -> list[RankedFile]:
-        """Order results dependencies first, and say why each file is placed.
+        """Order results by relevance and dependencies, explaining each position.
 
         A Kahn topological sort over the imports between matching files:
-        a file is ready once every matching file it imports has been placed,
-        and among ready files the stronger match goes first. When only
-        import cycles remain, the strongest remaining match is placed next.
+        a file is ready once its comparable matching dependencies are placed.
+        Much weaker dependencies can follow stronger starting points. When
+        only import cycles remain, the strongest remaining match goes first.
         """
         results_by_path = {result.path: result for result in ranked}
         dependents: dict[str, set[str]] = {path: set() for path in results_by_path}
         prerequisites: dict[str, set[str]] = {path: set() for path in results_by_path}
+        deferred: dict[str, set[str]] = {path: set() for path in results_by_path}
+        deferred_by: dict[str, set[str]] = {path: set() for path in results_by_path}
 
         for document, _, _ in candidates:
             dependency_path = document.path
@@ -239,6 +265,14 @@ class SearchService:
                 if dependent_path not in results_by_path:
                     continue
                 if dependent_path == dependency_path:
+                    continue
+                if (
+                    prioritize_relevance
+                    and results_by_path[dependency_path].score
+                    < results_by_path[dependent_path].score * 0.5
+                ):
+                    deferred[dependent_path].add(dependency_path)
+                    deferred_by[dependency_path].add(dependent_path)
                     continue
                 dependents[dependency_path].add(dependent_path)
                 prerequisites[dependent_path].add(dependency_path)
@@ -286,15 +320,43 @@ class SearchService:
         ordered: list[RankedFile] = []
         for path in ordered_paths:
             before = sorted(
-                (dep for dep in prerequisites[path] if position[dep] < position[path]),
+                (dep for dep in prerequisites[path] | deferred[path]
+                 if position[dep] < position[path]),
                 key=lambda dep: position[dep],
             )
             after = sorted(
-                (dep for dep in dependents[path] if position[dep] > position[path]),
+                (dep for dep in dependents[path] | deferred_by[path]
+                 if position[dep] > position[path]),
                 key=lambda dep: position[dep],
             )
             in_cycle, held_back = cycle_partners.get(path, ([], []))
             reason = SearchService._build_order_reason(before, after, in_cycle, held_back)
+            stronger_before = sorted(
+                (dep for dep in deferred[path] if position[dep] > position[path]),
+                key=lambda dep: position[dep],
+            )
+            stronger_importers = sorted(
+                (dep for dep in deferred_by[path] if position[dep] < position[path]),
+                key=lambda dep: position[dep],
+            )
+            if stronger_before or stronger_importers:
+                explanation = []
+                if stronger_before:
+                    explanation.append(
+                        f"Comes before {SearchService._name_files(stronger_before)}, "
+                        "which it imports, because it is a stronger starting point"
+                    )
+                if stronger_importers:
+                    verb = "imports" if len(stronger_importers) == 1 else "import"
+                    ending = "is a stronger starting point" if len(stronger_importers) == 1 else "are stronger starting points"
+                    explanation.append(
+                        f"Comes after {SearchService._name_files(stronger_importers)}, "
+                        f"which {verb} it and {ending}"
+                    )
+                if not before and not after and not in_cycle and not held_back:
+                    reason = "; ".join(explanation) + "."
+                else:
+                    reason += " " + "; ".join(explanation) + "."
             ordered.append(replace(results_by_path[path], order_reason=reason))
         return ordered
 

@@ -57,7 +57,18 @@
 
 .workspace__map-switch {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
   margin-left: auto;
+}
+
+.workspace__list-filter {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  font-size: 0.875rem;
 }
 
 .workspace__map-switch .button {

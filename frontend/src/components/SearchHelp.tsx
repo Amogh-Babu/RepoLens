@@ -78,15 +78,15 @@ function SearchExplanation() {
       <h3>How results are ranked</h3>
       <p>
         Exact matches and semantic similarity are combined. Exact file-name,
-        symbol and import matches remain strong signals; dependency order then
-        puts required files before the callers that use them.
+        symbol and import matches remain strong signals. Your reading goal can
+        prioritize implementation, configuration or test files.
       </p>
 
       <h3>What the order means</h3>
       <p>
-        The list is an order to read in. Each file comes after the matching
-        files it imports, so the building blocks come first. Every entry says
-        why it matches and why it is at that spot.
+        The list is an order to read in. Related dependencies usually come
+        first, but a much stronger starting point can come before them. Every
+        entry says why it matches and why it is at that spot.
       </p>
 
       <h3>Tips</h3>

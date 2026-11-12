@@ -50,7 +50,7 @@ class FastEmbedEmbedder:
                         cache_dir=self._cache_dir,
                     )
         passages = [
-            f"query: {text}" if text.startswith("query: ") else f"passage: {text}"
+            text if text.startswith("query: ") else f"passage: {text}"
             for text in texts
         ]
         return [

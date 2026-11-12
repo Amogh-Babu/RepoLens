@@ -320,6 +320,35 @@ describe('AnalysisPage search', () => {
     expect(await screen.findByText(/No files match/)).toBeInTheDocument();
   });
 
+  it('filters the list view to search matches and can show all files', async () => {
+    const user = await search('login');
+    await user.click(await screen.findByRole('button', {name: 'List'}));
+    const map = screen.getByRole('region', {name: 'Dependency map'});
+    expect(
+      within(map).queryByRole('button', {name: /config\.py/}),
+    ).not.toBeInTheDocument();
+    await user.click(
+      within(map).getByRole('checkbox', {name: 'Only show matches'}),
+    );
+    expect(
+      within(map).getByRole('button', {name: /config\.py/}),
+    ).toBeInTheDocument();
+  });
+
+  it('reranks the same topic when the reading goal changes', async () => {
+    const user = await search('login');
+    await user.selectOptions(
+      await screen.findByLabelText('What would you like to understand?'),
+      'tests',
+    );
+    expect(
+      await screen.findByText('Prioritized for tests.', {exact: false}),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', {name: 'Reading order for “login”'}),
+    ).toBeInTheDocument();
+  });
+
   it('closes the reading list when the search is cleared', async () => {
     const user = await search('login');
     await screen.findByRole('heading', {name: /Reading order for/});

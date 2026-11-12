@@ -66,6 +66,23 @@ function nodeOf(name: RegExp) {
 }
 
 describe('DependencyMap', () => {
+  it('shows an empty map for a search without results', () => {
+    renderMap({
+      matchedPaths: new Set(),
+      matchesOnly: true,
+      onMatchesOnlyChange: vi.fn(),
+    });
+
+    expect(
+      screen.getByText('No matching files to show on the map.'),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', {name: /Module app/}),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('checkbox', {name: 'Only show matches'}),
+    ).toBeChecked();
+  });
   // Map nodes are clicked with fireEvent: d3-drag reads event.view on
   // mousedown, which user-event leaves null in jsdom.
   it('starts with collapsed modules that expand when activated', () => {

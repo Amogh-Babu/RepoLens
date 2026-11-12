@@ -14,6 +14,7 @@ from repolens.search import (
     SearchService,
 )
 from repolens.search.models import MatchKind
+from repolens.search.service import SearchIntent
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -57,6 +58,7 @@ class SearchPageResponse(BaseModel):
     offset: int
     limit: int
     has_more: bool
+    matched_paths: list[str]
 
 
 def create_search_router(search_service: SearchService) -> APIRouter:
@@ -73,9 +75,12 @@ def create_search_router(search_service: SearchService) -> APIRouter:
         q: str,
         offset: int = Query(default=0, ge=0),
         limit: int = Query(default=20, ge=1, le=100),
+        intent: SearchIntent | None = None,
     ) -> JSONResponse | dict[str, object]:
         try:
-            page = search_service.search(analysis_id, q, offset=offset, limit=limit)
+            page = search_service.search(
+                analysis_id, q, offset=offset, limit=limit, intent=intent
+            )
         except QueryValidationError as error:
             return _error_response(
                 422,

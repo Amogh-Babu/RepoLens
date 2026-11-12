@@ -10,6 +10,7 @@ import type {
   DependencyGraph,
   FileDetail,
   RankedFile,
+  SearchIntent,
 } from '../api/types.ts';
 import {ancestorDirs, topLevelDirs} from '../utils/fileTree.ts';
 
@@ -34,6 +35,8 @@ export interface SearchState {
   query: string;
   /** Results loaded so far, in reading order. */
   results: RankedFile[];
+  matchedPaths?: string[];
+  intent?: SearchIntent;
   /** Total number of matching files, including ones not loaded yet. */
   total: number;
   /** Query being fetched (a new search or a retry), if any. */
@@ -45,7 +48,11 @@ export interface SearchState {
    * (Use Case 2 exceptions).
    */
   failure:
-    | (RequestFailure & {request: 'search'; query: string})
+    | (RequestFailure & {
+        request: 'search';
+        query: string;
+        intent?: SearchIntent;
+      })
     | (RequestFailure & {request: 'more'})
     | null;
 }
@@ -112,7 +119,7 @@ export interface AnalysisActions {
    * Searches for an already trimmed and checked query. A response to an
    * earlier search that arrives late is ignored.
    */
-  runSearch(query: string): void;
+  runSearch(query: string, intent?: SearchIntent): void;
   /** Fetches the next page of results for the current search. */
   loadMoreResults(): void;
   /** Ends the search: the reading list closes and highlighting is removed. */
@@ -234,11 +241,20 @@ export function createAnalysisStore(
       }
     }
 
-    async function fetchSearch(query: string, signal: AbortSignal) {
+    async function fetchSearch(
+      query: string,
+      signal: AbortSignal,
+      intent?: SearchIntent,
+    ) {
       try {
         const response = await api.search(
           analysisId,
-          {q: query, limit: SEARCH_PAGE_SIZE, offset: 0},
+          {
+            q: query,
+            limit: SEARCH_PAGE_SIZE,
+            offset: 0,
+            ...(intent ? {intent} : {}),
+          },
           {signal},
         );
         if (signal.aborted) return;
@@ -246,6 +262,8 @@ export function createAnalysisStore(
           search: {
             query,
             results: response.results,
+            matchedPaths: response.matchedPaths,
+            intent,
             total: response.total,
             pendingQuery: null,
             loadingMore: false,
@@ -262,7 +280,7 @@ export function createAnalysisStore(
           search: {
             ...current,
             pendingQuery: null,
-            failure: {...failure, request: 'search', query},
+            failure: {...failure, request: 'search', query, intent},
           },
         });
       }
@@ -274,6 +292,7 @@ export function createAnalysisStore(
           analysisId,
           {
             q: search.query,
+            ...(search.intent ? {intent: search.intent} : {}),
             limit: SEARCH_PAGE_SIZE,
             offset: search.results.length,
           },
@@ -468,7 +487,7 @@ export function createAnalysisStore(
         set({expandedModules: new Set()});
       },
 
-      runSearch(query) {
+      runSearch(query, intent) {
         if (get().expired) return;
         abortSearches();
         searchController = new AbortController();
@@ -477,13 +496,15 @@ export function createAnalysisStore(
           search: {
             query: current?.query ?? '',
             results: current?.results ?? [],
+            matchedPaths: current?.matchedPaths,
+            intent: current?.intent,
             total: current?.total ?? 0,
             pendingQuery: query,
             loadingMore: false,
             failure: null,
           },
         });
-        void fetchSearch(query, searchController.signal);
+        void fetchSearch(query, searchController.signal, intent);
       },
 
       loadMoreResults() {

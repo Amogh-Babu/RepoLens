@@ -79,7 +79,7 @@ export function Workspace({analysis}: {analysis: Analysis}) {
     () =>
       search === null || search.query === ''
         ? null
-        : new Set(search.results.map(r => r.path)),
+        : new Set(search.matchedPaths ?? search.results.map(r => r.path)),
     [search],
   );
   const readingOrder = readingOrderFor(
@@ -108,6 +108,7 @@ export function Workspace({analysis}: {analysis: Analysis}) {
             searching={search?.pendingQuery != null}
             onSearch={query => {
               setScopePaths(null);
+              selectFile(null);
               setTab('reading');
               runSearch(query);
             }}
@@ -413,6 +414,7 @@ function ReadingPanel({
   const selectedPath = useAnalysisStore(state => state.selectedPath);
   const runSearch = useAnalysisStore(state => state.runSearch);
   const loadMoreResults = useAnalysisStore(state => state.loadMoreResults);
+  const expired = useAnalysisStore(state => state.expired);
   if (search === null) return null;
 
   return (
@@ -422,9 +424,11 @@ function ReadingPanel({
       sourceUrlFor={sourceUrlFor}
       onSelectFile={onSelectFile}
       onLoadMore={loadMoreResults}
+      onRefine={intent => runSearch(search.query, intent)}
+      refinementDisabled={expired}
       onRetry={() => {
         if (search.failure?.request === 'search') {
-          runSearch(search.failure.query);
+          runSearch(search.failure.query, search.failure.intent);
         } else {
           loadMoreResults();
         }
@@ -513,6 +517,26 @@ function MapPanel({
       ),
     };
   }, [graph, scopePaths]);
+  const listGraph = useMemo(() => {
+    if (!matchesOnly || matchedPaths === null) return visibleGraph;
+    const files = visibleGraph.files.filter(file =>
+      matchedPaths.has(file.path),
+    );
+    const paths = new Set(files.map(file => file.path));
+    return {
+      ...visibleGraph,
+      files,
+      modules: visibleGraph.modules
+        .map(module => ({
+          ...module,
+          filePaths: module.filePaths.filter(path => paths.has(path)),
+        }))
+        .filter(module => module.filePaths.length > 0),
+      edges: visibleGraph.edges.filter(
+        edge => paths.has(edge.source) && paths.has(edge.target),
+      ),
+    };
+  }, [visibleGraph, matchesOnly, matchedPaths]);
 
   const viewSwitch = (
     <div className="workspace__map-switch" role="group" aria-label="View">
@@ -535,6 +559,16 @@ function MapPanel({
       >
         List
       </button>
+      {showList && matchedPaths !== null && (
+        <label className="workspace__list-filter">
+          <input
+            type="checkbox"
+            checked={matchesOnly}
+            onChange={event => setMatchesOnly(event.target.checked)}
+          />
+          Only show matches
+        </label>
+      )}
       {scopePaths !== null && (
         <button type="button" className="button" onClick={onClearScope}>
           All files
@@ -551,7 +585,7 @@ function MapPanel({
     >
       {showList ? (
         <ListFallback
-          graph={visibleGraph}
+          graph={listGraph}
           selectedPath={selectedPath}
           onSelectFile={selectFile}
           message={fallbackMessage}

@@ -11,6 +11,7 @@ import type {
   ModuleGroup,
   RankedFile,
   SearchMatch,
+  SearchIntent,
   SearchRequest,
   SearchResponse,
   StartAnalysisRequest,
@@ -426,13 +427,18 @@ export class MockApiClient implements ApiClient {
       );
     }
 
-    const ranked = rankFiles(this.repo.files, query.toLowerCase().split(/\s+/));
+    const ranked = rankFiles(
+      this.repo.files,
+      query.toLowerCase().split(/\s+/),
+      request.intent,
+    );
     const offset = request.offset ?? 0;
     const limit = request.limit ?? DEFAULT_PAGE_SIZE;
     return {
       query,
       total: ranked.length,
       results: ranked.slice(offset, offset + limit),
+      matchedPaths: ranked.map(file => file.path),
     };
   }
 
@@ -589,7 +595,11 @@ function moduleName(moduleId: string): string {
  * more evidence rank higher, and a file that other matching files import is
  * moved ahead of them, so the list reads foundations first.
  */
-function rankFiles(files: FixtureFile[], terms: string[]): RankedFile[] {
+function rankFiles(
+  files: FixtureFile[],
+  terms: string[],
+  intent?: SearchIntent,
+): RankedFile[] {
   const candidates = files.flatMap(file => {
     const matches = matchFile(file, terms);
     if (matches.length === 0) return [];
@@ -610,7 +620,35 @@ function rankFiles(files: FixtureFile[], terms: string[]): RankedFile[] {
         matchedPaths.has(other.path) &&
         other.imports.some(imp => imp.targetPath === candidate.file.path),
     ).length;
-    return {...candidate, importers, score: candidate.score + importers * 5};
+    const parts = candidate.file.path.toLowerCase().split(/[/_.-]+/);
+    const isTest = parts.some(part =>
+      ['test', 'tests', 'spec', 'specs', 'example', 'examples'].includes(part),
+    );
+    const isConfig = parts.some(part =>
+      [
+        'config',
+        'configuration',
+        'settings',
+        'deploy',
+        'deployment',
+        'dockerfile',
+        'compose',
+        'helm',
+        'env',
+      ].includes(part),
+    );
+    const prioritized =
+      intent === 'tests'
+        ? isTest
+        : intent === 'configuration'
+          ? isConfig && !isTest
+          : intent === 'implementation' && !isTest && !isConfig;
+    return {
+      ...candidate,
+      importers,
+      prioritized,
+      score: (candidate.score + importers * 5) * (prioritized ? 2 : 1),
+    };
   });
 
   scored.sort(
@@ -621,7 +659,9 @@ function rankFiles(files: FixtureFile[], terms: string[]): RankedFile[] {
     position: index + 1,
     path: entry.file.path,
     score: entry.score,
-    reason: buildReason(entry.matches, entry.importers),
+    reason:
+      buildReason(entry.matches, entry.importers) +
+      (entry.prioritized ? ` Prioritized for ${intent}.` : ''),
     orderReason: buildOrderReason(order, index),
     matches: entry.matches,
   }));
