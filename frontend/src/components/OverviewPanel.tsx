@@ -5,8 +5,10 @@ import './OverviewPanel.css';
 
 interface OverviewPanelProps {
   analysisId: string;
+  selectedPath?: string | null;
   onSelectFile: (path: string) => void;
   onSelectArea: (paths: string[]) => void;
+  onTourLoaded?: (tour: OverviewFile[]) => void;
 }
 
 type OverviewResult =
@@ -15,8 +17,10 @@ type OverviewResult =
 
 export function OverviewPanel({
   analysisId,
+  selectedPath = null,
   onSelectFile,
   onSelectArea,
+  onTourLoaded,
 }: OverviewPanelProps) {
   const api = useApiClient();
   const [result, setResult] = useState<OverviewResult | null>(null);
@@ -30,7 +34,10 @@ export function OverviewPanel({
     const controller = new AbortController();
     void api
       .getOverview(analysisId, {signal: controller.signal})
-      .then(overview => setResult({analysisId, attempt: retry, overview}))
+      .then(overview => {
+        setResult({analysisId, attempt: retry, overview});
+        onTourLoaded?.(overview.tour);
+      })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
         setResult({
@@ -70,6 +77,12 @@ export function OverviewPanel({
   const {overview} = current;
   const openFile = (file: OverviewFile) => onSelectFile(file.path);
   const firstTourStep = overview.tour[0];
+  const currentTourIndex =
+    selectedPath === null
+      ? -1
+      : overview.tour.findIndex(step => step.path === selectedPath);
+  const nextTourStep =
+    currentTourIndex >= 0 ? overview.tour[currentTourIndex + 1] : undefined;
 
   return (
     <div className="overview" aria-label="Repository overview">
@@ -77,13 +90,27 @@ export function OverviewPanel({
         <h2>Start here</h2>
         <p>Begin with an entry point, then follow the files it depends on.</p>
         {firstTourStep !== undefined && (
-          <button
-            type="button"
-            className="button"
-            onClick={() => openFile(firstTourStep)}
-          >
-            Start reading tour
-          </button>
+          <div className="overview__tour-actions">
+            <button
+              type="button"
+              className="button"
+              onClick={() => openFile(firstTourStep)}
+            >
+              Start reading tour
+            </button>
+            {currentTourIndex >= 0 && (
+              <button
+                type="button"
+                className="button"
+                disabled={nextTourStep === undefined}
+                onClick={() => {
+                  if (nextTourStep !== undefined) openFile(nextTourStep);
+                }}
+              >
+                Next in tour →
+              </button>
+            )}
+          </div>
         )}
       </header>
 

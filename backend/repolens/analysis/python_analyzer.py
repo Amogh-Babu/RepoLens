@@ -78,6 +78,7 @@ class PythonAnalyzer:
             symbols=_extract_top_level_symbols(tree),
             members=_extract_members(tree),
             comments=_in_line_order(_extract_docstrings(tree), _extract_comments(source)),
+            entry_markers=_extract_entry_markers(tree),
         )
 
 
@@ -394,3 +395,103 @@ def _clip(text: str) -> str:
     if len(text) <= _MAX_PROSE_LENGTH:
         return text
     return text[: _MAX_PROSE_LENGTH - 1].rstrip() + "\u2026"
+
+
+_APP_CONSTRUCTORS = frozenset(
+    {
+        "FastAPI",
+        "Flask",
+        "Typer",
+        "Starlette",
+        "Sanic",
+        "Quart",
+        "Litestar",
+        "Bottle",
+        "Falcon",
+        "Tornado",
+        "ArgumentParser",
+        "OptionParser",
+        "APIRouter",
+        "Blueprint",
+    }
+)
+_APP_FACTORY_NAMES = frozenset(
+    {
+        "create_app",
+        "make_app",
+        "build_app",
+        "init_app",
+        "get_application",
+        "get_wsgi_application",
+        "get_asgi_application",
+    }
+)
+_MAIN_FUNCTION_NAMES = frozenset({"main", "cli", "main_cli", "entrypoint"})
+_CLI_DECORATOR_ATTRS = frozenset({"command", "group"})
+_ROUTE_DECORATOR_ATTRS = frozenset(
+    {"route", "get", "post", "put", "delete", "patch", "websocket", "api_route"}
+)
+
+
+def _extract_entry_markers(tree: ast.Module) -> tuple[str, ...]:
+    """Detect code-level entry-point markers in a module syntax tree."""
+    markers: list[str] = []
+
+    def add(marker: str) -> None:
+        if marker not in markers:
+            markers.append(marker)
+
+    for statement in tree.body:
+        if isinstance(statement, ast.If) and _is_main_guard(statement.test):
+            add("main_guard")
+
+    for statement in _module_scope_statements(tree.body):
+        if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if statement.name in _APP_FACTORY_NAMES:
+                add("app_factory")
+            elif statement.name in _MAIN_FUNCTION_NAMES:
+                add("main_function")
+            for decorator in statement.decorator_list:
+                attr = _call_or_attr_name(decorator)
+                if attr in _CLI_DECORATOR_ATTRS:
+                    add("cli_decorator")
+                elif attr in _ROUTE_DECORATOR_ATTRS:
+                    add("route_decorator")
+        elif isinstance(statement, (ast.Assign, ast.AnnAssign)):
+            value = statement.value
+            if isinstance(value, ast.Call):
+                callee = _call_or_attr_name(value.func)
+                if callee in _APP_CONSTRUCTORS:
+                    add("app_instance")
+
+    return tuple(markers)
+
+
+def _is_main_guard(test: ast.expr) -> bool:
+    """Return whether `test` is `__name__ == '__main__'`."""
+    if not isinstance(test, ast.Compare) or len(test.ops) != 1 or len(test.comparators) != 1:
+        return False
+    if not isinstance(test.ops[0], ast.Eq):
+        return False
+    left, right = test.left, test.comparators[0]
+    return (
+        isinstance(left, ast.Name)
+        and left.id == "__name__"
+        and isinstance(right, ast.Constant)
+        and right.value == "__main__"
+    ) or (
+        isinstance(right, ast.Name)
+        and right.id == "__name__"
+        and isinstance(left, ast.Constant)
+        and left.value == "__main__"
+    )
+
+
+def _call_or_attr_name(node: ast.expr) -> str:
+    """Return the trailing identifier of a Name, Attribute, or Call expression."""
+    target = node.func if isinstance(node, ast.Call) else node
+    if isinstance(target, ast.Name):
+        return target.id
+    if isinstance(target, ast.Attribute):
+        return target.attr
+    return ""
