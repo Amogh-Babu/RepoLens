@@ -192,11 +192,20 @@ def test_completed_analysis_end_to_end_contract() -> None:
     # 5. GET /analyses/{id}/overview
     overview = client.get("/analyses/flask-1/overview")
     assert overview.status_code == 200
+    assert overview.headers["cache-control"] == "private, immutable"
+    overview_etag = overview.headers["etag"]
     overview_body = overview.json()
     assert overview_body["entryPoints"]
     assert overview_body["coreFiles"]
     assert overview_body["architecture"]["packages"]
     assert overview_body["tour"]
+
+    overview_304 = client.get(
+        "/analyses/flask-1/overview",
+        headers={"If-None-Match": overview_etag},
+    )
+    assert overview_304.status_code == 304
+    assert overview_304.text == ""
 
 
 def test_vague_query_returns_semantic_evidence_over_the_api() -> None:

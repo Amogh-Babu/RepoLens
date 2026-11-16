@@ -519,4 +519,32 @@ describe('createAnalysisStore expiry', () => {
     store.getState().selectFile('app/db.py');
     expect(store.getState().selectedPath).toBe('app/db.py');
   });
+
+  it('restores selected file and expanded modules when reopening a repository', async () => {
+    const {client, store} = await completedStore();
+    await vi.waitFor(() => expect(store.getState().graph).not.toBeNull());
+
+    store.getState().toggleModule('app/models', true);
+    store.getState().selectFile('app/auth/views.py');
+    await vi.waitFor(() =>
+      expect(store.getState().fileDetails['app/auth/views.py']).toBeDefined(),
+    );
+    const analysisId = store.getState().analysisId;
+    store.getState().dispose();
+
+    const reopened = createAnalysisStore(client, analysisId);
+    reopened.getState().startPolling();
+    await vi.waitFor(() => expect(reopened.getState().graph).not.toBeNull());
+    await vi.waitFor(() =>
+      expect(
+        reopened.getState().fileDetails['app/auth/views.py'],
+      ).toBeDefined(),
+    );
+
+    expect(reopened.getState().selectedPath).toBe('app/auth/views.py');
+    expect(reopened.getState().expandedModules).toEqual(
+      new Set(['app/models', 'app/auth']),
+    );
+    reopened.getState().dispose();
+  });
 });

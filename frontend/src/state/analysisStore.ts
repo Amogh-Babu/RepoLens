@@ -13,6 +13,11 @@ import type {
   SearchIntent,
 } from '../api/types.ts';
 import {ancestorDirs, topLevelDirs} from '../utils/fileTree.ts';
+import {
+  loadViewState,
+  saveRecentRepo,
+  saveViewState,
+} from '../utils/workspaceStorage.ts';
 
 /** How often to ask for the status of a running analysis. */
 export const DEFAULT_POLL_INTERVAL_MS = 1_000;
@@ -195,6 +200,7 @@ export function createAnalysisStore(
         if (isInProgress(analysis.status)) {
           pollTimer = setTimeout(() => void poll(signal), pollIntervalMs);
         } else if (analysis.status === 'completed') {
+          saveRecentRepo(analysis, now());
           scheduleExpiry(analysis.expiresAt);
           if (get().graph === null) get().loadGraph();
         }
@@ -209,15 +215,39 @@ export function createAnalysisStore(
       try {
         const graph = await api.getGraph(analysisId, {signal});
         if (signal.aborted) return;
+        const repoUrl = get().analysis?.repoUrl ?? '';
+        const saved = loadViewState(repoUrl);
+        const validModules = new Set(graph.modules.map(m => m.id));
+        const validFiles = new Set(graph.files.map(f => f.path));
+        const restoredModules =
+          saved !== null
+            ? saved.expandedModules.filter(id => validModules.has(id))
+            : [];
+        const restoredSelectedPath =
+          saved?.selectedPath !== null &&
+          saved?.selectedPath !== undefined &&
+          validFiles.has(saved.selectedPath)
+            ? saved.selectedPath
+            : null;
         set({
           graph,
           graphFailure: null,
-          expandedDirs: new Set(topLevelDirs(graph.files.map(f => f.path))),
-          // Modules start collapsed, unless there is only one.
+          expandedDirs: new Set([
+            ...topLevelDirs(graph.files.map(f => f.path)),
+            ...(restoredSelectedPath === null
+              ? []
+              : ancestorDirs(restoredSelectedPath)),
+          ]),
+          // Modules start collapsed, unless there is only one or saved state restores them.
           expandedModules: new Set(
-            graph.modules.length === 1 ? graph.modules.map(m => m.id) : [],
+            graph.modules.length === 1
+              ? graph.modules.map(m => m.id)
+              : restoredModules,
           ),
         });
+        if (restoredSelectedPath !== null) {
+          get().selectFile(restoredSelectedPath);
+        }
       } catch (error: unknown) {
         if (signal.aborted) return;
         const failure = failureFrom(error);
@@ -433,8 +463,10 @@ export function createAnalysisStore(
       selectFile(path) {
         fileController?.abort();
         fileController = null;
+        const repoUrl = get().analysis?.repoUrl ?? '';
         if (path === null) {
           set({selectedPath: null, fileFailure: null});
+          saveViewState(repoUrl, {selectedPath: null});
           return;
         }
         // Once expired, only files whose details are already here can open.
@@ -465,6 +497,10 @@ export function createAnalysisStore(
             expandedModules: nextExpandedModules,
           };
         });
+        saveViewState(repoUrl, {
+          selectedPath: path,
+          expandedModules: [...get().expandedModules],
+        });
         if (get().fileDetails[path] === undefined) {
           fileController = new AbortController();
           void fetchFile(path, fileController.signal);
@@ -481,10 +517,14 @@ export function createAnalysisStore(
         set(state => ({
           expandedModules: toggled(state.expandedModules, moduleId, expanded),
         }));
+        saveViewState(get().analysis?.repoUrl ?? '', {
+          expandedModules: [...get().expandedModules],
+        });
       },
 
       collapseAllModules() {
         set({expandedModules: new Set()});
+        saveViewState(get().analysis?.repoUrl ?? '', {expandedModules: []});
       },
 
       runSearch(query, intent) {

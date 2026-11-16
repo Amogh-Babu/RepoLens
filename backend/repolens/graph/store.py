@@ -10,6 +10,7 @@ import sqlite3
 import threading
 import time
 from typing import Concatenate, ParamSpec, TypeVar
+import uuid
 
 from repolens.graph.models import (
     AnalyzedFile,
@@ -507,6 +508,63 @@ class SqliteGraphStore:
                 (row["id"],),
             )
         return row
+
+    @_locked
+    def start_or_reuse_analysis(
+        self,
+        repo: str,
+        ref: str | None,
+        sha: str,
+        *,
+        initial_stage: AnalysisStage = "downloading",
+        now: float | None = None,
+    ) -> tuple[sqlite3.Row, bool]:
+        """Reuse a completed or in-flight analysis for (repo, sha), or queue one.
+
+        Returns `(row, created)` where `created` is True only when a new
+        `'queued'` analysis row was inserted.
+        """
+        cutoff = now if now is not None else time.time()
+        repo_url = normalize_repo_url(repo)
+        existing = self._conn.execute(
+            """
+            SELECT * FROM analyses
+            WHERE repo = ? AND sha = ?
+              AND status IN ('completed', 'running', 'queued')
+              AND expires_at > ?
+            ORDER BY CASE status WHEN 'completed' THEN 0 WHEN 'running' THEN 1 ELSE 2 END,
+                     created_at DESC
+            LIMIT 1;
+            """,
+            (repo_url, sha, cutoff),
+        ).fetchone()
+        if existing is not None:
+            if str(existing["status"]) == "completed":
+                with self._conn:
+                    self._conn.execute(
+                        "UPDATE analyses SET from_cache = 1 WHERE id = ?;",
+                        (existing["id"],),
+                    )
+            return existing, False
+
+        analysis_id = f"analysis-{uuid.uuid4().hex[:12]}"
+        self.save(
+            AnalysisRecord(
+                analysis_id=analysis_id,
+                repo=repo_url,
+                ref=ref,
+                sha=sha,
+                status="queued",
+                stage=initial_stage,
+                from_cache=False,
+            )
+        )
+        created_row = self._conn.execute(
+            "SELECT * FROM analyses WHERE id = ?;",
+            (analysis_id,),
+        ).fetchone()
+        assert created_row is not None
+        return created_row, True
 
     @_locked
     def cancel_analysis(self, analysis_id: str) -> None:

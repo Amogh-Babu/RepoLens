@@ -20,6 +20,7 @@ from repolens.graph.endpoints import (
     AnalysisIdPath,
     DependencyGraphResponse,
     FileDetailResponse,
+    cached_json_response,
     create_graph_router,
 )
 from repolens.graph.models import (
@@ -239,29 +240,16 @@ class DefaultAnalysisRunner:
             ).hexdigest()
             sha = digest
 
-        cached = store.reuse_cached_analysis(repo_url, sha)
-        if cached is not None:
-            return {
-                "analysisId": str(cached["id"]),
-                "sha": str(cached["sha"]),
-                "status": str(cached["status"]),
-            }
-
-        analysis_id = f"analysis-{uuid.uuid4().hex[:12]}"
-        record = AnalysisRecord(
-            analysis_id=analysis_id,
-            repo=repo_url,
-            ref=clean_ref,
-            sha=sha,
-            status="queued",
-            stage="resolving",
-            from_cache=False,
+        row, _ = store.start_or_reuse_analysis(
+            repo_url,
+            clean_ref,
+            sha,
+            initial_stage="resolving",
         )
-        store.save(record)
         return {
-            "analysisId": analysis_id,
-            "sha": sha,
-            "status": "queued",
+            "analysisId": str(row["id"]),
+            "sha": str(row["sha"]),
+            "status": str(row["status"]),
         }
 
 
@@ -531,14 +519,17 @@ def create_analysis_router(
         response_model=RepositoryOverviewResponse,
         summary="Get an onboarding overview for an analyzed repository",
     )
-    def get_overview(analysis_id: AnalysisIdPath) -> Any:
+    def get_overview(analysis_id: AnalysisIdPath, request: Request) -> Any:
         try:
-            return overview_service.get_overview(analysis_id)
+            payload = overview_service.get_overview(analysis_id)
         except GraphStoreError as exc:
             return JSONResponse(
                 status_code=exc.status_code,
                 content=exc.to_dict(),
             )
+        return cached_json_response(
+            request, payload, f"{analysis_id}-overview"
+        )
 
     return router
 
