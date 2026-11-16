@@ -23,16 +23,25 @@ from repolens.graph.models import (
     MemberKind,
     SymbolKind,
 )
+from repolens.search.embedding import MODEL_NAME
 
 
 # Bump whenever a table, column, or constraint below changes.
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # STRICT tables need SQLite 3.37 (2021). Older libraries still get every CHECK
 # constraint, just without SQLite's own column type enforcement.
 _STRICT_MIN_VERSION = (3, 37, 0)
 
-_TABLES = ("members", "comments", "imports", "symbols", "files", "analyses")
+_TABLES = (
+    "embeddings",
+    "members",
+    "comments",
+    "imports",
+    "symbols",
+    "files",
+    "analyses",
+)
 
 
 def _one_of(column: str, literal: object, *, nullable: bool = False) -> str:
@@ -124,6 +133,16 @@ CREATE TABLE IF NOT EXISTS members (
     kind TEXT NOT NULL {_one_of("kind", MemberKind)},
     line INTEGER NOT NULL {_non_negative("line")},
     FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
+){table_options};
+
+CREATE TABLE IF NOT EXISTS embeddings (
+    file_id INTEGER NOT NULL,
+    chunk_index INTEGER NOT NULL CHECK (chunk_index >= 0),
+    chunk_text TEXT NOT NULL,
+    model TEXT NOT NULL DEFAULT '{MODEL_NAME}',
+    vector BLOB NOT NULL,
+    FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE,
+    PRIMARY KEY (file_id, chunk_index)
 ){table_options};
 
 CREATE INDEX IF NOT EXISTS idx_analyses_repo_sha ON analyses(repo, sha);

@@ -1,13 +1,15 @@
 {
   "top_k": 5,
+  "embedding_model": "BAAI/bge-small-en-v1.5",
   "overall": {
-    "queries": 19,
+    "queries": 20,
     "precision": {
-      "repolens": 0.2632,
-      "grep": 0.0421,
-      "grep_ranked": 0.0526
+      "repolens": 0.25,
+      "repolens_hybrid": 0.31,
+      "grep": 0.04,
+      "grep_ranked": 0.06
     },
-    "ideal_precision": 0.3263
+    "ideal_precision": 0.34
   },
   "repos": [
     {
@@ -16,6 +18,7 @@
       "listed_files": 11,
       "precision": {
         "repolens": 0.2,
+        "repolens_hybrid": 0.2667,
         "grep": 0.0333,
         "grep_ranked": 0.0333
       },
@@ -30,6 +33,7 @@
           "ideal_hits": 2,
           "hits": {
             "repolens": 2,
+            "repolens_hybrid": 2,
             "grep": 0,
             "grep_ranked": 0
           },
@@ -37,6 +41,13 @@
             "repolens": [
               "app/authentication/service.py",
               "app/authentication/routes.py"
+            ],
+            "repolens_hybrid": [
+              "app/authentication/service.py",
+              "app/authentication/routes.py",
+              "app/users/__init__.py",
+              "app/users/repository.py",
+              "app/authentication/__init__.py"
             ],
             "grep": [],
             "grep_ranked": []
@@ -51,12 +62,20 @@
           "ideal_hits": 2,
           "hits": {
             "repolens": 1,
+            "repolens_hybrid": 2,
             "grep": 0,
             "grep_ranked": 0
           },
           "top": {
             "repolens": [
               "app/authentication/service.py"
+            ],
+            "repolens_hybrid": [
+              "app/authentication/service.py",
+              "app/authentication/__init__.py",
+              "app/users/repository.py",
+              "app/authentication/routes.py",
+              "app/users/__init__.py"
             ],
             "grep": [],
             "grep_ranked": []
@@ -70,12 +89,20 @@
           "ideal_hits": 1,
           "hits": {
             "repolens": 1,
+            "repolens_hybrid": 1,
             "grep": 0,
             "grep_ranked": 0
           },
           "top": {
             "repolens": [
               "app/billing/service.py"
+            ],
+            "repolens_hybrid": [
+              "app/billing/service.py",
+              "app/billing/__init__.py",
+              "app/users/__init__.py",
+              "app/users/repository.py",
+              "app/__init__.py"
             ],
             "grep": [],
             "grep_ranked": []
@@ -89,6 +116,7 @@
           "ideal_hits": 1,
           "hits": {
             "repolens": 1,
+            "repolens_hybrid": 1,
             "grep": 1,
             "grep_ranked": 1
           },
@@ -98,6 +126,13 @@
               "app/authentication/service.py",
               "app/users/__init__.py",
               "app/authentication/routes.py"
+            ],
+            "repolens_hybrid": [
+              "app/users/repository.py",
+              "app/authentication/service.py",
+              "app/users/__init__.py",
+              "app/authentication/routes.py",
+              "app/authentication/__init__.py"
             ],
             "grep": [
               "app/users/__init__.py",
@@ -117,12 +152,20 @@
           "ideal_hits": 1,
           "hits": {
             "repolens": 1,
+            "repolens_hybrid": 1,
             "grep": 0,
             "grep_ranked": 0
           },
           "top": {
             "repolens": [
               "app/authentication/routes.py"
+            ],
+            "repolens_hybrid": [
+              "app/authentication/routes.py",
+              "app/billing/__init__.py",
+              "app/users/__init__.py",
+              "app/__init__.py",
+              "app/users/repository.py"
             ],
             "grep": [],
             "grep_ranked": []
@@ -136,11 +179,19 @@
           "ideal_hits": 1,
           "hits": {
             "repolens": 0,
+            "repolens_hybrid": 1,
             "grep": 0,
             "grep_ranked": 0
           },
           "top": {
             "repolens": [],
+            "repolens_hybrid": [
+              "app/billing/__init__.py",
+              "app/users/repository.py",
+              "app/users/__init__.py",
+              "app/billing/service.py",
+              "app/__init__.py"
+            ],
             "grep": [],
             "grep_ranked": []
           }
@@ -153,6 +204,7 @@
       "listed_files": 9,
       "precision": {
         "repolens": 0.2333,
+        "repolens_hybrid": 0.2333,
         "grep": 0.0,
         "grep_ranked": 0.0
       },
@@ -166,6 +218,7 @@
           "ideal_hits": 1,
           "hits": {
             "repolens": 1,
+            "repolens_hybrid": 1,
             "grep": 0,
             "grep_ranked": 0
           },
@@ -173,6 +226,13 @@
             "repolens": [
               "app/services/billing.py",
               "app/main.py"
+            ],
+            "repolens_hybrid": [
+              "app/services/billing.py",
+              "app/main.py",
+              "app/services/__init__.py",
+              "app/config.py",
+              "app/__init__.py"
             ],
             "grep": [],
             "grep_ranked": []
@@ -187,6 +247,7 @@
           "ideal_hits": 2,
           "hits": {
             "repolens": 2,
+            "repolens_hybrid": 2,
             "grep": 0,
             "grep_ranked": 0
           },
@@ -195,6 +256,13 @@
               "app/config.py",
               "app/services/billing.py",
               "app/compat.py"
+            ],
+            "repolens_hybrid": [
+              "app/config.py",
+              "app/services/billing.py",
+              "app/compat.py",
+              "app/services/__init__.py",
+              "app/main.py"
             ],
             "grep": [],
             "grep_ranked": []
@@ -208,6 +276,7 @@
           "ideal_hits": 1,
           "hits": {
             "repolens": 1,
+            "repolens_hybrid": 1,
             "grep": 0,
             "grep_ranked": 0
           },
@@ -217,6 +286,13 @@
               "app/compat.py",
               "app/services/billing.py",
               "app/main.py"
+            ],
+            "repolens_hybrid": [
+              "app/config.py",
+              "app/compat.py",
+              "app/services/billing.py",
+              "app/main.py",
+              "app/services/__init__.py"
             ],
             "grep": [],
             "grep_ranked": []
@@ -230,12 +306,20 @@
           "ideal_hits": 1,
           "hits": {
             "repolens": 1,
+            "repolens_hybrid": 1,
             "grep": 0,
             "grep_ranked": 0
           },
           "top": {
             "repolens": [
               "app/main.py"
+            ],
+            "repolens_hybrid": [
+              "app/main.py",
+              "app/config.py",
+              "app/compat.py",
+              "app/services/billing.py",
+              "app/services/__init__.py"
             ],
             "grep": [],
             "grep_ranked": []
@@ -249,12 +333,20 @@
           "ideal_hits": 1,
           "hits": {
             "repolens": 1,
+            "repolens_hybrid": 1,
             "grep": 0,
             "grep_ranked": 0
           },
           "top": {
             "repolens": [
               "app/compat.py"
+            ],
+            "repolens_hybrid": [
+              "app/compat.py",
+              "app/config.py",
+              "app/services/billing.py",
+              "app/services/__init__.py",
+              "app/__init__.py"
             ],
             "grep": [],
             "grep_ranked": []
@@ -268,12 +360,20 @@
           "ideal_hits": 1,
           "hits": {
             "repolens": 1,
+            "repolens_hybrid": 1,
             "grep": 0,
             "grep_ranked": 0
           },
           "top": {
             "repolens": [
               "app/compat.py"
+            ],
+            "repolens_hybrid": [
+              "app/compat.py",
+              "app/config.py",
+              "app/services/billing.py",
+              "app/main.py",
+              "app/services/__init__.py"
             ],
             "grep": [],
             "grep_ranked": []
@@ -286,11 +386,12 @@
       "indexed_files": 14,
       "listed_files": 16,
       "precision": {
-        "repolens": 0.3429,
-        "grep": 0.0857,
-        "grep_ranked": 0.1143
+        "repolens": 0.3,
+        "repolens_hybrid": 0.4,
+        "grep": 0.075,
+        "grep_ranked": 0.125
       },
-      "ideal_precision": 0.4571,
+      "ideal_precision": 0.475,
       "queries": [
         {
           "query": "login",
@@ -302,6 +403,7 @@
           "ideal_hits": 3,
           "hits": {
             "repolens": 1,
+            "repolens_hybrid": 3,
             "grep": 1,
             "grep_ranked": 1
           },
@@ -309,6 +411,13 @@
             "repolens": [
               "bookshop/auth/login.py",
               "bookshop/auth/__init__.py"
+            ],
+            "repolens_hybrid": [
+              "bookshop/auth/login.py",
+              "bookshop/auth/__init__.py",
+              "bookshop/catalog/models.py",
+              "bookshop/config.py",
+              "bookshop/auth/tokens.py"
             ],
             "grep": [
               "bookshop/auth/login.py"
@@ -328,11 +437,19 @@
           "ideal_hits": 3,
           "hits": {
             "repolens": 3,
+            "repolens_hybrid": 3,
             "grep": 1,
             "grep_ranked": 1
           },
           "top": {
             "repolens": [
+              "bookshop/auth/tokens.py",
+              "bookshop/auth/login.py",
+              "bookshop/auth/__init__.py",
+              "bookshop/orders/checkout.py",
+              "tests/test_checkout.py"
+            ],
+            "repolens_hybrid": [
               "bookshop/auth/tokens.py",
               "bookshop/auth/login.py",
               "bookshop/auth/__init__.py",
@@ -357,6 +474,7 @@
           "ideal_hits": 3,
           "hits": {
             "repolens": 3,
+            "repolens_hybrid": 3,
             "grep": 0,
             "grep_ranked": 0
           },
@@ -365,6 +483,13 @@
               "bookshop/catalog/models.py",
               "bookshop/orders/checkout.py",
               "tests/test_checkout.py"
+            ],
+            "repolens_hybrid": [
+              "bookshop/catalog/models.py",
+              "bookshop/orders/checkout.py",
+              "tests/test_checkout.py",
+              "bookshop/orders/__init__.py",
+              "bookshop/catalog/__init__.py"
             ],
             "grep": [],
             "grep_ranked": []
@@ -379,6 +504,7 @@
           "ideal_hits": 2,
           "hits": {
             "repolens": 2,
+            "repolens_hybrid": 2,
             "grep": 0,
             "grep_ranked": 1
           },
@@ -389,6 +515,13 @@
               "bookshop/catalog/search.py",
               "bookshop/auth/tokens.py",
               "bookshop/orders/checkout.py"
+            ],
+            "repolens_hybrid": [
+              "bookshop/legacy/payments.py",
+              "bookshop/catalog/models.py",
+              "bookshop/config.py",
+              "bookshop/catalog/search.py",
+              "bookshop/auth/tokens.py"
             ],
             "grep": [
               "bookshop/__init__.py",
@@ -415,12 +548,20 @@
           "ideal_hits": 2,
           "hits": {
             "repolens": 1,
+            "repolens_hybrid": 2,
             "grep": 0,
             "grep_ranked": 0
           },
           "top": {
             "repolens": [
               "bookshop/config.py"
+            ],
+            "repolens_hybrid": [
+              "bookshop/config.py",
+              "bookshop/auth/tokens.py",
+              "bookshop/catalog/models.py",
+              "bookshop/auth/login.py",
+              "bookshop/auth/__init__.py"
             ],
             "grep": [],
             "grep_ranked": []
@@ -435,6 +576,7 @@
           "ideal_hits": 2,
           "hits": {
             "repolens": 1,
+            "repolens_hybrid": 1,
             "grep": 0,
             "grep_ranked": 0
           },
@@ -442,8 +584,54 @@
             "repolens": [
               "manage.py"
             ],
+            "repolens_hybrid": [
+              "manage.py",
+              "bookshop/catalog/__init__.py",
+              "bookshop/config.py",
+              "bookshop/__init__.py",
+              "bookshop/auth/tokens.py"
+            ],
             "grep": [],
             "grep_ranked": []
+          }
+        },
+        {
+          "query": "if I'm meant to work on prod, where do I start?",
+          "relevant": [
+            "manage.py",
+            "bookshop/app.py",
+            "bookshop/config.py"
+          ],
+          "ideal_hits": 3,
+          "hits": {
+            "repolens": 0,
+            "repolens_hybrid": 1,
+            "grep": 0,
+            "grep_ranked": 1
+          },
+          "top": {
+            "repolens": [],
+            "repolens_hybrid": [
+              "bookshop/__init__.py",
+              "bookshop/catalog/__init__.py",
+              "bookshop/orders/__init__.py",
+              "bookshop/config.py",
+              "bookshop/auth/tokens.py"
+            ],
+            "grep": [
+              "README.md",
+              "bookshop/__init__.py",
+              "bookshop/auth/__init__.py",
+              "bookshop/auth/login.py",
+              "bookshop/auth/tokens.py"
+            ],
+            "grep_ranked": [
+              "bookshop/config.py",
+              "requirements.txt",
+              "bookshop/__init__.py",
+              "bookshop/auth/__init__.py",
+              "bookshop/auth/login.py"
+            ]
           }
         },
         {
@@ -454,12 +642,20 @@
           "ideal_hits": 1,
           "hits": {
             "repolens": 1,
+            "repolens_hybrid": 1,
             "grep": 1,
             "grep_ranked": 1
           },
           "top": {
             "repolens": [
               "bookshop/legacy/payments.py"
+            ],
+            "repolens_hybrid": [
+              "bookshop/legacy/payments.py",
+              "bookshop/orders/__init__.py",
+              "bookshop/catalog/models.py",
+              "bookshop/catalog/__init__.py",
+              "bookshop/__init__.py"
             ],
             "grep": [
               "bookshop/legacy/payments.py"

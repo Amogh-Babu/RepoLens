@@ -1,7 +1,7 @@
 import {ApiError} from '../api/errors.ts';
 import {MockApiClient} from '../api/mock/mockClient.ts';
 import {ANALYSIS_STAGES} from '../api/types.ts';
-import {createAnalysisStore} from './analysisStore.ts';
+import {createAnalysisStore, MAX_AUTO_EXPAND_FILES} from './analysisStore.ts';
 
 const STAGE_MS = 1_000;
 const POLL_MS = 5;
@@ -153,14 +153,59 @@ describe('createAnalysisStore graph and selection', () => {
     const {store} = await completedStore();
 
     store.getState().selectFile('app/auth/service.py');
+    const firstRevision = store.getState().selectionRevision;
+    store.getState().selectFile('app/auth/service.py');
 
     expect(store.getState().selectedPath).toBe('app/auth/service.py');
+    expect(store.getState().selectionRevision).toBe(firstRevision + 1);
     expect(store.getState().expandedDirs.has('app/auth')).toBe(true);
+    expect(store.getState().expandedModules.has('app/auth')).toBe(true);
     await vi.waitFor(() =>
       expect(
         store.getState().fileDetails['app/auth/service.py']?.importedBy,
       ).toHaveLength(3),
     );
+  });
+
+  it('keeps a large module collapsed when one of its files is selected', async () => {
+    const files = Array.from(
+      {length: MAX_AUTO_EXPAND_FILES + 1},
+      (_, index) => ({
+        path: `app/large/file-${index}.py`,
+        parsed: true,
+        lineCount: 1,
+        symbols: [],
+        imports: [],
+        comments: [],
+      }),
+    );
+    const client = new MockApiClient({
+      latencyMs: 0,
+      stageDurationMs: 0,
+      repo: {
+        repoUrl: 'https://github.com/o/large-repo',
+        sha: '0'.repeat(40),
+        filesExcluded: 0,
+        files,
+      },
+    });
+    const {analysisId} = await client.startAnalysis({
+      url: 'https://github.com/o/large-repo',
+    });
+    const store = createAnalysisStore(client, analysisId, {
+      pollIntervalMs: POLL_MS,
+    });
+    store.getState().startPolling();
+    await vi.waitFor(() => expect(store.getState().graph).not.toBeNull());
+    store.getState().collapseAllModules();
+    const selectedFile = files[0];
+    if (selectedFile === undefined)
+      throw new Error('Large module has no files.');
+
+    store.getState().selectFile(selectedFile.path);
+
+    expect(store.getState().selectedPath).toBe(selectedFile.path);
+    expect(store.getState().expandedModules.has('app/large')).toBe(false);
   });
 
   it('does not refetch a file it already has', async () => {

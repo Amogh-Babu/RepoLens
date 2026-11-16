@@ -18,6 +18,7 @@ export type AnalysisStage =
   | 'filtering'
   | 'parsing'
   | 'classifying'
+  | 'indexing'
   | 'storing';
 
 /** Every pipeline stage, in order. Useful for progress displays. */
@@ -27,6 +28,7 @@ export const ANALYSIS_STAGES: readonly AnalysisStage[] = [
   'filtering',
   'parsing',
   'classifying',
+  'indexing',
   'storing',
 ];
 
@@ -117,6 +119,51 @@ export interface DependencyGraph {
   edges: ImportEdge[];
 }
 
+export interface OverviewFile {
+  path: string;
+  reason: string;
+  summary: string;
+  score?: number;
+}
+
+export interface OverviewPackage {
+  id: string;
+  name: string;
+  fileCount: number;
+  layer: number;
+  cyclic: boolean;
+}
+
+export interface OverviewArchitecture {
+  packages: OverviewPackage[];
+  edges: Array<{source: string; target: string; count: number}>;
+  layers: Array<{depth: number; name: string; packages: string[]}>;
+  hasCycles: boolean;
+}
+
+export interface OverviewArea {
+  id: string;
+  name: string;
+  files: string[];
+  summary: string;
+}
+
+export interface OverviewCategory {
+  path: string;
+  category:
+    'source' | 'test' | 'tool' | 'docs' | 'example' | 'config' | 'migration';
+}
+
+/** GET /analyses/{id}/overview response body. */
+export interface RepositoryOverview {
+  entryPoints: OverviewFile[];
+  coreFiles: OverviewFile[];
+  architecture: OverviewArchitecture;
+  areas: OverviewArea[];
+  tour: OverviewFile[];
+  categories: OverviewCategory[];
+}
+
 export type SymbolKind = 'function' | 'class' | 'variable';
 
 export interface SymbolInfo {
@@ -152,7 +199,8 @@ export interface FileDetail {
   sourceUrl: string;
 }
 
-export type MatchKind = 'filename' | 'symbol' | 'import' | 'comment';
+export type MatchKind =
+  'filename' | 'symbol' | 'import' | 'comment' | 'semantic';
 
 /** One piece of evidence for why a file matched a query. */
 export interface SearchMatch {
@@ -180,8 +228,11 @@ export interface RankedFile {
 }
 
 /** GET /analyses/{id}/search query parameters. */
+export type SearchIntent = 'implementation' | 'configuration' | 'tests';
+
 export interface SearchRequest {
   q: string;
+  intent?: SearchIntent;
   /** Page size. Defaults to 20 on the backend. */
   limit?: number;
   /** Number of results to skip, for "Show more". */
@@ -194,4 +245,5 @@ export interface SearchResponse {
   /** Total number of matching files, across all pages. */
   total: number;
   results: RankedFile[];
+  matchedPaths?: string[];
 }

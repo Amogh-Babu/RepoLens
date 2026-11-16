@@ -10,6 +10,24 @@
   color: var(--color-muted);
 }
 
+.reading-list__refine {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.reading-list__refine select {
+  width: 100%;
+  padding: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-background);
+  color: var(--color-text);
+  font: inherit;
+  font-weight: 400;
+}
+
 .reading-list__header h2 {
   margin: 0;
   font-size: 1rem;

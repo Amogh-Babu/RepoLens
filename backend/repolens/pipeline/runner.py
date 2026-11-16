@@ -186,6 +186,11 @@ class PipelineAnalysisRunner:
             return
         files = classify_imports(to_analyzed_files(analysis))
 
+        if not store.update_stage(analysis_id, "indexing"):
+            return
+        # Falls back to no vectors (keyword search only) if the model fails.
+        embeddings = store.build_embeddings(files)
+
         if not store.update_stage(analysis_id, "storing"):
             return
         store.complete_analysis(
@@ -197,6 +202,7 @@ class PipelineAnalysisRunner:
                 status="completed",
                 counts=to_analysis_counts(analysis),
                 files=files,
+                embeddings=embeddings,
             )
         )
 
