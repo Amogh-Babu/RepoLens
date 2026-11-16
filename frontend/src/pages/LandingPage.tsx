@@ -1,5 +1,5 @@
 import {useEffect, useRef, useState} from 'react';
-import {useNavigate} from 'react-router';
+import {Link, useNavigate} from 'react-router';
 import {useApiClient} from '../api/apiClientContext.ts';
 import type {ErrorDescription} from '../api/describeError.ts';
 import {describeError} from '../api/describeError.ts';
@@ -9,6 +9,7 @@ import type {RepoInputValue} from '../components/RepoInputForm.tsx';
 import {RepoInputForm} from '../components/RepoInputForm.tsx';
 import type {RepoTarget} from '../utils/repoInput.ts';
 import {useDocumentTitle} from '../utils/useDocumentTitle.ts';
+import {loadRecentRepos} from '../utils/workspaceStorage.ts';
 import './LandingPage.css';
 
 interface FailedStart {
@@ -23,6 +24,7 @@ export function LandingPage() {
   const navigate = useNavigate();
   useDocumentTitle(null);
   const [input, setInput] = useState<RepoInputValue>({url: '', ref: ''});
+  const [recentRepos] = useState(() => loadRecentRepos());
   const [submitting, setSubmitting] = useState(false);
   const [failure, setFailure] = useState<FailedStart | null>(null);
   const pending = useRef<AbortController | null>(null);
@@ -104,6 +106,34 @@ export function LandingPage() {
         )}
       </section>
 
+      {recentRepos.length > 0 && (
+        <section
+          className="landing__recent"
+          aria-labelledby="recent-repos-heading"
+        >
+          <h2 id="recent-repos-heading">Recent repositories</h2>
+          <ul className="landing__recent-list">
+            {recentRepos.map(entry => (
+              <li key={entry.analysisId} className="landing__recent-item">
+                <Link
+                  to={`/analysis/${encodeURIComponent(entry.analysisId)}`}
+                  className="landing__recent-link"
+                >
+                  <span className="landing__recent-name">
+                    {repoDisplayName(entry.repoUrl)}
+                  </span>
+                  <code className="landing__recent-sha">
+                    {entry.ref
+                      ? `${entry.ref} (${entry.sha.slice(0, 7)})`
+                      : entry.sha.slice(0, 7)}
+                  </code>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <section className="landing__guide" aria-labelledby="guide-heading">
         <h2 id="guide-heading">How it works</h2>
         <ol className="landing__steps">
@@ -132,4 +162,8 @@ export function LandingPage() {
       </section>
     </main>
   );
+}
+
+function repoDisplayName(repoUrl: string): string {
+  return repoUrl.replace(/^https?:\/\/[^/]+\//, '');
 }

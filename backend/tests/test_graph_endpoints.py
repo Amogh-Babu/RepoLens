@@ -196,3 +196,31 @@ def test_graph_and_file_detail_error_responses() -> None:
     missing_file = client.get("/analyses/ready-analysis/files/no/such/file.py")
     assert missing_file.status_code == 404
     assert missing_file.json()["code"] == "FILE_NOT_FOUND"
+
+
+def test_graph_and_file_detail_support_etag_and_304() -> None:
+    client, _ = _create_seeded_client()
+
+    first_graph = client.get("/analyses/ready-analysis/graph")
+    assert first_graph.status_code == 200
+    assert first_graph.headers["cache-control"] == "private, immutable"
+    graph_etag = first_graph.headers["etag"]
+    assert graph_etag.startswith('"ready-analysis-graph-')
+
+    cached_graph = client.get(
+        "/analyses/ready-analysis/graph",
+        headers={"If-None-Match": graph_etag},
+    )
+    assert cached_graph.status_code == 304
+    assert cached_graph.text == ""
+    assert cached_graph.headers["etag"] == graph_etag
+
+    first_file = client.get("/analyses/ready-analysis/files/manage.py")
+    assert first_file.status_code == 200
+    file_etag = first_file.headers["etag"]
+
+    cached_file = client.get(
+        "/analyses/ready-analysis/files/manage.py",
+        headers={"If-None-Match": f"W/{file_etag}"},
+    )
+    assert cached_file.status_code == 304

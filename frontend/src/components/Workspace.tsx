@@ -6,6 +6,7 @@ import type {SearchState} from '../state/analysisStore.ts';
 import {useAnalysisStore} from '../state/analysisStoreContext.ts';
 import {hasSeen, markSeen} from '../utils/seenFlags.ts';
 import {subgraph} from '../utils/subgraph.ts';
+import {loadViewState, saveViewState} from '../utils/workspaceStorage.ts';
 import {ErrorBanner} from './ErrorBanner.tsx';
 import type {ReadingOrderInfo} from './FileDetailPanel.tsx';
 import {FileDetailPanel} from './FileDetailPanel.tsx';
@@ -51,18 +52,35 @@ export function Workspace({analysis}: {analysis: Analysis}) {
   const runSearch = useAnalysisStore(state => state.runSearch);
   const clearSearch = useAnalysisStore(state => state.clearSearch);
   const expired = useAnalysisStore(state => state.expired);
-  const [tab, setTab] = useState<SidebarTab>('overview');
+  const [savedView] = useState(() => loadViewState(analysis.repoUrl));
+  const [tab, setTab] = useState<SidebarTab>(savedView?.tab ?? 'overview');
   const [scopePaths, setScopePaths] = useState<ReadonlySet<string> | null>(
-    null,
+    () => (savedView?.scopePaths ? new Set(savedView.scopePaths) : null),
+  );
+  const changeTab = useCallback(
+    (nextTab: SidebarTab) => {
+      setTab(nextTab);
+      saveViewState(analysis.repoUrl, {tab: nextTab});
+    },
+    [analysis.repoUrl],
+  );
+  const changeScopePaths = useCallback(
+    (nextScope: ReadonlySet<string> | null) => {
+      setScopePaths(nextScope);
+      saveViewState(analysis.repoUrl, {
+        scopePaths: nextScope === null ? null : [...nextScope],
+      });
+    },
+    [analysis.repoUrl],
   );
   const selectWorkspaceFile = useCallback(
     (path: string | null) => {
       if (path !== null && scopePaths !== null && !scopePaths.has(path)) {
-        setScopePaths(null);
+        changeScopePaths(null);
       }
       selectFile(path);
     },
-    [scopePaths, selectFile],
+    [scopePaths, changeScopePaths, selectFile],
   );
   // The tour opens by itself the first time a viewer reaches a workspace.
   const [touring, setTouring] = useState(() => !hasSeen('workspace-tour'));
@@ -108,14 +126,14 @@ export function Workspace({analysis}: {analysis: Analysis}) {
             disabled={expired}
             searching={search?.pendingQuery != null}
             onSearch={query => {
-              setScopePaths(null);
+              changeScopePaths(null);
               selectFile(null);
-              setTab('reading');
+              changeTab('reading');
               runSearch(query);
             }}
             onClear={() => {
-              setScopePaths(null);
-              setTab('files');
+              changeScopePaths(null);
+              changeTab('files');
               clearSearch();
             }}
           />
@@ -135,25 +153,26 @@ export function Workspace({analysis}: {analysis: Analysis}) {
         <Sidebar
           analysisId={analysis.analysisId}
           tab={search === null && tab === 'reading' ? 'overview' : tab}
-          onTabChange={setTab}
+          onTabChange={changeTab}
           readingAvailable={search !== null}
           readingCount={search?.query === '' ? null : (search?.total ?? null)}
           sourceUrlFor={sourceUrlFor}
           onSelectFile={selectWorkspaceFile}
           onSelectArea={files => {
-            setScopePaths(new Set(files));
+            changeScopePaths(new Set(files));
             const firstPath = files[0];
             if (firstPath !== undefined) selectWorkspaceFile(firstPath);
           }}
         />
 
         <MapPanel
+          repoUrl={analysis.repoUrl}
           graph={graph}
           selectedPath={selectedPath}
           selectionRevision={selectionRevision}
           matchedPaths={matchedPaths}
           scopePaths={scopePaths}
-          onClearScope={() => setScopePaths(null)}
+          onClearScope={() => changeScopePaths(null)}
         />
 
         <div className="workspace__detail" data-tour="detail">
@@ -468,6 +487,7 @@ const FAILED_MESSAGE =
 
 /** The dependency map, or the list view when the map is not available. */
 function MapPanel({
+  repoUrl,
   graph,
   selectedPath,
   selectionRevision,
@@ -475,6 +495,7 @@ function MapPanel({
   scopePaths,
   onClearScope,
 }: {
+  repoUrl: string;
   graph: DependencyGraph;
   selectedPath: string | null;
   selectionRevision: number;
@@ -488,13 +509,32 @@ function MapPanel({
   const collapseAllModules = useAnalysisStore(
     state => state.collapseAllModules,
   );
+  const [savedView] = useState(() => loadViewState(repoUrl));
   // 'list' when chosen by the user; a message when the map failed.
   const [view, setView] = useState<'map' | 'list'>('map');
   // During a search the map shows only the matches unless the user asks
   // for everything (user test feedback, #92).
-  const [matchesOnly, setMatchesOnly] = useState(true);
+  const [matchesOnly, setMatchesOnly] = useState(
+    savedView?.matchesOnly ?? true,
+  );
   // A selection greys out unrelated files; this hides them instead.
-  const [hideUnrelated, setHideUnrelated] = useState(false);
+  const [hideUnrelated, setHideUnrelated] = useState(
+    savedView?.hideUnrelated ?? false,
+  );
+  const changeMatchesOnly = useCallback(
+    (next: boolean) => {
+      setMatchesOnly(next);
+      saveViewState(repoUrl, {matchesOnly: next});
+    },
+    [repoUrl],
+  );
+  const changeHideUnrelated = useCallback(
+    (next: boolean) => {
+      setHideUnrelated(next);
+      saveViewState(repoUrl, {hideUnrelated: next});
+    },
+    [repoUrl],
+  );
   const [fallbackMessage, setFallbackMessage] = useState<string | null>(null);
   const onTooSlow = useCallback(() => setFallbackMessage(TOO_SLOW_MESSAGE), []);
   const onMapError = useCallback(() => setFallbackMessage(FAILED_MESSAGE), []);
@@ -537,7 +577,7 @@ function MapPanel({
           <input
             type="checkbox"
             checked={matchesOnly}
-            onChange={event => setMatchesOnly(event.target.checked)}
+            onChange={event => changeMatchesOnly(event.target.checked)}
           />
           Only show matches
         </label>
@@ -580,9 +620,9 @@ function MapPanel({
               selectionRevision={selectionRevision}
               matchedPaths={matchedPaths}
               matchesOnly={matchesOnly}
-              onMatchesOnlyChange={setMatchesOnly}
+              onMatchesOnlyChange={changeMatchesOnly}
               hideUnrelated={hideUnrelated}
-              onHideUnrelatedChange={setHideUnrelated}
+              onHideUnrelatedChange={changeHideUnrelated}
               onSelectFile={selectFile}
               onToggleModule={toggleModule}
               onCollapseAll={collapseAllModules}

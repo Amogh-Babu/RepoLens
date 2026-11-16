@@ -326,3 +326,22 @@ def test_cancelled_analysis_is_never_overwritten(tmp_path: Path) -> None:
     analysis = client.get(f"/analyses/{analysis_id}").json()
     assert analysis["status"] == "cancelled"
     assert source.destinations == []
+
+
+def test_concurrent_post_analyses_share_one_in_flight_analysis(
+    tmp_path: Path,
+) -> None:
+    executor = ManualExecutor(run_immediately=False)
+    source = FakeSource()
+    client = _client(tmp_path, source=source, executor=executor)
+
+    first = client.post("/analyses", json={"url": REPO_URL}).json()
+    second = client.post("/analyses", json={"url": f"{REPO_URL}.git"}).json()
+
+    assert first["status"] == "queued"
+    assert second == first
+    assert len(executor.pending) == 1
+
+    executor.run_pending()
+    assert len(source.destinations) == 1
+    assert client.get(f"/analyses/{first['analysisId']}").json()["status"] == "completed"
