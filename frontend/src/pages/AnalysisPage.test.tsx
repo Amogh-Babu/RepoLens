@@ -342,7 +342,9 @@ describe('AnalysisPage search', () => {
       'tests',
     );
     expect(
-      await screen.findByText('Prioritized for tests.', {exact: false}),
+      await screen.findByText('Ranked higher: a test or example file.', {
+        exact: false,
+      }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole('heading', {name: 'Reading order for “login”'}),

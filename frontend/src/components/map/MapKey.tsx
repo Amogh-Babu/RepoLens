@@ -61,14 +61,13 @@ export function MapKey({id, onClose}: MapKeyProps) {
       <div className="map-key__filters">
         <h3>Map filters</h3>
         <p>
-          <strong>Only show matches</strong> shows search results across the
-          repository, even when they are not connected to the selected file.
+          <strong>Only show matches</strong>: during a search, show only the
+          matching files.
         </p>
         <p>
-          <strong>Hide unrelated files</strong> shows the selected file and its
-          direct imports and importers. During a search, only connections that
-          match the search are shown; the selected file stays visible. Turn it
-          off to see all search matches.
+          <strong>Hide unrelated files</strong>: with a file selected, show only
+          it and the files it imports or is imported by. Without it, the rest
+          are greyed out.
         </p>
       </div>
     </section>

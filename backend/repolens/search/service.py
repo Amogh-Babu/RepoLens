@@ -6,6 +6,7 @@ from dataclasses import replace
 from typing import Literal
 
 from repolens.search.embedding import (
+    QUERY_MARKER,
     Embedder,
     HashEmbedder,
     cosine_similarity,
@@ -39,6 +40,13 @@ _KEYWORD_RRF_WEIGHT = 8
 _SEMANTIC_RRF_WEIGHT = 1
 _SEMANTIC_RESULT_LIMIT = 100
 SearchIntent = Literal["implementation", "configuration", "tests"]
+# How much a reading goal moves the files it is about, up or down.
+_GOAL_BOOST = 2.0
+_TEST_PARTS = frozenset({"test", "tests", "spec", "specs", "example", "examples"})
+_CONFIG_PARTS = frozenset({
+    "config", "configuration", "settings", "deploy", "deployment",
+    "dockerfile", "compose", "helm", "env",
+})
 
 # Docstrings and comments are sentences, so a short term would match inside
 # almost every one of them ("i" in "this", "in" in "using"). In these fields a
@@ -155,12 +163,11 @@ class SearchService:
                 score += dependency_count * 0.0001
             else:
                 score = keyword_scores[path] + dependency_count * 1.5
-            intent_match = self._matches_intent(document.path, intent)
-            if intent_match:
-                score *= 2
+            factor, goal_note = self._reading_goal(document.path, intent)
+            score *= factor
             reason = self._build_reason(matches, dependency_count)
-            if intent_match:
-                reason += f" Prioritized for {intent}."
+            if goal_note is not None:
+                reason += f" {goal_note}"
             candidates.append((document, matches, score))
             ranked.append(
                 RankedFile(
@@ -185,26 +192,29 @@ class SearchService:
         )
 
     @staticmethod
-    def _matches_intent(path: str, intent: SearchIntent | None) -> bool:
+    def _reading_goal(
+        path: str, intent: SearchIntent | None
+    ) -> tuple[float, str | None]:
+        """How the reader's goal changes a file's score, and why.
+
+        "tests" and "configuration" rank those files higher. "implementation"
+        ranks test and configuration files lower instead of boosting every
+        other file, so only the files it moves get a note.
+        """
+        if intent is None:
+            return 1.0, None
         parts = re.split(r"[/_.-]+", path.casefold())
-        is_test = any(
-            part in {"test", "tests", "spec", "specs", "example", "examples"}
-            for part in parts
-        )
-        is_config = any(
-            part in {
-                "config", "configuration", "settings", "deploy", "deployment",
-                "dockerfile", "compose", "helm", "env",
-            }
-            for part in parts
-        )
-        if intent == "tests":
-            return is_test
-        if intent == "configuration":
-            return is_config and not is_test
-        if intent == "implementation":
-            return not is_test and not is_config
-        return False
+        is_test = any(part in _TEST_PARTS for part in parts)
+        is_config = not is_test and any(part in _CONFIG_PARTS for part in parts)
+        if intent == "tests" and is_test:
+            return _GOAL_BOOST, "Ranked higher: a test or example file."
+        if intent == "configuration" and is_config:
+            return _GOAL_BOOST, "Ranked higher: a configuration file."
+        if intent == "implementation" and is_test:
+            return 1 / _GOAL_BOOST, "Ranked lower: a test or example file."
+        if intent == "implementation" and is_config:
+            return 1 / _GOAL_BOOST, "Ranked lower: a configuration file."
+        return 1.0, None
 
     def _semantic_scores(
         self,
@@ -217,7 +227,7 @@ class SearchService:
             return {}
         try:
             embeddings = get_embeddings(analysis_id)
-            query_vector = self._embedder.embed([f"query: {query}"])[0]
+            query_vector = self._embedder.embed([f"{QUERY_MARKER}{query}"])[0]
         except Exception:
             _LOGGER.warning(
                 "Semantic search unavailable for analysis %s", analysis_id, exc_info=True

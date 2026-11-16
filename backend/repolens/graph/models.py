@@ -144,7 +144,9 @@ class AnalysisRecord:
     counts: AnalysisCounts = AnalysisCounts()
     error: AnalysisErrorRecord | None = None
     files: tuple[AnalyzedFile, ...] = ()
-    embeddings: tuple[FileEmbeddingRecord, ...] = ()
+    # None: not built yet, so saving builds them. An empty tuple: built,
+    # with nothing to embed or with semantic indexing unavailable.
+    embeddings: tuple[FileEmbeddingRecord, ...] | None = None
 
 
 @dataclass(frozen=True)

@@ -164,6 +164,7 @@ First-version implementations of all major system components (**React Frontend**
 Because this is an initial end-to-end prototype, several areas are still being hardened and may exhibit bugs:
 * **Import Resolution Edge Cases**: Non-standard `sys.path` manipulations, dynamic imports, and complex multi-package/namespace repository layouts may classify some internal imports as `unresolved` or `external`.
 * **Large Repository Performance & Layout**: Repositories approaching the 1,000-file cap or containing dense cross-module import graphs are still being benchmarked against the 3-minute ingestion target and 2-second map layout target.
+* **Semantic Indexing Time**: Embedding files for semantic search is the slowest step. Measured on a 12-core CPU, it takes about 0.3 seconds per file for typical project code and about 0.5 seconds per file for docstring-heavy code (Python standard library). A repository near the 1,000-file cap therefore spends roughly 5 to 8 minutes indexing, over the 3-minute target. If the embedding model cannot load, the analysis still completes and search uses keywords only.
 * **Search Ranking Calibration**: Field weights and dependency tie-breaking heuristics are functional but still undergoing precision evaluation and tuning against hand-labeled queries.
 * **Synchronous Pipeline Execution**: Analysis currently runs within the request lifecycle; concurrent request deduplication and background progress streaming are still being refined.
 

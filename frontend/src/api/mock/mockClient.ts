@@ -595,6 +595,47 @@ function moduleName(moduleId: string): string {
  * more evidence rank higher, and a file that other matching files import is
  * moved ahead of them, so the list reads foundations first.
  */
+const TEST_PARTS = ['test', 'tests', 'spec', 'specs', 'example', 'examples'];
+const CONFIG_PARTS = [
+  'config',
+  'configuration',
+  'settings',
+  'deploy',
+  'deployment',
+  'dockerfile',
+  'compose',
+  'helm',
+  'env',
+];
+
+/**
+ * Same rule and wording as the backend: "tests" and "configuration" rank
+ * those files higher; "implementation" ranks test and configuration files
+ * lower. Only files the goal moves get a note.
+ */
+function readingGoal(
+  path: string,
+  intent?: SearchIntent,
+): {factor: number; note: string | null} {
+  if (intent === undefined) return {factor: 1, note: null};
+  const parts = path.toLowerCase().split(/[/_.-]+/);
+  const isTest = parts.some(part => TEST_PARTS.includes(part));
+  const isConfig = !isTest && parts.some(part => CONFIG_PARTS.includes(part));
+  if (intent === 'tests' && isTest) {
+    return {factor: 2, note: 'Ranked higher: a test or example file.'};
+  }
+  if (intent === 'configuration' && isConfig) {
+    return {factor: 2, note: 'Ranked higher: a configuration file.'};
+  }
+  if (intent === 'implementation' && isTest) {
+    return {factor: 0.5, note: 'Ranked lower: a test or example file.'};
+  }
+  if (intent === 'implementation' && isConfig) {
+    return {factor: 0.5, note: 'Ranked lower: a configuration file.'};
+  }
+  return {factor: 1, note: null};
+}
+
 function rankFiles(
   files: FixtureFile[],
   terms: string[],
@@ -620,34 +661,12 @@ function rankFiles(
         matchedPaths.has(other.path) &&
         other.imports.some(imp => imp.targetPath === candidate.file.path),
     ).length;
-    const parts = candidate.file.path.toLowerCase().split(/[/_.-]+/);
-    const isTest = parts.some(part =>
-      ['test', 'tests', 'spec', 'specs', 'example', 'examples'].includes(part),
-    );
-    const isConfig = parts.some(part =>
-      [
-        'config',
-        'configuration',
-        'settings',
-        'deploy',
-        'deployment',
-        'dockerfile',
-        'compose',
-        'helm',
-        'env',
-      ].includes(part),
-    );
-    const prioritized =
-      intent === 'tests'
-        ? isTest
-        : intent === 'configuration'
-          ? isConfig && !isTest
-          : intent === 'implementation' && !isTest && !isConfig;
+    const goal = readingGoal(candidate.file.path, intent);
     return {
       ...candidate,
       importers,
-      prioritized,
-      score: (candidate.score + importers * 5) * (prioritized ? 2 : 1),
+      goalNote: goal.note,
+      score: (candidate.score + importers * 5) * goal.factor,
     };
   });
 
@@ -661,7 +680,7 @@ function rankFiles(
     score: entry.score,
     reason:
       buildReason(entry.matches, entry.importers) +
-      (entry.prioritized ? ` Prioritized for ${intent}.` : ''),
+      (entry.goalNote === null ? '' : ` ${entry.goalNote}`),
     orderReason: buildOrderReason(order, index),
     matches: entry.matches,
   }));

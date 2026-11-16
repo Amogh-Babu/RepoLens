@@ -13,19 +13,18 @@ import type {ReactNode} from 'react';
 import {useEffect, useId, useMemo, useRef, useState} from 'react';
 import type {DependencyGraph} from '../../api/types.ts';
 import {loadKeyOpen, saveKeyOpen} from '../../utils/mapKeyPreference.ts';
+import {neighborhood, subgraph} from '../../utils/subgraph.ts';
 import type {MapActions} from './mapActions.ts';
 import {MapActionsContext} from './mapActions.ts';
 import {MapKey} from './MapKey.tsx';
 import type {MapEdge, MapHighlight, MapNode} from './mapLayout.ts';
 import {
   fileNodeId,
-  focusGraph,
   groupNodeId,
   highlightAround,
   layoutMap,
   moduleNodeId,
   moduleIndex,
-  neighborhood,
   unitFor,
 } from './mapLayout.ts';
 import {FileNode, ModuleGroupNode, ModuleNode} from './MapNodes.tsx';
@@ -61,8 +60,8 @@ interface DependencyMapProps {
   onMatchesOnlyChange?: (matchesOnly: boolean) => void;
   /**
    * With a file selected, draw only it and the files it imports or is
-   * imported by, instead of greying out the rest. During a search, those
-   * connections must also match the search.
+   * imported by, instead of greying out the rest. Takes over from
+   * `matchesOnly` while a file is selected.
    */
   hideUnrelated?: boolean;
   onHideUnrelatedChange?: (hideUnrelated: boolean) => void;
@@ -118,16 +117,7 @@ function MapCanvas({
   // so selecting another match does not lay the map out again.
   let focusKey: string | null = null;
   if (hidingUnrelated && selectedPath !== null) {
-    const neighbors = neighborhood(graph, selectedPath);
-    focusKey = [...neighbors]
-      .filter(
-        path =>
-          path === selectedPath ||
-          matchedPaths === null ||
-          matchedPaths.has(path),
-      )
-      .sort()
-      .join('\n');
+    focusKey = [...neighborhood(graph, selectedPath)].sort().join('\n');
   } else if (matchesOnly && searching) {
     focusKey = [
       ...matchedPaths,
@@ -146,7 +136,7 @@ function MapCanvas({
     () =>
       focusKey === null
         ? graph
-        : focusGraph(graph, new Set(focusKey.split('\n')), center),
+        : subgraph(graph, new Set(focusKey.split('\n')), center),
     [graph, focusKey, center],
   );
   // Every module stays open when focused, so each match is its own node.
@@ -428,7 +418,7 @@ function MapCanvas({
           {searching && onMatchesOnlyChange !== undefined && (
             <label
               className="map__toggle"
-              title="Show all search matches, including files not directly connected to the selected file"
+              title="Show only the files that match the search"
             >
               <input
                 type="checkbox"
@@ -441,7 +431,7 @@ function MapCanvas({
           {selectedPath !== null && onHideUnrelatedChange !== undefined && (
             <label
               className="map__toggle"
-              title="Show the selected file and its direct imports and importers; during a search, show only connections that match"
+              title="Show only the selected file and the files it imports or is imported by"
             >
               <input
                 type="checkbox"
@@ -467,14 +457,6 @@ function MapCanvas({
           <p className="map__selection-hint" role="status">
             Inside <code>{selectedModuleId}/</code> (collapsed). Expand to see{' '}
             <code>{selectedPath}</code>.
-          </p>
-        )}
-        {hidingUnrelated && searching && (
-          <p className="map__selection-hint" role="status">
-            {shownGraph.files.length === 1
-              ? 'No direct connections match this search.'
-              : 'Showing direct connections that match this search.'}{' '}
-            Turn off Hide unrelated files to see all search matches.
           </p>
         )}
         <div className="map__canvas">

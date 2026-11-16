@@ -47,24 +47,36 @@ class SearchServiceTest(unittest.TestCase):
         self.index = InMemorySearchIndex({"analysis-1": self.documents})
         self.service = SearchService(self.index)
 
-    def test_fastembed_prefixes_queries_only_once(self) -> None:
+    def test_fastembed_uses_the_bge_query_instruction_and_bare_passages(self) -> None:
         class FakeModel:
             texts = []
 
             def embed(self, texts):
-                self.texts = texts
-                return [(1.0,)] * len(texts)
+                self.texts = list(texts)
+                # A vector that says which text it came from.
+                return [(float(len(text)),) for text in texts]
 
+        query = (
+            "Represent this sentence for searching relevant passages: "
+            "production pipeline"
+        )
         model = FakeModel()
         embedder = FastEmbedEmbedder()
         embedder._model = model
 
-        embedder.embed(["query: production pipeline", "pipeline implementation"])
-
-        self.assertEqual(
-            ["query: production pipeline", "passage: pipeline implementation"],
-            model.texts,
+        vectors = embedder.embed(
+            ["query: production pipeline", "pipeline implementation", "app"]
         )
+
+        # Shortest first, so each batch is padded to similar lengths...
+        self.assertEqual(["app", "pipeline implementation", query], model.texts)
+        # ...but the vectors come back in input order.
+        self.assertEqual(
+            [(float(len(query)),), (23.0,), (3.0,)],
+            vectors,
+        )
+        # Vectors stored with the earlier "passage: " format are not reused.
+        self.assertNotEqual("BAAI/bge-small-en-v1.5", embedder.model_id)
 
     def test_matches_names_symbols_references_and_comments(self) -> None:
         page = self.service.search("analysis-1", "authentication login users")

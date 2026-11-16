@@ -5,6 +5,7 @@ import type {Analysis, DependencyGraph} from '../api/types.ts';
 import type {SearchState} from '../state/analysisStore.ts';
 import {useAnalysisStore} from '../state/analysisStoreContext.ts';
 import {hasSeen, markSeen} from '../utils/seenFlags.ts';
+import {subgraph} from '../utils/subgraph.ts';
 import {ErrorBanner} from './ErrorBanner.tsx';
 import type {ReadingOrderInfo} from './FileDetailPanel.tsx';
 import {FileDetailPanel} from './FileDetailPanel.tsx';
@@ -243,16 +244,10 @@ const TOUR_STEPS: readonly TourStep[] = [
           toolbar explains the colors.
         </p>
         <p>
-          <strong>Only show matches</strong> shows all search results, including
-          files that are not directly connected to the selected file. Untick it
-          to see the whole repository.
-        </p>
-        <p>
-          <strong>Hide unrelated files</strong> shows the selected file and its
-          direct imports and importers. During a search, it keeps only those
-          connections that match the search, even if Only show matches is off.
-          The selected file remains visible. Turn it off to see all search
-          matches.
+          During a search the map shows only the matching files. Untick
+          <strong> Only show matches</strong> to see everything again. With a
+          file selected, the files it is not connected to are greyed out; tick
+          <strong> Hide unrelated files</strong> to hide them.
         </p>
       </>
     ),
@@ -504,45 +499,17 @@ function MapPanel({
   const onTooSlow = useCallback(() => setFallbackMessage(TOO_SLOW_MESSAGE), []);
   const onMapError = useCallback(() => setFallbackMessage(FAILED_MESSAGE), []);
   const showList = view === 'list' || fallbackMessage !== null;
-  const visibleGraph = useMemo(() => {
-    if (scopePaths === null) return graph;
-    const files = graph.files.filter(file => scopePaths.has(file.path));
-    const paths = new Set(files.map(file => file.path));
-    const modules = graph.modules
-      .map(module => ({
-        ...module,
-        filePaths: module.filePaths.filter(path => paths.has(path)),
-      }))
-      .filter(module => module.filePaths.length > 0);
-    return {
-      ...graph,
-      files,
-      modules,
-      edges: graph.edges.filter(
-        edge => paths.has(edge.source) && paths.has(edge.target),
-      ),
-    };
-  }, [graph, scopePaths]);
-  const listGraph = useMemo(() => {
-    if (!matchesOnly || matchedPaths === null) return visibleGraph;
-    const files = visibleGraph.files.filter(file =>
-      matchedPaths.has(file.path),
-    );
-    const paths = new Set(files.map(file => file.path));
-    return {
-      ...visibleGraph,
-      files,
-      modules: visibleGraph.modules
-        .map(module => ({
-          ...module,
-          filePaths: module.filePaths.filter(path => paths.has(path)),
-        }))
-        .filter(module => module.filePaths.length > 0),
-      edges: visibleGraph.edges.filter(
-        edge => paths.has(edge.source) && paths.has(edge.target),
-      ),
-    };
-  }, [visibleGraph, matchesOnly, matchedPaths]);
+  const visibleGraph = useMemo(
+    () => (scopePaths === null ? graph : subgraph(graph, scopePaths)),
+    [graph, scopePaths],
+  );
+  const listGraph = useMemo(
+    () =>
+      !matchesOnly || matchedPaths === null
+        ? visibleGraph
+        : subgraph(visibleGraph, matchedPaths),
+    [visibleGraph, matchesOnly, matchedPaths],
+  );
 
   const viewSwitch = (
     <div className="workspace__map-switch" role="group" aria-label="View">

@@ -188,6 +188,7 @@ class PipelineAnalysisRunner:
 
         if not store.update_stage(analysis_id, "indexing"):
             return
+        # Falls back to no vectors (keyword search only) if the model fails.
         embeddings = store.build_embeddings(files)
 
         if not store.update_stage(analysis_id, "storing"):

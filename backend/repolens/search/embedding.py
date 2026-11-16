@@ -14,6 +14,12 @@ Embedding = tuple[float, ...]
 _TOKEN_PATTERN = re.compile(r"[A-Za-z0-9]+")
 _CAMEL_BOUNDARY = re.compile(r"([a-z0-9])([A-Z])")
 MODEL_NAME = "BAAI/bge-small-en-v1.5"
+# Callers mark a search query by starting it with this; anything else is a
+# passage from the repository.
+QUERY_MARKER = "query: "
+# BGE's own instruction for short retrieval queries. BGE embeds passages as
+# they are, with no prefix.
+_BGE_QUERY_INSTRUCTION = "Represent this sentence for searching relevant passages: "
 _MAX_CHUNK_WORDS = 160
 _MAX_CHUNKS_PER_FILE = 64
 
@@ -37,7 +43,9 @@ class FastEmbedEmbedder:
 
     @property
     def model_id(self) -> str:
-        return MODEL_NAME
+        # Names the input format too: vectors stored under an earlier format
+        # (with "passage: " prefixes) are not compared with these.
+        return f"{MODEL_NAME}+bge-query-instruction"
 
     def embed(self, texts: Sequence[str]) -> list[Embedding]:
         if self._model is None:
@@ -49,14 +57,24 @@ class FastEmbedEmbedder:
                         model_name=MODEL_NAME,
                         cache_dir=self._cache_dir,
                     )
-        passages = [
-            text if text.startswith("query: ") else f"passage: {text}"
+        inputs = [
+            _BGE_QUERY_INSTRUCTION + text.removeprefix(QUERY_MARKER)
+            if text.startswith(QUERY_MARKER)
+            else text
             for text in texts
         ]
-        return [
-            tuple(float(value) for value in vector)
-            for vector in self._model.embed(passages)
-        ]
+        # The model pads every text in a batch to the batch's longest one.
+        # Chunks range from a two-word name to a full paragraph, so in input
+        # order nearly every batch is padded to paragraph length. Embedding
+        # them shortest first keeps similar lengths together, then the
+        # vectors are put back in input order.
+        order = sorted(range(len(inputs)), key=lambda index: len(inputs[index]))
+        vectors: list[Embedding] = [()] * len(inputs)
+        for index, vector in zip(
+            order, self._model.embed([inputs[index] for index in order]), strict=True
+        ):
+            vectors[index] = tuple(float(value) for value in vector)
+        return vectors
 
 
 class HashEmbedder:

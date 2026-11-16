@@ -4,6 +4,7 @@ from collections import defaultdict
 from collections.abc import Callable
 from datetime import datetime, timezone
 import functools
+import logging
 import struct
 import sqlite3
 import threading
@@ -35,6 +36,8 @@ from repolens.search.embedding import (
 from repolens.search.models import SearchDocument
 from repolens.search.ports import AnalysisUnavailableError
 
+
+_LOGGER = logging.getLogger(__name__)
 
 DEFAULT_TTL_SECONDS = 24 * 60 * 60
 
@@ -232,7 +235,13 @@ class SqliteGraphStore:
     def build_embeddings(
         self, files: tuple[AnalyzedFile, ...]
     ) -> tuple[FileEmbeddingRecord, ...]:
-        """Create bounded search vectors for parsed files."""
+        """Create bounded search vectors for parsed files.
+
+        Semantic search is an extra: if the embedding model cannot load (no
+        network for its first download, a broken cache) or fails, no vectors
+        are made and search uses keywords only. The map, overview and
+        keyword search still work.
+        """
         if self.embedder is None:
             return ()
         searchable = [file for file in files if file.parsed]
@@ -260,9 +269,20 @@ class SqliteGraphStore:
             for file in searchable
             for index, text in enumerate(document_chunks(documents[file.path]))
         ]
-        vectors = self.embedder.embed([text for _, _, text in chunks])
-        if len(vectors) != len(chunks):
-            raise ValueError("The embedder returned a different number of vectors than chunks.")
+        if not chunks:
+            return ()
+        try:
+            vectors = self.embedder.embed([text for _, _, text in chunks])
+            if len(vectors) != len(chunks):
+                raise ValueError(
+                    "The embedder returned a different number of vectors than chunks."
+                )
+        except Exception:
+            _LOGGER.warning(
+                "Semantic indexing failed; search will use keywords only",
+                exc_info=True,
+            )
+            return ()
         return tuple(
             FileEmbeddingRecord(
                 path=path,
@@ -292,7 +312,11 @@ class SqliteGraphStore:
         excluded_count = analysis.counts.excluded
         repo_url = normalize_repo_url(analysis.repo)
 
-        embedding_records = analysis.embeddings or self.build_embeddings(analysis.files)
+        embedding_records = (
+            analysis.embeddings
+            if analysis.embeddings is not None
+            else self.build_embeddings(analysis.files)
+        )
         vectors_by_path: dict[str, list[FileEmbeddingRecord]] = defaultdict(list)
         for embedding in embedding_records:
             vectors_by_path[embedding.path].append(embedding)

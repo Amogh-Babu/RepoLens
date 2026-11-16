@@ -61,23 +61,55 @@ def test_repeated_mentions_do_not_outweigh_a_definition(make_search_service):
     assert [result.path for result in page.results] == ["src/core.py", "src/noisy.py"]
 
 
-@pytest.mark.parametrize(
-    ("intent", "expected"),
-    [("implementation", "app/pipeline.py"), ("tests", "tests/pipeline.py"),
-     ("configuration", "config/pipeline.py")],
-)
-def test_reading_goal_prioritizes_matching_files(make_search_service, intent, expected):
-    service = make_search_service(
+def _goal_service(make_search_service):
+    return make_search_service(
         SearchDocument(path="app/pipeline.py"),
         SearchDocument(path="tests/pipeline.py"),
         SearchDocument(path="config/pipeline.py"),
     )
 
-    page = service.search("analysis-1", "pipeline", intent=intent, limit=1)
+
+@pytest.mark.parametrize(
+    ("intent", "expected", "note"),
+    [
+        ("tests", "tests/pipeline.py", "Ranked higher: a test or example file."),
+        ("configuration", "config/pipeline.py", "Ranked higher: a configuration file."),
+    ],
+)
+def test_a_reading_goal_ranks_its_files_higher(
+    make_search_service, intent, expected, note
+):
+    page = _goal_service(make_search_service).search(
+        "analysis-1", "pipeline", intent=intent, limit=1
+    )
 
     assert page.results[0].path == expected
-    assert f"Prioritized for {intent}" in page.results[0].reason
+    assert page.results[0].reason.endswith(note)
     assert len(page.matched_paths) == 3
+
+
+def test_the_implementation_goal_ranks_tests_and_config_lower(make_search_service):
+    page = _goal_service(make_search_service).search(
+        "analysis-1", "pipeline", intent="implementation"
+    )
+    by_path = {result.path: result for result in page.results}
+
+    assert max(page.results, key=lambda result: result.score).path == "app/pipeline.py"
+    # Only the files the goal moved say so.
+    assert "Ranked" not in by_path["app/pipeline.py"].reason
+    assert by_path["tests/pipeline.py"].reason.endswith(
+        "Ranked lower: a test or example file."
+    )
+    assert by_path["config/pipeline.py"].reason.endswith(
+        "Ranked lower: a configuration file."
+    )
+
+
+def test_no_reading_goal_leaves_scores_and_reasons_alone(make_search_service):
+    page = _goal_service(make_search_service).search("analysis-1", "pipeline")
+
+    assert len({result.score for result in page.results}) == 1
+    assert all("Ranked" not in result.reason for result in page.results)
 
 
 @pytest.mark.parametrize("bad_value", [True, 1.0, "1"])
