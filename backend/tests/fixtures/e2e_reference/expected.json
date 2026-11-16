@@ -266,5 +266,38 @@
         "Comes after bookshop/auth/login.py, which it imports."
       ]
     }
-  ]
+  ],
+  "overview": {
+    "entryPoints": ["bookshop/app.py", "manage.py"],
+    "categories": {
+      "bookshop/__init__.py": "source",
+      "bookshop/app.py": "source",
+      "bookshop/auth/__init__.py": "source",
+      "bookshop/auth/login.py": "source",
+      "bookshop/auth/tokens.py": "source",
+      "bookshop/catalog/__init__.py": "source",
+      "bookshop/catalog/models.py": "source",
+      "bookshop/catalog/search.py": "source",
+      "bookshop/config.py": "source",
+      "bookshop/legacy/payments.py": "source",
+      "bookshop/orders/__init__.py": "source",
+      "bookshop/orders/checkout.py": "source",
+      "manage.py": "source",
+      "tests/test_checkout.py": "test"
+    },
+    "tour": [
+      "bookshop/config.py",
+      "bookshop/auth/tokens.py",
+      "bookshop/catalog/models.py",
+      "bookshop/auth/login.py",
+      "bookshop/auth/__init__.py",
+      "bookshop/catalog/search.py",
+      "bookshop/orders/checkout.py",
+      "bookshop/app.py",
+      "manage.py",
+      "bookshop/__init__.py",
+      "bookshop/catalog/__init__.py",
+      "bookshop/legacy/payments.py"
+    ]
+  }
 }

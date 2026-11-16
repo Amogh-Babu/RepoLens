@@ -20,6 +20,13 @@
   font-size: 0.8125rem;
 }
 
+.overview__tour-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 .overview__section {
   display: grid;
   gap: 6px;

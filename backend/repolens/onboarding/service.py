@@ -12,6 +12,39 @@ from repolens.search.models import SearchDocument
 _ENTRY_NAMES = frozenset(
     {"__main__.py", "main.py", "manage.py", "app.py", "asgi.py", "wsgi.py", "cli.py"}
 )
+_APP_FACTORY_SYMBOLS = frozenset(
+    {
+        "create_app",
+        "make_app",
+        "build_app",
+        "init_app",
+        "get_application",
+        "get_wsgi_application",
+        "get_asgi_application",
+    }
+)
+_APP_INSTANCE_SYMBOLS = frozenset({"app", "application", "server", "api", "cli"})
+_MAIN_FUNCTION_SYMBOLS = frozenset({"main", "cli", "main_cli", "entrypoint"})
+_FRAMEWORK_MODULES = frozenset(
+    {
+        "fastapi",
+        "flask",
+        "typer",
+        "click",
+        "argparse",
+        "starlette",
+        "uvicorn",
+        "gunicorn",
+        "django",
+        "sanic",
+        "quart",
+        "litestar",
+        "aiohttp",
+        "tornado",
+        "falcon",
+        "bottle",
+    }
+)
 _TEST_DIRS = frozenset({"test", "tests"})
 _TOOL_DIRS = frozenset({"script", "scripts", "tool", "tools"})
 _DOC_DIRS = frozenset({"doc", "docs", "documentation"})
@@ -59,19 +92,23 @@ def build_overview(
         dependencies[edge.source].add(edge.target)
         dependents[edge.target].add(edge.source)
 
-    entry_paths = [
-        file.path
-        for file in graph.files
-        if PurePosixPath(file.path).name.casefold() in _ENTRY_NAMES
-    ]
-    entry_paths.sort(key=lambda path: (path.casefold(), path))
+    entry_candidates: list[tuple[str, str]] = []
+    for file in graph.files:
+        if not file.parsed or categories[file.path] in ("test", "docs", "migration", "config"):
+            continue
+        reason = _entry_point_reason(file.path, documents_by_path.get(file.path))
+        if reason is not None:
+            entry_candidates.append((file.path, reason))
+
+    entry_candidates.sort(key=lambda item: (item[0].casefold(), item[0]))
+    entry_paths = [path for path, _ in entry_candidates]
     entry_points = [
         {
             "path": path,
-            "reason": "Conventional application or command entry-point filename.",
+            "reason": reason,
             "summary": _summary(path, documents_by_path, dependents),
         }
-        for path in entry_paths[:12]
+        for path, reason in entry_candidates[:12]
     ]
 
     core_paths = _page_rank(graph, categories)[:8]
@@ -157,6 +194,47 @@ def build_overview(
             for path in sorted(categories, key=str.casefold)
         ],
     }
+
+
+def _entry_point_reason(
+    path: str,
+    document: SearchDocument | None,
+) -> str | None:
+    """Return why `path` is an entry point from its code markers, symbols, or name."""
+    name = PurePosixPath(path).name.casefold()
+    markers = set(document.entry_markers) if document is not None else set()
+    symbols = {sym.casefold() for sym in document.symbols} if document is not None else set()
+    framework_refs = (
+        {
+            ref.lstrip(".").split(".", 1)[0].casefold()
+            for ref in document.references
+            if ref.lstrip(".")
+        }
+        & _FRAMEWORK_MODULES
+        if document is not None
+        else set()
+    )
+
+    if "main_guard" in markers:
+        return "Contains an if __name__ == '__main__' execution block."
+    if "app_instance" in markers or (
+        symbols & _APP_INSTANCE_SYMBOLS and framework_refs
+    ):
+        return "Instantiates the application or command-line runner."
+    if "app_factory" in markers or (symbols & _APP_FACTORY_SYMBOLS):
+        return "Defines an application factory function."
+    if "cli_decorator" in markers or (
+        ( "main_function" in markers or (symbols & _MAIN_FUNCTION_SYMBOLS) )
+        and (name in _ENTRY_NAMES or bool(framework_refs))
+    ):
+        return "Defines a command-line entry point."
+    if "route_decorator" in markers:
+        return "Registers top-level application routes."
+    if "main_function" in markers or (symbols & _MAIN_FUNCTION_SYMBOLS):
+        return "Defines a command-line entry point."
+    if name in _ENTRY_NAMES:
+        return "Conventional application or command entry-point filename."
+    return None
 
 
 def _category(path: str) -> str:

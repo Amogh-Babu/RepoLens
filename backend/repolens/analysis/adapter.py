@@ -60,6 +60,7 @@ def to_analyzed_file(parsed: ParsedFile) -> AnalyzedFile:
             )
             for member in parsed.members
         ),
+        entry_markers=parsed.entry_markers,
     )
 
 

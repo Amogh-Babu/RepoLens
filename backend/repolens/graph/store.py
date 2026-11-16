@@ -366,8 +366,8 @@ class SqliteGraphStore:
                 cursor = self._conn.execute(
                     """
                     INSERT INTO files (
-                        analysis_id, path, module, parsed, line_count
-                    ) VALUES (?, ?, ?, ?, ?);
+                        analysis_id, path, module, parsed, line_count, entry_markers
+                    ) VALUES (?, ?, ?, ?, ?, ?);
                     """,
                     (
                         analysis.analysis_id,
@@ -375,6 +375,7 @@ class SqliteGraphStore:
                         module_id,
                         1 if file_rec.parsed else 0,
                         file_rec.line_count,
+                        ",".join(file_rec.entry_markers),
                     ),
                 )
                 file_id = int(cursor.lastrowid)
@@ -905,7 +906,7 @@ class SqliteGraphStore:
 
         file_rows = self._conn.execute(
             """
-            SELECT id, path
+            SELECT id, path, entry_markers
             FROM files
             WHERE analysis_id = ?
             ORDER BY path ASC;
@@ -917,6 +918,8 @@ class SqliteGraphStore:
         for file_row in file_rows:
             file_id = int(file_row["id"])
             path = str(file_row["path"])
+            raw_markers = str(file_row["entry_markers"] or "")
+            entry_markers = tuple(m for m in raw_markers.split(",") if m)
 
             symbols = tuple(
                 str(r["name"])
@@ -970,6 +973,7 @@ class SqliteGraphStore:
                     members=members,
                     docstrings=docstrings,
                     depended_on_by=depended_on_by,
+                    entry_markers=entry_markers,
                 )
             )
 

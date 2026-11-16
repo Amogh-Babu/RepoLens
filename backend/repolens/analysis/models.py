@@ -106,6 +106,7 @@ class ParsedFile:
     symbols: tuple[ParsedSymbol, ...] = ()
     members: tuple[ParsedMember, ...] = ()
     comments: tuple[ParsedComment, ...] = ()
+    entry_markers: tuple[str, ...] = ()
     error: ParseError | None = None
 
 

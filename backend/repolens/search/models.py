@@ -22,6 +22,7 @@ class SearchDocument:
     depended_on_by: tuple[str, ...] = ()
     members: tuple[str, ...] = ()
     docstrings: tuple[str, ...] = ()
+    entry_markers: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

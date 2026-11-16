@@ -202,6 +202,21 @@ def test_reanalyzing_the_same_commit_reuses_the_analysis(
     assert github.requested.count(ARCHIVE_URL) == 1
 
 
+def test_overview_entry_points_categories_and_tour(
+    client: TestClient, analysis_id: str
+) -> None:
+    response = client.get(f"/analyses/{analysis_id}/overview")
+
+    assert response.status_code == 200, response.text
+    overview = response.json()
+    expected = EXPECTED["overview"]
+    assert [ep["path"] for ep in overview["entryPoints"]] == expected["entryPoints"]
+    assert {
+        item["path"]: item["category"] for item in overview["categories"]
+    } == expected["categories"]
+    assert [step["path"] for step in overview["tour"]] == expected["tour"]
+
+
 def _module_of(path: str) -> str:
     return path.rsplit("/", 1)[0] if "/" in path else "."
 

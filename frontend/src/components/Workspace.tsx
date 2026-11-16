@@ -1,7 +1,7 @@
 import type {KeyboardEvent} from 'react';
 import {lazy, Suspense, useCallback, useId, useMemo, useState} from 'react';
 import {encodeFilePath} from '../api/client.ts';
-import type {Analysis, DependencyGraph} from '../api/types.ts';
+import type {Analysis, DependencyGraph, OverviewFile} from '../api/types.ts';
 import type {SearchState} from '../state/analysisStore.ts';
 import {useAnalysisStore} from '../state/analysisStoreContext.ts';
 import {hasSeen, markSeen} from '../utils/seenFlags.ts';
@@ -57,6 +57,9 @@ export function Workspace({analysis}: {analysis: Analysis}) {
   const [scopePaths, setScopePaths] = useState<ReadonlySet<string> | null>(
     () => (savedView?.scopePaths ? new Set(savedView.scopePaths) : null),
   );
+  const [tourSteps, setTourSteps] = useState<readonly OverviewFile[] | null>(
+    null,
+  );
   const changeTab = useCallback(
     (nextTab: SidebarTab) => {
       setTab(nextTab);
@@ -103,6 +106,7 @@ export function Workspace({analysis}: {analysis: Analysis}) {
   );
   const readingOrder = readingOrderFor(
     search,
+    tourSteps,
     selectedPath,
     selectWorkspaceFile,
   );
@@ -152,6 +156,7 @@ export function Workspace({analysis}: {analysis: Analysis}) {
       <div className="workspace">
         <Sidebar
           analysisId={analysis.analysisId}
+          selectedPath={selectedPath}
           tab={search === null && tab === 'reading' ? 'overview' : tab}
           onTabChange={changeTab}
           readingAvailable={search !== null}
@@ -163,6 +168,7 @@ export function Workspace({analysis}: {analysis: Analysis}) {
             const firstPath = files[0];
             if (firstPath !== undefined) selectWorkspaceFile(firstPath);
           }}
+          onTourLoaded={setTourSteps}
         />
 
         <MapPanel
@@ -305,30 +311,49 @@ function ExpiredBanner({analysis}: {analysis: Analysis}) {
   );
 }
 
-/** The selected file's place in the reading list, if it is in it. */
+/** The selected file's place in the reading list or reading tour, if it is in one. */
 function readingOrderFor(
   search: SearchState | null,
+  tourSteps: readonly OverviewFile[] | null,
   selectedPath: string | null,
   selectFile: (path: string) => void,
 ): ReadingOrderInfo | null {
-  if (search === null || selectedPath === null) return null;
-  const index = search.results.findIndex(r => r.path === selectedPath);
-  const entry = search.results[index];
-  if (entry === undefined) return null;
-  const next = search.results[index + 1];
-  return {
-    query: search.query,
-    position: entry.position,
-    total: search.total,
-    reason: entry.reason,
-    orderReason: entry.orderReason,
-    onNext: next === undefined ? null : () => selectFile(next.path),
-  };
+  if (selectedPath === null) return null;
+  if (search !== null) {
+    const index = search.results.findIndex(r => r.path === selectedPath);
+    const entry = search.results[index];
+    if (entry === undefined) return null;
+    const next = search.results[index + 1];
+    return {
+      query: search.query,
+      position: entry.position,
+      total: search.total,
+      reason: entry.reason,
+      orderReason: entry.orderReason,
+      onNext: next === undefined ? null : () => selectFile(next.path),
+    };
+  }
+  if (tourSteps !== null && tourSteps.length > 0) {
+    const index = tourSteps.findIndex(step => step.path === selectedPath);
+    const step = tourSteps[index];
+    if (step === undefined) return null;
+    const next = tourSteps[index + 1];
+    return {
+      query: 'reading tour',
+      position: index + 1,
+      total: tourSteps.length,
+      reason: step.summary,
+      orderReason: step.reason,
+      onNext: next === undefined ? null : () => selectFile(next.path),
+    };
+  }
+  return null;
 }
 
 /** Reading list and file explorer, as tabs. */
 function Sidebar({
   analysisId,
+  selectedPath,
   tab,
   onTabChange,
   readingAvailable,
@@ -336,8 +361,10 @@ function Sidebar({
   sourceUrlFor,
   onSelectFile,
   onSelectArea,
+  onTourLoaded,
 }: {
   analysisId: string;
+  selectedPath: string | null;
   tab: SidebarTab;
   onTabChange: (tab: SidebarTab) => void;
   readingAvailable: boolean;
@@ -345,6 +372,7 @@ function Sidebar({
   sourceUrlFor: (path: string) => string;
   onSelectFile: (path: string) => void;
   onSelectArea: (paths: string[]) => void;
+  onTourLoaded: (tour: OverviewFile[]) => void;
 }) {
   const id = useId();
   const tabs: Array<{key: SidebarTab; label: string}> = [
@@ -407,8 +435,10 @@ function Sidebar({
         {tab === 'overview' ? (
           <OverviewPanel
             analysisId={analysisId}
+            selectedPath={selectedPath}
             onSelectFile={onSelectFile}
             onSelectArea={onSelectArea}
+            onTourLoaded={onTourLoaded}
           />
         ) : tab === 'reading' ? (
           <ReadingPanel

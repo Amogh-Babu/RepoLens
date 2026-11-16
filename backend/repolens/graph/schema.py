@@ -27,7 +27,7 @@ from repolens.search.embedding import MODEL_NAME
 
 
 # Bump whenever a table, column, or constraint below changes.
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 # STRICT tables need SQLite 3.37 (2021). Older libraries still get every CHECK
 # constraint, just without SQLite's own column type enforcement.
@@ -92,6 +92,7 @@ CREATE TABLE IF NOT EXISTS files (
     module TEXT NOT NULL,
     parsed INTEGER NOT NULL DEFAULT 1 {_boolean("parsed")},
     line_count INTEGER NOT NULL DEFAULT 0 {_non_negative("line_count")},
+    entry_markers TEXT NOT NULL DEFAULT '',
     FOREIGN KEY (analysis_id) REFERENCES analyses(id) ON DELETE CASCADE,
     UNIQUE (analysis_id, path)
 ){table_options};

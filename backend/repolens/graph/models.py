@@ -97,6 +97,7 @@ class AnalyzedFile:
     imports: tuple[ImportRecord, ...] = ()
     comments: tuple[CommentRecord, ...] = ()
     members: tuple[MemberRecord, ...] = ()
+    entry_markers: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
