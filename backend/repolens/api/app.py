@@ -126,7 +126,7 @@ class SearchMatchResponse(BaseModel):
     text: str
     line: int | None
     value: str
-    matched_terms: list[str]
+    matchedTerms: list[str]
 
 
 class RankedFileContractResponse(BaseModel):
@@ -143,7 +143,7 @@ class SearchContractResponse(BaseModel):
     total: int
     offset: int
     limit: int
-    has_more: bool
+    hasMore: bool
     results: list[RankedFileContractResponse]
     matchedPaths: list[str]
 
@@ -502,7 +502,7 @@ def create_analysis_router(
                         "text": text,
                         "line": line,
                         "value": m.value,
-                        "matched_terms": list(m.matched_terms),
+                        "matchedTerms": list(m.matched_terms),
                     }
                 )
             results.append(
@@ -521,7 +521,7 @@ def create_analysis_router(
             "total": page.total,
             "offset": page.offset,
             "limit": page.limit,
-            "has_more": page.has_more,
+            "hasMore": page.has_more,
             "results": results,
             "matchedPaths": page.matched_paths,
         }

@@ -174,6 +174,12 @@ def test_completed_analysis_end_to_end_contract() -> None:
     assert search["results"][0]["position"] == 1
     assert all(result["orderReason"] for result in search["results"])
     assert len(search["matchedPaths"]) == search["total"]
+    assert search["hasMore"] is (search["total"] > 5)
+    assert all(
+        "matchedTerms" in match
+        for result in search["results"]
+        for match in result["matches"]
+    )
 
     focused = client.get(
         "/analyses/flask-1/search", params={"q": "login", "intent": "tests", "limit": 1}
@@ -181,6 +187,7 @@ def test_completed_analysis_end_to_end_contract() -> None:
     assert focused.status_code == 200
     assert focused.json()["query"] == "login"
     assert len(focused.json()["matchedPaths"]) == focused.json()["total"]
+    assert focused.json()["hasMore"] is True
 
     # 5. GET /analyses/{id}/overview
     overview = client.get("/analyses/flask-1/overview")
