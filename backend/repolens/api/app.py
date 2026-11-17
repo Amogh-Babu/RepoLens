@@ -2,6 +2,7 @@
 
 import hashlib
 import logging
+import os
 import re
 from collections.abc import Sequence
 from typing import Any, Literal, Protocol
@@ -19,6 +20,7 @@ from repolens.graph.endpoints import (
     AnalysisIdPath,
     DependencyGraphResponse,
     FileDetailResponse,
+    cached_json_response,
     create_graph_router,
 )
 from repolens.graph.models import (
@@ -32,6 +34,7 @@ from repolens.graph.store import (
     normalize_repo_url,
 )
 from repolens.ingestion import IngestionError
+from repolens.onboarding import OverviewService
 from repolens.pipeline import PipelineAnalysisRunner
 from repolens.search import (
     AnalysisUnavailableError,
@@ -39,6 +42,8 @@ from repolens.search import (
     QueryValidationError,
     SearchService,
 )
+from repolens.search.embedding import FastEmbedEmbedder
+from repolens.search.service import SearchIntent
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -46,7 +51,7 @@ _LOGGER = logging.getLogger(__name__)
 _GITHUB_PATH_RE = re.compile(r"^/([^/\s]+)/([^/\s]+)/?$")
 _FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
 
-FrontendMatchKind = Literal["filename", "symbol", "import", "comment"]
+FrontendMatchKind = Literal["filename", "symbol", "import", "comment", "semantic"]
 
 # The contract keeps four match kinds: a method or class attribute is shown
 # as a symbol, and a docstring as a comment.
@@ -57,6 +62,7 @@ _FRONTEND_MATCH_KINDS: dict[str, FrontendMatchKind] = {
     "reference": "import",
     "docstring": "comment",
     "comment": "comment",
+    "semantic": "semantic",
 }
 
 # Characters of prose shown around the first matched term in search evidence.
@@ -121,7 +127,7 @@ class SearchMatchResponse(BaseModel):
     text: str
     line: int | None
     value: str
-    matched_terms: list[str]
+    matchedTerms: list[str]
 
 
 class RankedFileContractResponse(BaseModel):
@@ -138,8 +144,64 @@ class SearchContractResponse(BaseModel):
     total: int
     offset: int
     limit: int
-    has_more: bool
+    hasMore: bool
     results: list[RankedFileContractResponse]
+    matchedPaths: list[str]
+
+
+class OverviewFileResponse(BaseModel):
+    path: str
+    reason: str
+    summary: str
+    score: float | None = None
+
+
+class OverviewPackageResponse(BaseModel):
+    id: str
+    name: str
+    fileCount: int
+    layer: int
+    cyclic: bool
+
+
+class OverviewArchitectureEdgeResponse(BaseModel):
+    source: str
+    target: str
+    count: int
+
+
+class OverviewLayerResponse(BaseModel):
+    depth: int
+    name: str
+    packages: list[str]
+
+
+class OverviewArchitectureResponse(BaseModel):
+    packages: list[OverviewPackageResponse]
+    edges: list[OverviewArchitectureEdgeResponse]
+    layers: list[OverviewLayerResponse]
+    hasCycles: bool
+
+
+class OverviewAreaResponse(BaseModel):
+    id: str
+    name: str
+    files: list[str]
+    summary: str
+
+
+class OverviewCategoryResponse(BaseModel):
+    path: str
+    category: str
+
+
+class RepositoryOverviewResponse(BaseModel):
+    entryPoints: list[OverviewFileResponse]
+    coreFiles: list[OverviewFileResponse]
+    architecture: OverviewArchitectureResponse
+    areas: list[OverviewAreaResponse]
+    tour: list[OverviewFileResponse]
+    categories: list[OverviewCategoryResponse]
 
 
 class AnalysisRunner(Protocol):
@@ -178,29 +240,16 @@ class DefaultAnalysisRunner:
             ).hexdigest()
             sha = digest
 
-        cached = store.reuse_cached_analysis(repo_url, sha)
-        if cached is not None:
-            return {
-                "analysisId": str(cached["id"]),
-                "sha": str(cached["sha"]),
-                "status": str(cached["status"]),
-            }
-
-        analysis_id = f"analysis-{uuid.uuid4().hex[:12]}"
-        record = AnalysisRecord(
-            analysis_id=analysis_id,
-            repo=repo_url,
-            ref=clean_ref,
-            sha=sha,
-            status="queued",
-            stage="resolving",
-            from_cache=False,
+        row, _ = store.start_or_reuse_analysis(
+            repo_url,
+            clean_ref,
+            sha,
+            initial_stage="resolving",
         )
-        store.save(record)
         return {
-            "analysisId": analysis_id,
-            "sha": sha,
-            "status": "queued",
+            "analysisId": str(row["id"]),
+            "sha": str(row["sha"]),
+            "status": str(row["status"]),
         }
 
 
@@ -322,6 +371,7 @@ def create_analysis_router(
     """Create routes for starting, polling, cancelling, and searching analyses."""
     active_runner = runner or DefaultAnalysisRunner()
     search_service = SearchService(store)
+    overview_service = OverviewService(store)
     router = APIRouter(route_class=_ContractRoute)
 
     @router.post(
@@ -381,10 +431,11 @@ def create_analysis_router(
         q: str,
         offset: int = Query(default=0, ge=0),
         limit: int = Query(default=20, ge=1, le=100),
+        intent: SearchIntent | None = None,
     ) -> Any:
         try:
             page = search_service.search(
-                analysis_id, q, offset=offset, limit=limit
+                analysis_id, q, offset=offset, limit=limit, intent=intent
             )
         except QueryValidationError as error:
             return _error_response(
@@ -439,7 +490,7 @@ def create_analysis_router(
                         "text": text,
                         "line": line,
                         "value": m.value,
-                        "matched_terms": list(m.matched_terms),
+                        "matchedTerms": list(m.matched_terms),
                     }
                 )
             results.append(
@@ -458,9 +509,27 @@ def create_analysis_router(
             "total": page.total,
             "offset": page.offset,
             "limit": page.limit,
-            "has_more": page.has_more,
+            "hasMore": page.has_more,
             "results": results,
+            "matchedPaths": page.matched_paths,
         }
+
+    @router.get(
+        "/analyses/{analysis_id}/overview",
+        response_model=RepositoryOverviewResponse,
+        summary="Get an onboarding overview for an analyzed repository",
+    )
+    def get_overview(analysis_id: AnalysisIdPath, request: Request) -> Any:
+        try:
+            payload = overview_service.get_overview(analysis_id)
+        except GraphStoreError as exc:
+            return JSONResponse(
+                status_code=exc.status_code,
+                content=exc.to_dict(),
+            )
+        return cached_json_response(
+            request, payload, f"{analysis_id}-overview"
+        )
 
     return router
 
@@ -545,4 +614,11 @@ def _error_response(
 
 # The server analyzes real repositories. `create_app()` without a runner keeps
 # the offline stub for tests.
-app = create_app(runner=PipelineAnalysisRunner())
+app = create_app(
+    store=SqliteGraphStore(
+        embedder=FastEmbedEmbedder(
+            cache_dir=os.environ.get("REPOLENS_EMBEDDING_CACHE") or None
+        )
+    ),
+    runner=PipelineAnalysisRunner(),
+)

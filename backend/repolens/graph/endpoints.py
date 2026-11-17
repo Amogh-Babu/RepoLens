@@ -1,8 +1,10 @@
 """HTTP payload serializers and FastAPI route wiring for graph endpoints."""
 
+import hashlib
+import json
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Path
+from fastapi import APIRouter, Path, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -151,6 +153,42 @@ def get_file_detail_response(
     return serialize_file_detail(store.get_file(analysis_id, file_path))
 
 
+def _etag_matches(if_none_match: str | None, etag: str) -> bool:
+    """Return whether an If-None-Match header matches `etag`."""
+    if not if_none_match:
+        return False
+    stripped_etag = etag[2:] if etag.startswith("W/") else etag
+    for candidate in if_none_match.split(","):
+        token = candidate.strip()
+        if token == "*":
+            return True
+        if token.startswith("W/"):
+            token = token[2:].strip()
+        if token == stripped_etag:
+            return True
+    return False
+
+
+def cached_json_response(
+    request: Request,
+    payload: dict[str, Any],
+    etag_scope: str,
+) -> Response:
+    """Return a JSONResponse with ETag and Cache-Control, or 304 Not Modified."""
+    body_bytes = json.dumps(
+        payload, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    digest = hashlib.sha256(body_bytes).hexdigest()[:16]
+    etag = f'"{etag_scope}-{digest}"'
+    headers = {
+        "ETag": etag,
+        "Cache-Control": "private, immutable",
+    }
+    if _etag_matches(request.headers.get("if-none-match"), etag):
+        return Response(status_code=304, headers=headers)
+    return JSONResponse(content=payload, headers=headers)
+
+
 def create_graph_router(store: GraphStore) -> APIRouter:
     """Create a FastAPI APIRouter for the graph and file-detail endpoints."""
     router = APIRouter()
@@ -160,27 +198,33 @@ def create_graph_router(store: GraphStore) -> APIRouter:
         response_model=DependencyGraphResponse,
         summary="Get the dependency graph for an analyzed repository",
     )
-    def read_graph(analysis_id: AnalysisIdPath) -> Any:
+    def read_graph(analysis_id: AnalysisIdPath, request: Request) -> Any:
         try:
-            return get_graph_response(store, analysis_id)
+            payload = get_graph_response(store, analysis_id)
         except GraphStoreError as exc:
             return JSONResponse(
                 status_code=exc.status_code,
                 content=exc.to_dict(),
             )
+        return cached_json_response(request, payload, f"{analysis_id}-graph")
 
     @router.get(
         "/analyses/{analysis_id}/files/{file_path:path}",
         response_model=FileDetailResponse,
         summary="Get details for a single file in an analyzed repository",
     )
-    def read_file_detail(analysis_id: AnalysisIdPath, file_path: str) -> Any:
+    def read_file_detail(
+        analysis_id: AnalysisIdPath,
+        file_path: str,
+        request: Request,
+    ) -> Any:
         try:
-            return get_file_detail_response(store, analysis_id, file_path)
+            payload = get_file_detail_response(store, analysis_id, file_path)
         except GraphStoreError as exc:
             return JSONResponse(
                 status_code=exc.status_code,
                 content=exc.to_dict(),
             )
+        return cached_json_response(request, payload, f"{analysis_id}-file")
 
     return router

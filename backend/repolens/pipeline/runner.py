@@ -99,27 +99,22 @@ class PipelineAnalysisRunner:
         clean_ref = ref.strip() if ref and ref.strip() else None
         sha = self._resolver.resolve(repo_url, clean_ref)
 
-        cached = store.reuse_cached_analysis(repo_url, sha)
-        if cached is not None:
-            return {
-                "analysisId": str(cached["id"]),
-                "sha": str(cached["sha"]),
-                "status": str(cached["status"]),
-            }
-
-        analysis_id = f"analysis-{uuid.uuid4().hex[:12]}"
-        store.save(
-            AnalysisRecord(
-                analysis_id=analysis_id,
-                repo=repo_url,
-                ref=clean_ref,
-                sha=sha,
-                status="queued",
-                stage="downloading",
-            )
+        row, created = store.start_or_reuse_analysis(
+            repo_url,
+            clean_ref,
+            sha,
+            initial_stage="downloading",
         )
-        self._executor.submit(self.run, store, analysis_id, repo_url, clean_ref, sha)
-        return {"analysisId": analysis_id, "sha": sha, "status": "queued"}
+        analysis_id = str(row["id"])
+        if created:
+            self._executor.submit(
+                self.run, store, analysis_id, repo_url, clean_ref, sha
+            )
+        return {
+            "analysisId": analysis_id,
+            "sha": str(row["sha"]),
+            "status": str(row["status"]),
+        }
 
     def run(
         self,
@@ -186,6 +181,11 @@ class PipelineAnalysisRunner:
             return
         files = classify_imports(to_analyzed_files(analysis))
 
+        if not store.update_stage(analysis_id, "indexing"):
+            return
+        # Falls back to no vectors (keyword search only) if the model fails.
+        embeddings = store.build_embeddings(files)
+
         if not store.update_stage(analysis_id, "storing"):
             return
         store.complete_analysis(
@@ -197,6 +197,7 @@ class PipelineAnalysisRunner:
                 status="completed",
                 counts=to_analysis_counts(analysis),
                 files=files,
+                embeddings=embeddings,
             )
         )
 

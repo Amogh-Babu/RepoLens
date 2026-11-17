@@ -15,6 +15,7 @@ AnalysisStage = Literal[
     "filtering",
     "parsing",
     "classifying",
+    "indexing",
     "storing",
 ]
 
@@ -96,6 +97,7 @@ class AnalyzedFile:
     imports: tuple[ImportRecord, ...] = ()
     comments: tuple[CommentRecord, ...] = ()
     members: tuple[MemberRecord, ...] = ()
+    entry_markers: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -117,6 +119,17 @@ class AnalysisErrorRecord:
 
 
 @dataclass(frozen=True)
+class FileEmbeddingRecord:
+    """One vectorized text chunk belonging to an analyzed file."""
+
+    path: str
+    chunk_index: int
+    text: str
+    model: str
+    vector: tuple[float, ...]
+
+
+@dataclass(frozen=True)
 class AnalysisRecord:
     """Complete analysis payload to persist in the graph store."""
 
@@ -132,6 +145,9 @@ class AnalysisRecord:
     counts: AnalysisCounts = AnalysisCounts()
     error: AnalysisErrorRecord | None = None
     files: tuple[AnalyzedFile, ...] = ()
+    # None: not built yet, so saving builds them. An empty tuple: built,
+    # with nothing to embed or with semantic indexing unavailable.
+    embeddings: tuple[FileEmbeddingRecord, ...] | None = None
 
 
 @dataclass(frozen=True)

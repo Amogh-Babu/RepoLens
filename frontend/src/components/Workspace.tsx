@@ -1,16 +1,19 @@
 import type {KeyboardEvent} from 'react';
 import {lazy, Suspense, useCallback, useId, useMemo, useState} from 'react';
 import {encodeFilePath} from '../api/client.ts';
-import type {Analysis, DependencyGraph} from '../api/types.ts';
+import type {Analysis, DependencyGraph, OverviewFile} from '../api/types.ts';
 import type {SearchState} from '../state/analysisStore.ts';
 import {useAnalysisStore} from '../state/analysisStoreContext.ts';
 import {hasSeen, markSeen} from '../utils/seenFlags.ts';
+import {subgraph} from '../utils/subgraph.ts';
+import {loadViewState, saveViewState} from '../utils/workspaceStorage.ts';
 import {ErrorBanner} from './ErrorBanner.tsx';
 import type {ReadingOrderInfo} from './FileDetailPanel.tsx';
 import {FileDetailPanel} from './FileDetailPanel.tsx';
 import {FileExplorer} from './FileExplorer.tsx';
 import {ListFallback} from './map/ListFallback.tsx';
 import {MapErrorBoundary} from './map/MapErrorBoundary.tsx';
+import {OverviewPanel} from './OverviewPanel.tsx';
 import {ReadingList} from './ReadingList.tsx';
 import {ReanalyzeButton} from './ReanalyzeButton.tsx';
 import {SearchBar} from './SearchBar.tsx';
@@ -26,7 +29,7 @@ const DependencyMap = lazy(() =>
   })),
 );
 
-type SidebarTab = 'reading' | 'files';
+type SidebarTab = 'overview' | 'reading' | 'files';
 
 /**
  * Search, reading list, file explorer, dependency map and file details for
@@ -37,6 +40,7 @@ export function Workspace({analysis}: {analysis: Analysis}) {
   const graphFailure = useAnalysisStore(state => state.graphFailure);
   const loadGraph = useAnalysisStore(state => state.loadGraph);
   const selectedPath = useAnalysisStore(state => state.selectedPath);
+  const selectionRevision = useAnalysisStore(state => state.selectionRevision);
   const selectFile = useAnalysisStore(state => state.selectFile);
   const detail = useAnalysisStore(state =>
     state.selectedPath === null
@@ -48,7 +52,39 @@ export function Workspace({analysis}: {analysis: Analysis}) {
   const runSearch = useAnalysisStore(state => state.runSearch);
   const clearSearch = useAnalysisStore(state => state.clearSearch);
   const expired = useAnalysisStore(state => state.expired);
-  const [tab, setTab] = useState<SidebarTab>('files');
+  const [savedView] = useState(() => loadViewState(analysis.repoUrl));
+  const [tab, setTab] = useState<SidebarTab>(savedView?.tab ?? 'overview');
+  const [scopePaths, setScopePaths] = useState<ReadonlySet<string> | null>(
+    () => (savedView?.scopePaths ? new Set(savedView.scopePaths) : null),
+  );
+  const [tourSteps, setTourSteps] = useState<readonly OverviewFile[] | null>(
+    null,
+  );
+  const changeTab = useCallback(
+    (nextTab: SidebarTab) => {
+      setTab(nextTab);
+      saveViewState(analysis.repoUrl, {tab: nextTab});
+    },
+    [analysis.repoUrl],
+  );
+  const changeScopePaths = useCallback(
+    (nextScope: ReadonlySet<string> | null) => {
+      setScopePaths(nextScope);
+      saveViewState(analysis.repoUrl, {
+        scopePaths: nextScope === null ? null : [...nextScope],
+      });
+    },
+    [analysis.repoUrl],
+  );
+  const selectWorkspaceFile = useCallback(
+    (path: string | null) => {
+      if (path !== null && scopePaths !== null && !scopePaths.has(path)) {
+        changeScopePaths(null);
+      }
+      selectFile(path);
+    },
+    [scopePaths, changeScopePaths, selectFile],
+  );
   // The tour opens by itself the first time a viewer reaches a workspace.
   const [touring, setTouring] = useState(() => !hasSeen('workspace-tour'));
   const endTour = useCallback(() => {
@@ -65,10 +101,15 @@ export function Workspace({analysis}: {analysis: Analysis}) {
     () =>
       search === null || search.query === ''
         ? null
-        : new Set(search.results.map(r => r.path)),
+        : new Set(search.matchedPaths ?? search.results.map(r => r.path)),
     [search],
   );
-  const readingOrder = readingOrderFor(search, selectedPath, selectFile);
+  const readingOrder = readingOrderFor(
+    search,
+    tourSteps,
+    selectedPath,
+    selectWorkspaceFile,
+  );
 
   const expiredBanner = expired && <ExpiredBanner analysis={analysis} />;
 
@@ -89,11 +130,14 @@ export function Workspace({analysis}: {analysis: Analysis}) {
             disabled={expired}
             searching={search?.pendingQuery != null}
             onSearch={query => {
-              setTab('reading');
+              changeScopePaths(null);
+              selectFile(null);
+              changeTab('reading');
               runSearch(query);
             }}
             onClear={() => {
-              setTab('files');
+              changeScopePaths(null);
+              changeTab('files');
               clearSearch();
             }}
           />
@@ -111,17 +155,30 @@ export function Workspace({analysis}: {analysis: Analysis}) {
 
       <div className="workspace">
         <Sidebar
-          tab={search === null ? 'files' : tab}
-          onTabChange={setTab}
+          analysisId={analysis.analysisId}
+          selectedPath={selectedPath}
+          tab={search === null && tab === 'reading' ? 'overview' : tab}
+          onTabChange={changeTab}
           readingAvailable={search !== null}
           readingCount={search?.query === '' ? null : (search?.total ?? null)}
           sourceUrlFor={sourceUrlFor}
+          onSelectFile={selectWorkspaceFile}
+          onSelectArea={files => {
+            changeScopePaths(new Set(files));
+            const firstPath = files[0];
+            if (firstPath !== undefined) selectWorkspaceFile(firstPath);
+          }}
+          onTourLoaded={setTourSteps}
         />
 
         <MapPanel
+          repoUrl={analysis.repoUrl}
           graph={graph}
           selectedPath={selectedPath}
+          selectionRevision={selectionRevision}
           matchedPaths={matchedPaths}
+          scopePaths={scopePaths}
+          onClearScope={() => changeScopePaths(null)}
         />
 
         <div className="workspace__detail" data-tour="detail">
@@ -137,9 +194,9 @@ export function Workspace({analysis}: {analysis: Analysis}) {
               sha={analysis.sha}
               detail={detail}
               failure={fileFailure}
-              onSelectFile={selectFile}
-              onRetry={() => selectFile(selectedPath)}
-              onClose={() => selectFile(null)}
+              onSelectFile={selectWorkspaceFile}
+              onRetry={() => selectWorkspaceFile(selectedPath)}
+              onClose={() => selectWorkspaceFile(null)}
               readingOrder={readingOrder}
             />
           )}
@@ -176,8 +233,8 @@ const TOUR_STEPS: readonly TourStep[] = [
           order to read them.
         </p>
         <p>
-          It matches the words you type in file names, functions, classes,
-          imports, docstrings and comments, not their meaning.{' '}
+          It combines exact matches in names, code and prose with local semantic
+          search, so plain-language questions can find related files.{' '}
           <strong>How search works</strong>, next to the search bar, explains
           how results are ranked and ordered.
         </p>
@@ -194,7 +251,9 @@ const TOUR_STEPS: readonly TourStep[] = [
           why it matches and why it comes at that spot in the order.
         </p>
         <p>
-          <strong>Files</strong> lists every analyzed file by folder.
+          <strong>Files</strong> lists every analyzed file by folder.{' '}
+          <strong>Overview</strong> highlights entry points, central files and a
+          guided reading path.
         </p>
       </>
     ),
@@ -205,12 +264,15 @@ const TOUR_STEPS: readonly TourStep[] = [
     body: (
       <>
         <p>
-          Each box is a folder. Click one to open it and see its files. Arrows
-          point from a file to the files it imports.
+          Each box is a folder. Click one to zoom in and see its files. Arrows
+          point from a file to the files it imports. <strong>Key</strong> in the
+          toolbar explains the colors.
         </p>
         <p>
           During a search the map shows only the matching files. Untick
-          <strong> Only show matches</strong> to see everything again.
+          <strong> Only show matches</strong> to see everything again. With a
+          file selected, the files it is not connected to are greyed out; tick
+          <strong> Hide unrelated files</strong> to hide them.
         </p>
       </>
     ),
@@ -249,54 +311,83 @@ function ExpiredBanner({analysis}: {analysis: Analysis}) {
   );
 }
 
-/** The selected file's place in the reading list, if it is in it. */
+/** The selected file's place in the reading list or reading tour, if it is in one. */
 function readingOrderFor(
   search: SearchState | null,
+  tourSteps: readonly OverviewFile[] | null,
   selectedPath: string | null,
   selectFile: (path: string) => void,
 ): ReadingOrderInfo | null {
-  if (search === null || selectedPath === null) return null;
-  const index = search.results.findIndex(r => r.path === selectedPath);
-  const entry = search.results[index];
-  if (entry === undefined) return null;
-  const next = search.results[index + 1];
-  return {
-    query: search.query,
-    position: entry.position,
-    total: search.total,
-    reason: entry.reason,
-    orderReason: entry.orderReason,
-    onNext: next === undefined ? null : () => selectFile(next.path),
-  };
+  if (selectedPath === null) return null;
+  if (search !== null) {
+    const index = search.results.findIndex(r => r.path === selectedPath);
+    const entry = search.results[index];
+    if (entry === undefined) return null;
+    const next = search.results[index + 1];
+    return {
+      query: search.query,
+      position: entry.position,
+      total: search.total,
+      reason: entry.reason,
+      orderReason: entry.orderReason,
+      onNext: next === undefined ? null : () => selectFile(next.path),
+    };
+  }
+  if (tourSteps !== null && tourSteps.length > 0) {
+    const index = tourSteps.findIndex(step => step.path === selectedPath);
+    const step = tourSteps[index];
+    if (step === undefined) return null;
+    const next = tourSteps[index + 1];
+    return {
+      query: 'reading tour',
+      position: index + 1,
+      total: tourSteps.length,
+      reason: step.summary,
+      orderReason: step.reason,
+      onNext: next === undefined ? null : () => selectFile(next.path),
+    };
+  }
+  return null;
 }
 
 /** Reading list and file explorer, as tabs. */
 function Sidebar({
+  analysisId,
+  selectedPath,
   tab,
   onTabChange,
   readingAvailable,
   readingCount,
   sourceUrlFor,
+  onSelectFile,
+  onSelectArea,
+  onTourLoaded,
 }: {
+  analysisId: string;
+  selectedPath: string | null;
   tab: SidebarTab;
   onTabChange: (tab: SidebarTab) => void;
   readingAvailable: boolean;
   readingCount: number | null;
   sourceUrlFor: (path: string) => string;
+  onSelectFile: (path: string) => void;
+  onSelectArea: (paths: string[]) => void;
+  onTourLoaded: (tour: OverviewFile[]) => void;
 }) {
   const id = useId();
-  const tabs: Array<{key: SidebarTab; label: string}> = readingAvailable
-    ? [
-        {
-          key: 'reading',
-          label:
-            readingCount === null
-              ? 'Reading list'
-              : `Reading list (${readingCount})`,
-        },
-        {key: 'files', label: 'Files'},
-      ]
-    : [{key: 'files', label: 'Files'}];
+  const tabs: Array<{key: SidebarTab; label: string}> = [
+    {key: 'overview', label: 'Overview'},
+  ];
+  if (readingAvailable) {
+    tabs.push({
+      key: 'reading',
+      label:
+        readingCount === null
+          ? 'Reading list'
+          : `Reading list (${readingCount})`,
+    });
+  }
+  tabs.push({key: 'files', label: 'Files'});
 
   // Arrow keys move between tabs, as in the WAI-ARIA tabs pattern.
   function handleKeyDown(event: KeyboardEvent) {
@@ -341,10 +432,21 @@ function Sidebar({
         role="tabpanel"
         aria-labelledby={`${id}-tab-${tab}`}
       >
-        {tab === 'reading' ? (
-          <ReadingPanel sourceUrlFor={sourceUrlFor} />
+        {tab === 'overview' ? (
+          <OverviewPanel
+            analysisId={analysisId}
+            selectedPath={selectedPath}
+            onSelectFile={onSelectFile}
+            onSelectArea={onSelectArea}
+            onTourLoaded={onTourLoaded}
+          />
+        ) : tab === 'reading' ? (
+          <ReadingPanel
+            sourceUrlFor={sourceUrlFor}
+            onSelectFile={onSelectFile}
+          />
         ) : (
-          <ExplorerPanel />
+          <ExplorerPanel onSelectFile={onSelectFile} />
         )}
       </div>
     </div>
@@ -353,14 +455,16 @@ function Sidebar({
 
 function ReadingPanel({
   sourceUrlFor,
+  onSelectFile,
 }: {
   sourceUrlFor: (path: string) => string;
+  onSelectFile: (path: string) => void;
 }) {
   const search = useAnalysisStore(state => state.search);
   const selectedPath = useAnalysisStore(state => state.selectedPath);
-  const selectFile = useAnalysisStore(state => state.selectFile);
   const runSearch = useAnalysisStore(state => state.runSearch);
   const loadMoreResults = useAnalysisStore(state => state.loadMoreResults);
+  const expired = useAnalysisStore(state => state.expired);
   if (search === null) return null;
 
   return (
@@ -368,11 +472,13 @@ function ReadingPanel({
       search={search}
       selectedPath={selectedPath}
       sourceUrlFor={sourceUrlFor}
-      onSelectFile={selectFile}
+      onSelectFile={onSelectFile}
       onLoadMore={loadMoreResults}
+      onRefine={intent => runSearch(search.query, intent)}
+      refinementDisabled={expired}
       onRetry={() => {
         if (search.failure?.request === 'search') {
-          runSearch(search.failure.query);
+          runSearch(search.failure.query, search.failure.intent);
         } else {
           loadMoreResults();
         }
@@ -381,11 +487,10 @@ function ReadingPanel({
   );
 }
 
-function ExplorerPanel() {
+function ExplorerPanel({onSelectFile}: {onSelectFile: (path: string) => void}) {
   const graph = useAnalysisStore(state => state.graph);
   const selectedPath = useAnalysisStore(state => state.selectedPath);
   const expandedDirs = useAnalysisStore(state => state.expandedDirs);
-  const selectFile = useAnalysisStore(state => state.selectFile);
   const toggleDir = useAnalysisStore(state => state.toggleDir);
   if (graph === null) return null;
 
@@ -395,7 +500,7 @@ function ExplorerPanel() {
         files={graph.files}
         selectedPath={selectedPath}
         expandedDirs={expandedDirs}
-        onSelectFile={selectFile}
+        onSelectFile={onSelectFile}
         onToggleDir={toggleDir}
       />
     </nav>
@@ -412,13 +517,21 @@ const FAILED_MESSAGE =
 
 /** The dependency map, or the list view when the map is not available. */
 function MapPanel({
+  repoUrl,
   graph,
   selectedPath,
+  selectionRevision,
   matchedPaths,
+  scopePaths,
+  onClearScope,
 }: {
+  repoUrl: string;
   graph: DependencyGraph;
   selectedPath: string | null;
+  selectionRevision: number;
   matchedPaths: ReadonlySet<string> | null;
+  scopePaths: ReadonlySet<string> | null;
+  onClearScope: () => void;
 }) {
   const expandedModules = useAnalysisStore(state => state.expandedModules);
   const selectFile = useAnalysisStore(state => state.selectFile);
@@ -426,15 +539,47 @@ function MapPanel({
   const collapseAllModules = useAnalysisStore(
     state => state.collapseAllModules,
   );
+  const [savedView] = useState(() => loadViewState(repoUrl));
   // 'list' when chosen by the user; a message when the map failed.
   const [view, setView] = useState<'map' | 'list'>('map');
   // During a search the map shows only the matches unless the user asks
   // for everything (user test feedback, #92).
-  const [matchesOnly, setMatchesOnly] = useState(true);
+  const [matchesOnly, setMatchesOnly] = useState(
+    savedView?.matchesOnly ?? true,
+  );
+  // A selection greys out unrelated files; this hides them instead.
+  const [hideUnrelated, setHideUnrelated] = useState(
+    savedView?.hideUnrelated ?? false,
+  );
+  const changeMatchesOnly = useCallback(
+    (next: boolean) => {
+      setMatchesOnly(next);
+      saveViewState(repoUrl, {matchesOnly: next});
+    },
+    [repoUrl],
+  );
+  const changeHideUnrelated = useCallback(
+    (next: boolean) => {
+      setHideUnrelated(next);
+      saveViewState(repoUrl, {hideUnrelated: next});
+    },
+    [repoUrl],
+  );
   const [fallbackMessage, setFallbackMessage] = useState<string | null>(null);
   const onTooSlow = useCallback(() => setFallbackMessage(TOO_SLOW_MESSAGE), []);
   const onMapError = useCallback(() => setFallbackMessage(FAILED_MESSAGE), []);
   const showList = view === 'list' || fallbackMessage !== null;
+  const visibleGraph = useMemo(
+    () => (scopePaths === null ? graph : subgraph(graph, scopePaths)),
+    [graph, scopePaths],
+  );
+  const listGraph = useMemo(
+    () =>
+      !matchesOnly || matchedPaths === null
+        ? visibleGraph
+        : subgraph(visibleGraph, matchedPaths),
+    [visibleGraph, matchesOnly, matchedPaths],
+  );
 
   const viewSwitch = (
     <div className="workspace__map-switch" role="group" aria-label="View">
@@ -457,6 +602,21 @@ function MapPanel({
       >
         List
       </button>
+      {showList && matchedPaths !== null && (
+        <label className="workspace__list-filter">
+          <input
+            type="checkbox"
+            checked={matchesOnly}
+            onChange={event => changeMatchesOnly(event.target.checked)}
+          />
+          Only show matches
+        </label>
+      )}
+      {scopePaths !== null && (
+        <button type="button" className="button" onClick={onClearScope}>
+          All files
+        </button>
+      )}
     </div>
   );
 
@@ -468,7 +628,7 @@ function MapPanel({
     >
       {showList ? (
         <ListFallback
-          graph={graph}
+          graph={listGraph}
           selectedPath={selectedPath}
           onSelectFile={selectFile}
           message={fallbackMessage}
@@ -484,12 +644,15 @@ function MapPanel({
             }
           >
             <DependencyMap
-              graph={graph}
+              graph={visibleGraph}
               expandedModules={expandedModules}
               selectedPath={selectedPath}
+              selectionRevision={selectionRevision}
               matchedPaths={matchedPaths}
               matchesOnly={matchesOnly}
-              onMatchesOnlyChange={setMatchesOnly}
+              onMatchesOnlyChange={changeMatchesOnly}
+              hideUnrelated={hideUnrelated}
+              onHideUnrelatedChange={changeHideUnrelated}
               onSelectFile={selectFile}
               onToggleModule={toggleModule}
               onCollapseAll={collapseAllModules}

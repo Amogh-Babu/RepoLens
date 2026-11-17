@@ -277,6 +277,41 @@ def test_unexpected_errors_fail_with_analysis_failed(
     assert "failed" in caplog.text
 
 
+class BrokenEmbedder:
+    """An embedding model that cannot load, e.g. offline on first use."""
+
+    model_id = "broken"
+
+    def embed(self, texts: Any) -> list[tuple[float, ...]]:
+        raise OSError("could not download the embedding model")
+
+
+def test_falls_back_to_keyword_search_when_indexing_fails(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    runner = PipelineAnalysisRunner(
+        resolver=FakeResolver(),
+        source=FakeSource(),
+        executor=ManualExecutor(),
+        work_root=tmp_path,
+    )
+    client = TestClient(
+        create_app(SqliteGraphStore(embedder=BrokenEmbedder()), runner=runner)
+    )
+
+    analysis_id = client.post("/analyses", json={"url": REPO_URL}).json()[
+        "analysisId"
+    ]
+
+    assert client.get(f"/analyses/{analysis_id}").json()["status"] == "completed"
+    search = client.get(f"/analyses/{analysis_id}/search", params={"q": "billing"})
+    assert search.status_code == 200
+    assert "app/services/billing.py" in {
+        result["path"] for result in search.json()["results"]
+    }
+    assert "keywords only" in caplog.text
+
+
 def test_cancelled_analysis_is_never_overwritten(tmp_path: Path) -> None:
     executor = ManualExecutor(run_immediately=False)
     source = FakeSource()
@@ -291,3 +326,22 @@ def test_cancelled_analysis_is_never_overwritten(tmp_path: Path) -> None:
     analysis = client.get(f"/analyses/{analysis_id}").json()
     assert analysis["status"] == "cancelled"
     assert source.destinations == []
+
+
+def test_concurrent_post_analyses_share_one_in_flight_analysis(
+    tmp_path: Path,
+) -> None:
+    executor = ManualExecutor(run_immediately=False)
+    source = FakeSource()
+    client = _client(tmp_path, source=source, executor=executor)
+
+    first = client.post("/analyses", json={"url": REPO_URL}).json()
+    second = client.post("/analyses", json={"url": f"{REPO_URL}.git"}).json()
+
+    assert first["status"] == "queued"
+    assert second == first
+    assert len(executor.pending) == 1
+
+    executor.run_pending()
+    assert len(source.destinations) == 1
+    assert client.get(f"/analyses/{first['analysisId']}").json()["status"] == "completed"

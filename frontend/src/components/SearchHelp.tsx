@@ -66,38 +66,39 @@ function SearchExplanation() {
       <p>
         File and folder names, functions and classes, methods and class
         attributes, imported module names, docstrings and comments. Every file
-        that contains one of your words is listed.
+        that matches your words or is semantically related may be listed.
       </p>
       <p>
-        It matches the words you type, not their meaning: “login” finds{' '}
-        <code>login_user</code> and <code>auth/login.py</code>, but not{' '}
-        <code>sign_in</code>.
+        Search combines keyword matches with a local language model, so a
+        question like “where do I start with production?” can find relevant
+        files even when their names use different words. Search runs locally;
+        repository text is not sent to an embedding service.
       </p>
 
       <h3>How results are ranked</h3>
       <p>
-        A match in a file name counts most, then functions and classes, methods,
-        imports and docstrings, and comments least. Files that match more of
-        your words, and files the other results import, rank higher.
+        Exact matches and semantic similarity are combined. Exact file-name,
+        symbol and import matches remain strong signals. Your reading goal can
+        prioritize implementation, configuration or test files.
       </p>
 
       <h3>What the order means</h3>
       <p>
-        The list is an order to read in. Each file comes after the matching
-        files it imports, so the building blocks come first. Every entry says
-        why it matches and why it is at that spot.
+        The list is an order to read in. Related dependencies usually come
+        first, but a much stronger starting point can come before them. Every
+        entry says why it matches and why it is at that spot.
       </p>
 
       <h3>Tips</h3>
       <ul>
         <li>
-          Use a word from the feature (“checkout”, “token”), a function or class
-          name, or a folder name.
+          Describe the task in your own words, or use a feature name like
+          “checkout”.
         </li>
         <li>Common words like “the”, “how” or “where” are ignored.</li>
         <li>
-          If nothing matches, try a shorter word or one the code might use
-          instead.
+          If the results are broad, add a feature name or a file you already
+          know.
         </li>
       </ul>
     </div>

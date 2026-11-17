@@ -28,9 +28,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=never \
     UV_PROJECT_ENVIRONMENT=/opt/venv \
+    REPOLENS_EMBEDDING_CACHE=/opt/fastembed \
     PATH="/opt/venv/bin:${PATH}"
 WORKDIR /app/backend
 COPY backend/pyproject.toml backend/uv.lock ./
+RUN uv sync --locked --no-dev \
+    && python -c "from fastembed import TextEmbedding; TextEmbedding(model_name='BAAI/bge-small-en-v1.5', cache_dir='/opt/fastembed')"
 
 # --- Test: the backend suite, including the end-to-end reference run --------
 # The search-precision benchmark lists files with `git ls-files`, and the
@@ -42,7 +45,6 @@ RUN python -m pytest -q --ignore=tests/test_search_precision.py
 
 # --- Runtime (default target) ------------------------------------------------
 FROM backend-base AS runtime
-RUN uv sync --locked --no-dev
 COPY backend/repolens ./repolens
 COPY --from=frontend /app/frontend/dist /app/frontend/dist
 RUN useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin repolens \
@@ -50,7 +52,8 @@ RUN useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin repo
     && chown repolens /data
 USER repolens
 ENV REPOLENS_DB_PATH=/data/repolens.db \
-    REPOLENS_FRONTEND_DIR=/app/frontend/dist
+    REPOLENS_FRONTEND_DIR=/app/frontend/dist \
+    REPOLENS_EMBEDDING_CACHE=/opt/fastembed
 VOLUME ["/data"]
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

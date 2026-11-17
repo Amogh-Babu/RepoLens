@@ -2,7 +2,9 @@ from dataclasses import dataclass
 from typing import Literal
 
 
-MatchKind = Literal["filename", "symbol", "member", "reference", "docstring", "comment"]
+MatchKind = Literal[
+    "filename", "symbol", "member", "reference", "docstring", "comment", "semantic"
+]
 
 
 @dataclass(frozen=True)
@@ -20,6 +22,7 @@ class SearchDocument:
     depended_on_by: tuple[str, ...] = ()
     members: tuple[str, ...] = ()
     docstrings: tuple[str, ...] = ()
+    entry_markers: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -51,3 +54,4 @@ class SearchPage:
     offset: int
     limit: int
     has_more: bool
+    matched_paths: tuple[str, ...] = ()

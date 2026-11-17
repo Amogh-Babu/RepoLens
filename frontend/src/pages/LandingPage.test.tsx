@@ -4,6 +4,7 @@ import type {ApiClient} from '../api/client.ts';
 import {ApiError} from '../api/errors.ts';
 import {MockApiClient} from '../api/mock/mockClient.ts';
 import {renderApp} from '../test/renderApp.tsx';
+import {saveRecentRepo} from '../utils/workspaceStorage.ts';
 
 async function analyze(url: string, ref = '') {
   const user = userEvent.setup();
@@ -115,5 +116,37 @@ describe('LandingPage', () => {
       screen.getByRole('heading', {name: 'How it works'}),
     ).toBeInTheDocument();
     expect(screen.getByText(/up to 1,000 Python files/)).toBeInTheDocument();
+  });
+
+  it('lists recent repositories and reopens one when clicked', async () => {
+    const client = new MockApiClient({latencyMs: 0, stageDurationMs: 0});
+    const {analysisId, sha} = await client.startAnalysis({
+      url: 'https://github.com/repolens-demo/flask-auth',
+    });
+    saveRecentRepo({
+      analysisId,
+      repoUrl: 'https://github.com/repolens-demo/flask-auth',
+      ref: 'main',
+      sha,
+      status: 'completed',
+      expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+    });
+
+    renderApp('/', client);
+
+    expect(
+      screen.getByRole('heading', {name: 'Recent repositories'}),
+    ).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(
+      screen.getByRole('link', {name: /repolens-demo\/flask-auth/}),
+    );
+
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: 'repolens-demo/flask-auth',
+      }),
+    ).toBeInTheDocument();
   });
 });
