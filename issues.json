@@ -1,0 +1,1205 @@
+[
+  {
+    "assignees": [],
+    "body": "In the second user study session, P2 clicked a file in the file explorer and expected the dependency map to move to it, but nothing happened. They weren't sure whether the explorer and the map were linked at all.\n\n`DependencyMap.tsx` already centers the map on the selected file, but only when that file has its own node. When the file's module is collapsed (the default on most repos), `flow.getInternalNode(fileNodeId(selectedPath))` returns `undefined` and the effect exits early. The collapsed module does get highlighted, but the map doesn't pan to it, so the highlight is often off-screen.\n\nRelated: #92, whose scope includes \"selecting a file anywhere in the workspace pans the map to it\". This issue covers the case where the selected file sits inside a collapsed module.\n\n## Scope\n- When a file is selected from the explorer, the reading list, or the detail panel and its module is collapsed, expand that module (and its parents) so the file gets its own node, then center on it.\n- If expanding would make the graph too big, center on the collapsed module instead and show a short hint such as \"Inside `app/` (collapsed). Expand to see the file.\"\n- Keep the zoom level steady when the map pans, like the existing `setCenter` call does.\n- Selecting the same file again should still re-center the map, even if the user has panned away.\n\n## Done when\n- [ ] Selecting a file inside a collapsed module in the explorer centers the map on that file\n- [ ] `DependencyMap.test.tsx` covers centering on a file inside a collapsed module\n- [ ] `Workspace` test covers clicking a file in the explorer and checking that the map reacts\n- [ ] Checked by hand on the bookshop fixture and the 1,000-file benchmark repo (#45)\n",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC8d9PGQ",
+        "name": "enhancement",
+        "description": "New feature or request",
+        "color": "a2eeef"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0SWg",
+        "name": "frontend",
+        "description": "React app",
+        "color": "c5def5"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAADCPqB8Q",
+        "name": "user-study",
+        "description": "",
+        "color": "437053"
+      }
+    ],
+    "number": 99,
+    "state": "OPEN",
+    "title": "Selecting a file in the explorer should move the map to it, even inside a collapsed module"
+  },
+  {
+    "assignees": [],
+    "body": "In the second user study session, P2 couldn't tell which way a dependency went on the map. Many arrows cross over each other, and the arrowheads are small, so it was hard to see whether a file imports another file or is imported by it. This slowed down the \"trace what a feature depends on\" task the most: P2 spent about 6 of their 10 minutes on it and missed two dependencies.\n\nRight now every edge is drawn the same way (`mapLayout.ts` gives each one a 16px `ArrowClosed` marker and the same muted stroke), and the only explanation is the toolbar line \"Arrows point from a file to what it imports.\" When a file is selected, every edge that touches it turns the same accent color, whether it goes in or out.\n\nRelated: #92 (decluttering map navigation and controls) and #81 (architecture/feature/focus/search views). This issue covers **which way edges point and how easy they are to follow**.\n\n## Scope\n- When a file or module is selected, color its outgoing edges (\"imports\") and incoming edges (\"imported by\") differently, and dim everything else.\n- Make the arrowheads bigger and easier to see at the default zoom.\n- Cut down on crossing edges: tune the layout direction and spacing in `layoutMap`, and route edges so they don't run through nodes.\n- Replace the single toolbar sentence with a small legend that shows both edge colors.\n- Optional: add \"Imports\" and \"Imported by\" counts to the detail panel, so users can check the map against a list.\n\n## Done when\n- [ ] With a file selected, the imports and imported-by edges are different colors, and the legend explains them\n- [ ] Arrowheads can be seen at the default zoom on the bookshop fixture\n- [ ] `mapLayout.test.ts` covers the direction classes on edges around a selection\n- [ ] `DependencyMap.test.tsx` covers the legend\n- [ ] Checked by hand on the 1,000-file benchmark repo (#45) for fewer crossings\n",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC8d9PGQ",
+        "name": "enhancement",
+        "description": "New feature or request",
+        "color": "a2eeef"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0SWg",
+        "name": "frontend",
+        "description": "React app",
+        "color": "c5def5"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAADCPqB8Q",
+        "name": "user-study",
+        "description": "",
+        "color": "437053"
+      }
+    ],
+    "number": 98,
+    "state": "OPEN",
+    "title": "Make dependency direction clear on the map: in/out edge colors, bigger arrows, fewer crossings"
+  },
+  {
+    "assignees": [],
+    "body": "Users don't know what the search box does. They can't tell if it searches file names, symbols, or text, what makes a file rank higher, or why a query returns nothing. The only hint is one landing-page line (\"Type a word like 'login' or a function name\").\n\n## Scope\nExplain search in-app, either as a first-use pop-up on the search bar or as a step in the first-run tutorial (#91). Cover:\n- **What is searched**: file paths, module-level symbols (functions and classes), import names, plus docstrings, comments, and class members (#77, part 1). Update this text when hybrid/embedding search lands (#77, part 2).\n- **How results are ranked**: matches are weighted by where they occur (name vs. docstring vs. comment), and files that other matches depend on rank higher.\n- **What the order means**: the results are a suggested *reading* order with dependencies first, not the order the code runs in. See #93.\n- **Tips**: try a feature word (\"checkout\"), a function or class name, or a module name. What to do when there are no results.\n- A small \"?\" / \"How search works\" link next to the search bar reopens the explanation.\n- Remember per viewer that the pop-up was seen (`localStorage` in try/catch).\n\n## Done when\n- [ ] The pop-up (or tutorial step) shows on the first search and can be dismissed\n- [ ] \"How search works\" reopens it at any time\n- [ ] The text matches what `SearchService` actually indexes and ranks on\n- [ ] Vitest covers show, dismiss, and reopen\n",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC8d9PBw",
+        "name": "documentation",
+        "description": "Improvements or additions to documentation",
+        "color": "0075ca"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC8d9PGQ",
+        "name": "enhancement",
+        "description": "New feature or request",
+        "color": "a2eeef"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0R7w",
+        "name": "search",
+        "description": "Search, ranking, reading order",
+        "color": "fbca04"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0SWg",
+        "name": "frontend",
+        "description": "React app",
+        "color": "c5def5"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAADCPqB8Q",
+        "name": "user-study",
+        "description": "",
+        "color": "437053"
+      }
+    ],
+    "number": 94,
+    "state": "CLOSED",
+    "title": "Explain how search works in a first-use pop-up or the tutorial"
+  },
+  {
+    "assignees": [],
+    "body": "The reading list shows a reason for each file, but it only explains **why the file matched** (\"Matches \u2026; depended on by N other matching file(s)\"). It never explains **why the file sits at its position** in the suggested order. Users see `#3 of 8` and can't tell why it comes before `#4`.\n\nThe order comes from `SearchService._reading_order` (`backend/repolens/search/service.py`). It is a Kahn topological sort over the matching files' imports: dependencies come first, ties are broken by score, and cycles are broken by picking the lowest remaining file. All the information needed to explain it is already there.\n\nRelated: #36 (reading path recommendations), #82 (Read first / Edit here / Tests to run), and #79 (guided tour step reasons).\n\n## Scope\n- The backend adds an `orderReason` to each `RankedFile` (alongside the existing match `reason`), for example:\n  - \"Read first: `cart.py` and `pricing.py` import it.\"\n  - \"Comes after `models.py`, which it imports.\"\n  - \"No dependencies among the results; ranked by match score.\"\n  - \"Part of an import cycle with `a.py`; placed here to break the cycle.\"\n- Add `orderReason` to `frontend/src/api/types.ts` and the mock client.\n- Show it in `ReadingList.tsx` under each entry, and in the \"Reading order\" section of `FileDetailPanel.tsx`.\n\n## Done when\n- [ ] Bookshop e2e fixture: hand-written expected order reasons in `expected.json` match\n- [ ] `test_api_contract.py` covers `orderReason`\n- [ ] A unit test covers the cycle-break reason\n- [ ] Vitest covers the order reason in the reading list and the detail panel\n",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC8d9PGQ",
+        "name": "enhancement",
+        "description": "New feature or request",
+        "color": "a2eeef"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0R7w",
+        "name": "search",
+        "description": "Search, ranking, reading order",
+        "color": "fbca04"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0SWg",
+        "name": "frontend",
+        "description": "React app",
+        "color": "c5def5"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0SqA",
+        "name": "api",
+        "description": "FastAPI layer and frontend/backend contract",
+        "color": "bfdadc"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAADCPqB8Q",
+        "name": "user-study",
+        "description": "",
+        "color": "437053"
+      }
+    ],
+    "number": 93,
+    "state": "CLOSED",
+    "title": "Explain why each file is placed where it is in the suggested reading order"
+  },
+  {
+    "assignees": [],
+    "body": "The dependency map's navigation is cluttered. The toolbar (Reset view, Collapse all), the React Flow zoom controls, and the background grid compete for space, and on mid-size repos it's hard to move around and keep your place.\n\nRelated: #80 (hide tests/tools/docs by default) and #81 (architecture/feature/focus/search views) reduce **how many nodes** are drawn. This issue covers the **navigation controls and interaction** around the map.\n\n## Scope\n- Group the map controls into one compact toolbar: zoom in/out, fit, reset, collapse all. Drop the duplicate controls.\n- Make the background grid lighter or remove it.\n- Keep the selected file and search matches in view: when a file is selected from the sidebar, reading list, or detail panel, pan to it without changing the zoom level unexpectedly.\n- Add a small \"you are here\" cue, such as a breadcrumb of the expanded module path, so users know which part of the repo they are viewing.\n- Consider a minimap that is collapsed by default for large graphs.\n- Keyboard: arrow keys pan, `+`/`-` zoom, `0` fits, without stealing focus from the search bar.\n\n## Done when\n- [ ] One toolbar holds every map control, with no duplicates\n- [ ] Selecting a file anywhere in the workspace pans the map to it\n- [ ] `DependencyMap.test.tsx` covers the toolbar actions and pan-to-selection\n- [ ] Checked by hand on the 1,000-file benchmark repo (#45)\n",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC8d9PGQ",
+        "name": "enhancement",
+        "description": "New feature or request",
+        "color": "a2eeef"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0SWg",
+        "name": "frontend",
+        "description": "React app",
+        "color": "c5def5"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAADCPqB8Q",
+        "name": "user-study",
+        "description": "",
+        "color": "437053"
+      }
+    ],
+    "number": 92,
+    "state": "OPEN",
+    "title": "Declutter dependency map navigation and controls"
+  },
+  {
+    "assignees": [],
+    "body": "New users don't know where to start once an analysis loads. The landing page explains three steps, but the workspace then shows the search bar, sidebar tabs, dependency map, and detail panel all at once, with no guidance.\n\nRelated: #79 adds an **Overview** tab and a guided tour of the *repository* (entry points, core files). This issue covers the *app*: a tutorial on how to use RepoLens, and a simpler first screen.\n\n## Scope\n- **First-run tutorial**: a short, skippable walkthrough of the workspace, 4\u20135 steps, each highlighting one area:\n  - search bar\n  - sidebar (Files / Reading order)\n  - dependency map\n  - file detail panel and \"Next in reading order\"\n- A **Help / \"Show tutorial again\"** button in the workspace header.\n- Remember per viewer that the tutorial was seen (`localStorage`, wrapped in try/catch so the page still works without it).\n- **Simplify the home/landing page**: trim the \"How it works\" and \"What this version supports\" text so the repo URL input is the clear focus. Move details behind a \"Learn more\" disclosure or into the tutorial.\n- **Simplify the first workspace view**: show only what a new user needs first, e.g. collapse the detail panel until a file is selected, or start on #79's Overview tab once it lands.\n\n## Done when\n- [ ] The tutorial shows on the first visit to a completed analysis and not again after it is finished or skipped\n- [ ] The tutorial can be reopened from the workspace\n- [ ] The landing page fits above the fold on a 1366\u00d7768 screen with the URL input focused\n- [ ] Vitest covers tutorial show/skip/reopen and the persisted \"seen\" state\n",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC8d9PGQ",
+        "name": "enhancement",
+        "description": "New feature or request",
+        "color": "a2eeef"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0SWg",
+        "name": "frontend",
+        "description": "React app",
+        "color": "c5def5"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAADCPqB8Q",
+        "name": "user-study",
+        "description": "",
+        "color": "437053"
+      }
+    ],
+    "number": 91,
+    "state": "OPEN",
+    "title": "Add a first-run tutorial and simplify the home and workspace UI"
+  },
+  {
+    "assignees": [],
+    "body": "This tracks the issues that respond to TA feedback from Assignments 1\u20135 and the 11/5 in-class review. The headline critique (Assignment 5): RepoLens shows the right data, but it doesn't yet *onboard* a new developer. Search is keyword-only, and setup assumes `make`, `venv`, and a matching Python are already installed.\n\n## Week 1: environment and data foundations\n- [ ] #76 One Docker image, pinned deps, persistent cache, CD (advances #48, #49)\n- [ ] #77 (part 1) Index docstrings, comments, and methods (closes #74, part of #44)\n- [ ] #78 Typed schema and API params\n\n## Week 2: the onboarding core\n- [ ] #79 Start-here overview: entry points, architecture, feature areas, guided tour\n- [ ] #80 Hide tests, tools, docs, and examples by default\n- [ ] #77 (part 2) Local-embedding hybrid search, plus a benchmark column\n\n## Week 3: task focus, hosts, and caching\n- [ ] #81 Map views: architecture, feature, focus, search\n- [ ] #82 Task results: Read first, Edit here, Tests to run\n- [ ] #83 GitLab and generic git URLs\n- [ ] #84 Layered caching\n\n## Week 4: docs, evaluation, and stretch\n- [ ] #85 User README with screenshots, plus a developer guide (completes #48)\n- [ ] #47 Comparison study (protocol added in a comment there)\n- [ ] #86 (stretch) Per-language import resolution port\n\nParallel tracks:\n- **A**: analysis and onboarding (#77 part 1, #79 backend)\n- **B**: search (#77 part 2, #82 backend)\n- **C**: frontend (#79 UI, #80, #81, #82 UI, #84 client)\n- **D**: infra and docs (#76, #83, #78, #85)\n\nRe-check this schedule weekly and update the living doc (TA, Assignment 3).\n",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0TKA",
+        "name": "pm",
+        "description": "Planning, user studies, release",
+        "color": "f9d0c4"
+      }
+    ],
+    "number": 87,
+    "state": "OPEN",
+    "title": "Roadmap: respond to TA feedback before the final release"
+  },
+  {
+    "assignees": [],
+    "body": "From TA feedback (Assignment 2): `ast` is the right choice for Python, but the architecture shouldn't depend on it so heavily that adding a second language means rewriting the app.\n\n`LanguageAnalyzer` already isolates parsing. The import classifier and the pipeline runner are still Python-only.\n\n## Scope\n- Add an `ImportResolver` Protocol keyed by language, and move `analysis/classifier.py` behind it.\n- Replace `NoPythonFilesError` with a \"no supported files\" error.\n- Entry-point and category logic read analyzer `markers` and never touch `ast` directly.\n- Optional proof: a tree-sitter JavaScript/TypeScript analyzer.\n\n## Done when\n- [ ] A test registers a toy second analyzer and resolver, and the pipeline stores its files without touching any Python-specific code\n\nStretch goal. Schedule: **week 4, if time allows**.\n",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC8d9PGQ",
+        "name": "enhancement",
+        "description": "New feature or request",
+        "color": "a2eeef"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0RZQ",
+        "name": "analysis",
+        "description": "Python AST parsing, imports, symbols",
+        "color": "5319e7"
+      }
+    ],
+    "number": 86,
+    "state": "OPEN",
+    "title": "Put import resolution behind a per-language port so a second language fits"
+  },
+  {
+    "assignees": [],
+    "body": "From in-class feedback (11/5): *two READMEs (one for users, one for developers)*, *include screenshots for use cases*, and *address assumptions for building the app*.\n\n## Scope\n- **`README.md`, for users**:\n  - what RepoLens does\n  - the hosted URL and `docker compose up`\n  - a walkthrough of the use cases (overview and tour, task search, filtered map, file detail), with screenshots in `docs/images/`\n  - supported hosts, and the wording \"Python 3.11 and up\"\n- **`docs/DEVELOPERS.md`, for developers**:\n  - an architecture diagram (mermaid)\n  - local development with `uv` and `npm`\n  - tests, benchmarks, and CI/CD\n  - schema column types\n  - \"adding a language analyzer\"\n- Fix stale claims in `backend/README.md` and `frontend/README.md`.\n\n## Done when\n- [ ] Someone outside the team gets RepoLens running using only the user README (completes #48)\n- [ ] Screenshots match the final UI\n\nSchedule: **week 4**.\n",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC8d9PBw",
+        "name": "documentation",
+        "description": "Improvements or additions to documentation",
+        "color": "0075ca"
+      }
+    ],
+    "number": 85,
+    "state": "OPEN",
+    "title": "Split docs into a user README with screenshots and a developer guide"
+  },
+  {
+    "assignees": [],
+    "body": "From TA feedback (Assignment 3): cache where it actually saves time. A developer onboarding onto one codebase opens the same repo again and again across sessions, so caching on their side makes sense, possibly in layers: keep the parts of the graph they revisit on their machine, and keep the analyzed repo on the backend so nothing gets rescanned.\n\n## Scope\n- **Backend**\n  - A persistent database (from the Docker/CD issue), so a restart doesn't force rescans.\n  - In-flight de-duplication in `PipelineAnalysisRunner.start`: two requests for the same `(repo, sha)` share one queued or running analysis.\n  - `ETag` and `Cache-Control: private, immutable` on `/graph`, `/files/\u2026` and `/overview`, which never change for a given analysis id.\n- **Client**\n  - A \"Recent repositories\" list on the landing page.\n  - For each repo, remember the last selected file, feature area, expanded modules and filters in `localStorage`, so a returning developer lands where they left off.\n  - Optional: cache the graph and overview in IndexedDB, keyed by `(repoUrl, sha)`, until `expiresAt`.\n\n## Done when\n- [ ] Test: two concurrent `POST /analyses` for the same repo trigger only one download\n- [ ] Test: a second `GET /graph` with `If-None-Match` returns 304\n- [ ] Vitest covers recent repos and restored view state, and a storage failure doesn't break the page\n\nSchedule: **week 3**.\n",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC8d9PGQ",
+        "name": "enhancement",
+        "description": "New feature or request",
+        "color": "a2eeef"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0RpQ",
+        "name": "graph",
+        "description": "Graph schema, storage, graph endpoints",
+        "color": "0e8a16"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0SWg",
+        "name": "frontend",
+        "description": "React app",
+        "color": "c5def5"
+      }
+    ],
+    "number": 84,
+    "state": "OPEN",
+    "title": "Cache in layers: dedupe in-flight analyses, HTTP ETags, recent repos on the client"
+  },
+  {
+    "assignees": [],
+    "body": "From TA feedback (Assignment 2): *the restriction to GitHub stands out. Most features apply to any Git-compatible repository, so if I gave it a GitLab link I'd expect it to work.*\n\n## Scope\n- `ingestion/urls.py`: parse URLs into a host-neutral `RepoLocation(host, path)` that allows GitLab nested groups. Remove the duplicate `api/app.py:validate_github_repo_url`.\n- Add a `RefResolver` Protocol to `ingestion/ports.py`. The `RepoSource` port already names GitLab as its second implementation.\n- **GitLab**: `GitLabRefResolver` (`/api/v4/projects/{id}/repository/commits/{ref}`) and `GitLabSource` (`/repository/archive.zip?sha=`). Both go through the existing `HttpsArchiveFetcher`, with GitLab hosts added to the allowlist.\n- **Any public https git URL**: resolve with `git ls-remote`, then fetch with a hardened shallow `GitCloneSource`:\n  - `GIT_TERMINAL_PROMPT=0` and `GIT_LFS_SKIP_SMUDGE=1`\n  - `-c protocol.allow=never -c protocol.https.allow=always`\n  - `core.hooksPath=/dev/null`\n  - no submodules, a timeout, and a size check against `ArchiveLimits` after cloning\n- **Source links per host**, replacing `build_github_source_url`. Generic hosts hide the link.\n- **Frontend**: `utils/repoInput.ts` accepts any https git URL, and \"Open source on GitHub\" becomes \"Open source\".\n- **README**: stop saying \"GitHub only\".\n\n## Done when\n- [ ] Unit tests cover URL parsing for each host and the exact clone arguments and environment\n- [ ] Manual check: a public gitlab.com Python repo and one generic https git repo both analyze end to end in the Docker image\n\nSchedule: **week 3**.\n",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC8d9PGQ",
+        "name": "enhancement",
+        "description": "New feature or request",
+        "color": "a2eeef"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0Qzg",
+        "name": "ingestion",
+        "description": "Repository download, filtering, caching",
+        "color": "1d76db"
+      }
+    ],
+    "number": 83,
+    "state": "OPEN",
+    "title": "Accept GitLab and any public https git URL, not just GitHub"
+  },
+  {
+    "assignees": [],
+    "body": "From in-class feedback (11/5): *show users where to start coding for a specific task*, and *help users find specific tasks/features and modify the display for that.*\n\n## Scope\n- The backend adds `role: \"prerequisite\" | \"edit\" | \"test\"` to each `RankedFile`:\n  - **edit**: the top-scoring non-test file that isn't merely a dependency of another result\n  - **prerequisite**: files the edit target depends on (from the existing reading order)\n  - **test**: `test`-category files that import the edit target (its `importedBy`)\n- `ReadingList.tsx` shows three sections: **Read first**, **Edit here**, and **Tests to run**.\n\n## Done when\n- [ ] Bookshop: searching \"cart total\" puts `orders/checkout.py` under *Edit here* and `tests/test_checkout.py` under *Tests to run*. The expectation is hand-written in `expected.json`.\n- [ ] A contract test covers `role`\n\nDepends on categories and hybrid search. Schedule: **week 3**.\n",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC8d9PGQ",
+        "name": "enhancement",
+        "description": "New feature or request",
+        "color": "a2eeef"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0R7w",
+        "name": "search",
+        "description": "Search, ranking, reading order",
+        "color": "fbca04"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0SWg",
+        "name": "frontend",
+        "description": "React app",
+        "color": "c5def5"
+      }
+    ],
+    "number": 82,
+    "state": "OPEN",
+    "title": "Group task search results into Read first, Edit here, and Tests to run"
+  },
+  {
+    "assignees": [],
+    "body": "From in-class feedback (11/5): *split the map into parts / show it in parts \u2014 maybe split by feature.*\n\n## Scope\nAdd a view switcher to the `DependencyMap` toolbar. Each view filters the nodes before `mapLayout.ts:layoutMap()` runs:\n- **Architecture**: package nodes only\n- **Feature area**: one onboarding area plus its 1-hop neighbours\n- **Focus**: the selected file \u00b1 N hops\n- **Search**: the subgraph of search results\n- **All**: today's view\n\nSmaller graphs also help meet the 2-second layout target on large repos (#45).\n\n## Done when\n- [ ] Each view has Vitest coverage in `mapLayout.test.ts` / `DependencyMap.test.tsx`\n- [ ] Clicking a feature area in the Overview tab opens the map in that area's view\n\nDepends on feature areas. Schedule: **week 3**.\n",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC8d9PGQ",
+        "name": "enhancement",
+        "description": "New feature or request",
+        "color": "a2eeef"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0SWg",
+        "name": "frontend",
+        "description": "React app",
+        "color": "c5def5"
+      }
+    ],
+    "number": 81,
+    "state": "OPEN",
+    "title": "Split the dependency map into architecture, feature, focus, and search views"
+  },
+  {
+    "assignees": [],
+    "body": "From in-class feedback (11/5): *filter out \"unnecessary\" files like test files, tools, etc. by default, but give the user the option to enable them with checkboxes.*\n\n## Scope\n- `FileNode` and search results carry a `category` (from the onboarding issue).\n- Add a checkbox group to the Workspace toolbar: Tests, Tools/scripts, Docs, Examples, Config. All are **off by default**. The filters apply to the dependency map, `FileExplorer`, the guided tour, and search.\n- Search takes a typed `categories` query param, so `total` and paging stay correct.\n- Remember each viewer's checkbox state in `localStorage`, wrapped in try/catch.\n\n## Done when\n- [ ] Bookshop fixture: `tests/test_checkout.py` is hidden by default and appears in the map, explorer and search when \"Tests\" is ticked\n- [ ] Vitest covers the filter state and each place it is applied\n\nDepends on file categories. Schedule: **week 2**.\n",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC8d9PGQ",
+        "name": "enhancement",
+        "description": "New feature or request",
+        "color": "a2eeef"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0SWg",
+        "name": "frontend",
+        "description": "React app",
+        "color": "c5def5"
+      }
+    ],
+    "number": 80,
+    "state": "OPEN",
+    "title": "Hide tests, tools, docs, and examples by default behind checkboxes"
+  },
+  {
+    "assignees": [],
+    "body": "From TA feedback (Assignment 5): the beta \"does exactly what it says on the tin\". It shows imports and symbols, but it doesn't onboard anyone yet. In-class feedback (11/5) also asked us to **show architecture**, **tailor for new users**, and **split the map by feature**.\n\n## Scope\nNew backend package `repolens/onboarding/`, computed from the stored graph in a new pipeline stage `summarizing`:\n\n- **File categories**: `source | test | tool | docs | example | config | migration`, decided from path and name heuristics (`tests/`, `test_*.py`, `*_test.py`, `conftest.py`, `scripts/`, `tools/`, `examples/`, `docs/`, `setup.py`, `noxfile.py`, `migrations/`). New `files.category` column. The filters and task-mode issues need this.\n- **Entry points**, detected from analyzer markers:\n  - `if __name__ == \"__main__\"`, `__main__.py`, `manage.py`\n  - module-level `FastAPI()`, `Flask()` and `typer.Typer()` objects, and `@click.command` / `@app.route` decorators\n  - `[project.scripts]` in `pyproject.toml`, read with `tomllib` and never executed\n- **Core files**: PageRank or in-degree over internal import edges.\n- **Architecture**: a package-level graph, plus layers by topological depth (foundations \u2192 services \u2192 entry points). Report cycles.\n- **Feature areas**: community detection (label propagation) on the import graph. Name each area from its most frequent path and symbol tokens.\n- **Guided tour**: a whole-repo reading order of 8\u201312 files, from an entry point to the core files it reaches, with dependencies first. It reuses the Kahn ordering in `SearchService._reading_order`, lifted into a shared helper. Each step gets a one-line reason.\n- **File summaries**: the first line of the module docstring; failing that, a generated line like \"Defines 3 classes, 5 functions; used by 7 files\".\n- **API**: `GET /analyses/{id}/overview` returns `{entryPoints, coreFiles, architecture{packages, edges, layers}, areas[], tour[]}`. Add it to `frontend/src/api/types.ts` and the mock client.\n- **Frontend**: a new default **Overview** tab in `Workspace.tsx` with:\n  - an architecture strip\n  - the entry points\n  - \"Start the tour\", which reuses the Next action in `FileDetailPanel`\n  - the feature-area list, where clicking an area scopes the map\n\n## Done when\n- [ ] The bookshop e2e fixture's `expected.json` (hand-written) gains entry points (`manage.py`, `bookshop/app.py`), categories, and tour expectations, and the e2e test passes\n- [ ] `test_api_contract.py` covers `/overview`\n- [ ] The Overview tab has Vitest coverage and is the first thing shown when an analysis completes\n\nDepends on the docstring/comment extraction issue (needed for summaries). Schedule: **week 2**.\n",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC8d9PGQ",
+        "name": "enhancement",
+        "description": "New feature or request",
+        "color": "a2eeef"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0RZQ",
+        "name": "analysis",
+        "description": "Python AST parsing, imports, symbols",
+        "color": "5319e7"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0SWg",
+        "name": "frontend",
+        "description": "React app",
+        "color": "c5def5"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0SqA",
+        "name": "api",
+        "description": "FastAPI layer and frontend/backend contract",
+        "color": "bfdadc"
+      }
+    ],
+    "number": 79,
+    "state": "OPEN",
+    "title": "Add a Start-here overview: entry points, architecture, feature areas, guided tour"
+  },
+  {
+    "assignees": [],
+    "body": "From TA feedback (Assignment 3): consider the data type of every column and of every API argument. Some arguments arrive as strings but can be parsed as other types, and that can shape the database, or the other way round.\n\n## Scope\n- `graph/schema.py`:\n  - Use `STRICT` tables.\n  - Add `CHECK` constraints on enum columns (`status`, `stage`, import `kind`, symbol `kind`) and on booleans (0 or 1).\n  - Record a schema version in `PRAGMA user_version`.\n- Routes:\n  - Type `analysis_id` as `UUID`. A malformed id should return 404 in the existing `{code, message, hint}` shape, not a 500.\n  - `limit` and `offset` stay typed as `int` with bounds.\n- Document the column types in the developer docs.\n\n## Done when\n- [ ] Tests show that inserting an invalid `status` or `kind` raises, and that a non-UUID analysis id returns the contract error\n- [ ] Existing suites still pass unchanged\n\nSchedule: **week 1**.\n",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC8d9PGQ",
+        "name": "enhancement",
+        "description": "New feature or request",
+        "color": "a2eeef"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0RpQ",
+        "name": "graph",
+        "description": "Graph schema, storage, graph endpoints",
+        "color": "0e8a16"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0SqA",
+        "name": "api",
+        "description": "FastAPI layer and frontend/backend contract",
+        "color": "bfdadc"
+      }
+    ],
+    "number": 78,
+    "state": "CLOSED",
+    "title": "Type the schema and API params (STRICT tables, enum CHECKs, UUID ids)"
+  },
+  {
+    "assignees": [],
+    "body": "From TA feedback (Assignment 5 and 11/5): search only matches exact keywords. A new hire asks something vague, like *\"if I'm meant to work on prod, where do I start?\"* If nothing in the repo is literally called \"prod\", RepoLens returns nothing.\n\nDecision: **a local embedding model, combined with the existing keyword scoring**. It needs no API key, works offline, and ships in the Docker image.\n\n## Scope\n1. **Richer extraction** (week 1; closes step 1 of #74 and the indexing half of #44): module, class and function docstrings, comments (read with `tokenize`, nothing executed), methods, and class-level fields. Fill the `comments` table, which exists but is always empty, and add docstrings to the index.\n2. **`Embedder` port** in `search/embedding.py`:\n   - `FastEmbedEmbedder`: `fastembed` running the ONNX model `BAAI/bge-small-en-v1.5` (~67 MB, CPU only).\n   - `HashEmbedder`: deterministic, for tests and CI. Tests never download a model.\n3. **`indexing` pipeline stage**:\n   - One chunk per file: path words split on snake/camel case, module docstring, symbols, docstrings and comments. Large files also get one chunk per symbol.\n   - Vectors go in a new `embeddings` table.\n   - Search is brute-force cosine similarity in numpy; up to 1,000 files doesn't need a vector database.\n4. **Hybrid ranking**: combine the keyword and semantic scores with Reciprocal Rank Fusion, then apply the existing dependencies-first reading order. Drop stop-words from keyword terms, and send \"where do I start\" / \"overview\" queries to the onboarding tour.\n5. **Evaluation**: add a `RepoLens-hybrid` column to `benchmarks/search_precision.py`. Add vague natural-language queries to `labeled_queries.json`, labeled *before* running, following the existing labeling rule.\n6. **Frontend**: change the SearchBar prompt to \"Describe what you want to work on\u2026\". Add a `semantic` match kind to `ReadingList` that shows the docstring or comment snippet that matched.\n\n## Done when\n- [ ] The 4 queries that return nothing in `measured_precision.json` return labeled files\n- [ ] Hybrid precision@5 is at least the keyword score on every query, and the refreshed numbers are committed with an explanation\n- [ ] The e2e test includes a natural-language query\n\nRelated: #74, #44, #37 / PR #67. Schedule: extraction in **week 1**, embeddings and benchmark in **week 2**.\n",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC8d9PGQ",
+        "name": "enhancement",
+        "description": "New feature or request",
+        "color": "a2eeef"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0RZQ",
+        "name": "analysis",
+        "description": "Python AST parsing, imports, symbols",
+        "color": "5319e7"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0R7w",
+        "name": "search",
+        "description": "Search, ranking, reading order",
+        "color": "fbca04"
+      }
+    ],
+    "number": 77,
+    "state": "OPEN",
+    "title": "Index docstrings, comments, and methods, then add local-embedding hybrid search"
+  },
+  {
+    "assignees": [],
+    "body": "From TA feedback (Assignments 4 and 5, and 11/5):\n- `make` comes with build-essential, which many systems don't have; the TA's fresh Ubuntu VM didn't. `venv` isn't always installed either. A new developer, the person RepoLens is for, can't be expected to know these workarounds.\n- *Streamline this significantly for the final release: use CD, lock down the environment, pin versions/dependencies.* The TA recommended Docker.\n- Testing on 3.11, 3.12 and 3.13 adds little; pick one known-good version and pin it. Say \"Python 3.11 and up\" rather than listing versions.\n\n## Scope\n- **Single image** from a multi-stage root `Dockerfile`:\n  - A `node:22` stage builds `frontend/dist`.\n  - A `python:3.12-slim-bookworm` stage (exact tag) runs the backend as a non-root user, with locked dependencies and `git`.\n  - FastAPI serves the API under `/api` and the built frontend as static files, so production needs no `*` CORS rule.\n- **Persistent SQLite** at `REPOLENS_DB_PATH`; tests keep the in-memory default. Recreate the database when the schema version changes, since it is only a 24-hour cache. Add `GET /api/health`.\n- **`docker-compose.yml`**: port 8000 and a `/data` volume.\n- **Pinning**: `uv` with `backend/uv.lock`, `.python-version` and `.nvmrc`. Developers without Docker run `uv sync` and `npm ci`; uv installs Python itself, so no system venv is needed. The Makefile stays as an optional shortcut.\n- **CI**: run the main backend suite on the pinned 3.12 only. A small compatibility job on 3.11 (the minimum) and the newest Python backs up \"3.11 and up\".\n- **CD** (`release.yml`, on push to `main`):\n  1. Build the image.\n  2. Smoke-test it: `/api/health`, and the e2e suite inside the container.\n  3. Push to GHCR as `:sha` and `:latest`.\n  4. Trigger the host's deploy hook (Render or Fly.io, stored as a secret) when one is configured.\n\n## Done when\n- [ ] On a fresh Ubuntu VM with only Docker installed (no build-essential, no venv), `docker compose up` serves RepoLens on `:8000` and analyzes a public repo\n- [ ] The release workflow passes on `main` and the image is published to GHCR\n- [ ] The hosted URL works and is at the top of the README (together with the docs issue, this closes #49)\n\nAdvances #48 and #49. Schedule: **week 1**.\n",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC8d9PGQ",
+        "name": "enhancement",
+        "description": "New feature or request",
+        "color": "a2eeef"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0S5w",
+        "name": "testing",
+        "description": "Tests, CI, benchmarks, evaluation",
+        "color": "d4c5f9"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0TKA",
+        "name": "pm",
+        "description": "Planning, user studies, release",
+        "color": "f9d0c4"
+      }
+    ],
+    "number": 76,
+    "state": "CLOSED",
+    "title": "Package RepoLens as one Docker image with pinned deps, persistent cache, and CD"
+  },
+  {
+    "assignees": [],
+    "body": "Found by the hand-labeled accuracy fixtures in #34 (PR #71). This is the one recorded miss in that measurement \u2014 **84/85 references correct, 98.8%** \u2014 and it is deliberately left failing so it does not get lost.\n\n## Problem\n\nWhen a module file and a package directory share a name, the file wins in CPython and the directory becomes unreachable. The classifier resolves through the directory anyway.\n\nFixture: `backend/tests/fixtures/import_classification/module_directory_collision/`\n\n```\nrepo/app/config.py          <- module file\nrepo/app/config/defaults.py <- directory of the same name, unreachable\n```\n\nFor `import app.config.defaults`:\n\n| | Result |\n|---|---|\n| CPython | `ModuleNotFoundError` \u2014 `app.config` resolves to `app/config.py`, which is not a package, so it cannot contain `defaults` |\n| RepoLens | internal edge to `app/config/defaults.py` |\n| Correct label | `unresolved` |\n\n## Impact\n\nA wrong internal edge, which is the failure mode we have agreed is worse than an honest gap: it silently adds a dependency to the map that Python would never take, and the file detail panel shows an importer relationship that does not exist. An `unresolved` label would be correct and harmless here.\n\nScope is narrow \u2014 it needs a module file and a directory of the same name in the same parent \u2014 but it is not contrived; it happens when a module grows into a package and the old file is left behind.\n\nNote the sibling case **does** work: `app/models.py` alongside `app/models/` with `app/models/__init__.py` present classifies correctly, because the directory is a real package. The bug is specific to the shadowed, non-package directory.\n\n## Suggested fix\n\nIn `backend/repolens/analysis/classifier.py`, when a dotted path resolves to a module *file*, stop \u2014 do not continue descending into a same-named directory. The base-resolves-before-submodule ordering from #27 is already in place; this is the adjacent case where the base resolves to a file and the remaining segments therefore cannot resolve at all.\n\n## Heads-up for whoever fixes this\n\nThe #34 measurement is a **snapshot test**. `backend/tests/test_import_classification.py` pins the current numbers against `backend/benchmarks/measured_classification.json`, including this miss:\n\n- `test_the_measurement_reproduces_the_recorded_numbers`\n- `test_overall_accuracy_is_84_of_85_references`\n\nFixing the classifier **will fail those two tests until the recorded numbers are regenerated**. That is intended \u2014 it is a change detector, not a regression. Update `measured_classification.json` and the `84 of 85` expectation as part of the fix. The `module_directory_collision` layout should go from 10/11 (90.9%) to 11/11, and overall from 84/85 to 85/85.\n\nLabels in the fixtures were verified against CPython `importlib`, not read back from the classifier, so the expected answer here is trustworthy.",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC8d9O8A",
+        "name": "bug",
+        "description": "Something isn't working",
+        "color": "d73a4a"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0RZQ",
+        "name": "analysis",
+        "description": "Python AST parsing, imports, symbols",
+        "color": "5319e7"
+      }
+    ],
+    "number": 75,
+    "state": "OPEN",
+    "title": "Classifier resolves import through a directory shadowed by a same-named module file"
+  },
+  {
+    "assignees": [],
+    "body": "Follow-up from the measurement landed in #37 (PR #67). Filing while the numbers are fresh.\n\n## What #37 measured\n\nTop-5 precision over 19 hand-labeled queries across 3 fixture repos:\n\n| System | Top-5 precision |\n|---|---|\n| **RepoLens** | **0.211** |\n| grep (filename baseline) | 0.042 |\n| grep + ranking | 0.053 |\n| ideal ceiling | 0.326 |\n\nRepoLens wins on all 3 repos and is not beaten on any individual query, so the premise holds: structured search beats grepping filenames.\n\n## The problem the measurement exposed\n\nThe interesting finding is *how* RepoLens falls short of the 0.326 ceiling:\n\n- **All 11 labeled files RepoLens misses are recall failures, not ranking failures.** The ranker is not putting the right file low; the right file is not in the index at all.\n- **4 of the 19 queries return nothing whatsoever.**\n\nThe index currently holds only:\n- file path\n- module-level symbols\n- import `raw_name`s\n\nSo a query matching a term that appears only inside a function body, in a docstring, or in a comment cannot match anything, no matter how good the ranking is. Improving ranking cannot move these numbers; only indexing more content can.\n\n## Suggested direction\n\nCandidates, roughly cheapest-first:\n\n1. **Index comments and docstrings.** #44 already covers comment search, so this may partly land there \u2014 worth checking for overlap before doing work twice.\n2. **Index nested symbols** (methods, nested functions), not just module-level ones. Note this is a deliberate current design choice \u2014 module-level symbols are the file public surface \u2014 so it should be additive and ranked lower, not a change to what `symbols` means in the file detail panel.\n3. **Index identifiers inside function bodies**, as a last resort \u2014 highest index cost and the most likely to hurt precision, so it should be measured, not assumed.\n\n## How to verify any change\n\n#37 shipped a reproducible harness, so this is measurable rather than a matter of opinion:\n\n- re-run the labeled query sets and compare against the 0.211 / 0.326 figures above\n- the 4 zero-result queries are the clearest success signal \u2014 any of them returning a labeled file is real progress\n- watch precision does not regress while recall improves\n\nNote the baseline enumerates **tracked** files only (`git ls-files`), so the numbers are reproducible on a clean checkout.\n\n## Related\n\n- #37 / PR #67 \u2014 the measurement this comes from\n- #36 \u2014 reading path recommendations, which consume these results\n- #44 \u2014 comment search, likely overlapping with suggestion 1",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC8d9PGQ",
+        "name": "enhancement",
+        "description": "New feature or request",
+        "color": "a2eeef"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0R7w",
+        "name": "search",
+        "description": "Search, ranking, reading order",
+        "color": "fbca04"
+      }
+    ],
+    "number": 74,
+    "state": "OPEN",
+    "title": "Search recall: index holds only paths, module-level symbols and import names, so some queries return nothing"
+  },
+  {
+    "assignees": [],
+    "body": "Pre-existing flake on `main`, found while working on #37. Not introduced by that PR.\n\n## Symptom\n\n`backend/tests/test_e2e_reference_repo.py::test_requests_the_commit_then_the_archive_once` fails intermittently \u2014 roughly **2 runs in 10**. It fails in isolation too, so it is not cross-test pollution.\n\n## Cause\n\n`PipelineAnalysisRunner.run` deletes the working directory in a `finally`:\n\n```python\n# backend/repolens/pipeline/runner.py:151\nfinally:\n    shutil.rmtree(work_dir, ignore_errors=True)\n```\n\nThe test asserts that the work root is empty. That assertion races the `rmtree`: the analysis is observed as completed and the test proceeds while cleanup is still in flight, so the directory is sometimes still present when the assertion runs.\n\n`ignore_errors=True` means a partially-failed cleanup is also silent, so the race has no diagnostic trail.\n\n## Why it is worth fixing rather than tolerating\n\nThis runs in the `End-to-end (reference repo)` CI job, so roughly one in five pushes can go red for a reason unrelated to the change under review. We have already had PRs where a green/red signal on this job needed interpreting rather than trusting, and a flaky gate trains people to re-run CI instead of reading it.\n\n## Suggested fix\n\nMake the cleanup observable rather than racing it. Options, roughly in order of preference:\n\n1. Have the runner signal that cleanup is done \u2014 the test waits on that rather than on analysis status.\n2. Have the test poll for the work root to become empty with a short timeout, instead of asserting once.\n3. Inject the work-root lifecycle so the test owns cleanup and can assert deterministically.\n\nSimply asserting less is not ideal: the assertion is testing something real \u2014 that snapshots do not accumulate on disk.\n\n## Reproduction\n\nRun the single test repeatedly:\n\n```\ncd backend && for i in $(seq 1 10); do python -m pytest tests/test_e2e_reference_repo.py::test_requests_the_commit_then_the_archive_once -q || echo \"FAILED on run $i\"; done\n```",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC8d9O8A",
+        "name": "bug",
+        "description": "Something isn't working",
+        "color": "d73a4a"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0S5w",
+        "name": "testing",
+        "description": "Tests, CI, benchmarks, evaluation",
+        "color": "d4c5f9"
+      }
+    ],
+    "number": 73,
+    "state": "CLOSED",
+    "title": "Flaky: test_requests_the_commit_then_the_archive_once races the pipeline snapshot cleanup"
+  },
+  {
+    "assignees": [],
+    "body": "Found while landing #26 (file filtering) alongside the pipeline runner from #30.\n\n## Problem\n\n`PipelineAnalysisRunner._run_stages` gates the filtering stage on *language support only*, before the vendored/generated filter runs:\n\n```python\n# backend/repolens/pipeline/runner.py:170\nif not any(self._analysis_service.supports(path) for path in snapshot.files):\n    raise NoPythonFilesError()\n\n# ...then, five lines later:\nanalysis = self._analysis_service.analyze_repository(snapshot.root)   # line 175\n```\n\n`supports(path)` only asks \"is this a `.py`/`.pyi` file an analyzer can handle\". It is evaluated over **every** file in the snapshot, including vendored and generated ones. The exclusion filter added in #26 is applied later, inside `analyze_repository`.\n\nSo for a repository whose only Python lives in `vendor/`, `third_party/`, `build/`, `node_modules/`, or an `.egg-info` directory:\n\n1. Line 170 passes \u2014 those files *are* Python, so `NoPythonFilesError` is not raised.\n2. Line 175 filters them all out as vendored/generated.\n3. The analysis reaches `complete_analysis` with **zero analyzed files** and status `completed`.\n\n## Impact\n\nThe user gets an apparently successful analysis with an empty file explorer and an empty dependency map, rather than the clear `NO_PYTHON_FILES` error that already exists for this situation:\n\n> This repository has no Python files to analyze.\n> *Hint:* RepoLens currently supports Python repositories only.\n\nA silent empty success is the worst of the available outcomes \u2014 there is nothing on screen explaining why.\n\n## Suggested fix\n\nEvaluate the gate against the set of files that will actually be analyzed, i.e. after exclusion, rather than against raw `snapshot.files`. Either move the check after filtering, or have the filter report its analyzable set and gate on that. The existing `NoPythonFilesError` is probably still the right error, though it may deserve a distinct code or hint for \"all Python was excluded as vendored/generated\" versus \"no Python at all\" \u2014 those are different things to tell a user.\n\n## Notes\n\n- `backend/README.md:390` documents the intended behaviour as \"**filtering**: fails with `NO_PYTHON_FILES` if no file has an analyzer\", which is what the code does \u2014 the gap is that \"has an analyzer\" and \"will be analyzed\" diverged once filtering landed.\n- Deliberately left untouched by the #26 PR, as `runner.py` was out of that PR scope.\n- Practical consequence worth knowing: this is a live demo hazard. Demoing a repo whose Python is all vendored shows an empty, successful-looking analysis.",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC8d9O8A",
+        "name": "bug",
+        "description": "Something isn't working",
+        "color": "d73a4a"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0Qzg",
+        "name": "ingestion",
+        "description": "Repository download, filtering, caching",
+        "color": "1d76db"
+      }
+    ],
+    "number": 72,
+    "state": "OPEN",
+    "title": "Repos whose only Python is vendored or generated complete with zero analyzed files instead of an error"
+  },
+  {
+    "assignees": [],
+    "body": "Deploy the app, confirm the public URL, test the deployed interface, and write interface docs and known limitations.\r\n\r\n**Done when**\r\n- [ ] Public URL works and is in the README and living doc\r\n- [ ] Deployed interface tested\r\n- [ ] Interface docs and known limitations written",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC8d9PBw",
+        "name": "documentation",
+        "description": "Improvements or additions to documentation",
+        "color": "0075ca"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0TKA",
+        "name": "pm",
+        "description": "Planning, user studies, release",
+        "color": "f9d0c4"
+      }
+    ],
+    "number": 49,
+    "state": "OPEN",
+    "title": "Deploy RepoLens publicly and finish release docs"
+  },
+  {
+    "assignees": [],
+    "body": "Fill in the README's \"Local Setup Instructions\" (currently TBD). Then someone outside the team clones and builds the project using only the README.\r\n\r\n**Done when**\r\n- [ ] Setup section complete\r\n- [ ] Outside person builds and runs it without help",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC8d9PBw",
+        "name": "documentation",
+        "description": "Improvements or additions to documentation",
+        "color": "0075ca"
+      }
+    ],
+    "number": 48,
+    "state": "OPEN",
+    "title": "Write README local setup instructions and run an outside build test"
+  },
+  {
+    "assignees": [],
+    "body": "Participants do two tasks with GitHub search and two with RepoLens. Measure time to the right file, irrelevant files opened, and a survey. All engineers fix what the measurements turn up.\r\n\r\n**Done when**\r\n- [ ] Study done and results written up\r\n- [ ] Timing and accuracy targets measured\r\n- [ ] Follow-up fixes filed as issues",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0S5w",
+        "name": "testing",
+        "description": "Tests, CI, benchmarks, evaluation",
+        "color": "d4c5f9"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0TKA",
+        "name": "pm",
+        "description": "Planning, user studies, release",
+        "color": "f9d0c4"
+      }
+    ],
+    "number": 47,
+    "state": "OPEN",
+    "title": "Run comparison study and fix timing and accuracy issues"
+  },
+  {
+    "assignees": [],
+    "body": "Acceptance checklist for the MVP features. Also replace \"Task tracker: TODO\" in the living doc with a link to these Issues.\r\n\r\n**Done when**\r\n- [ ] Checklist written\r\n- [ ] Living doc links to GitHub Issues",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC8d9PBw",
+        "name": "documentation",
+        "description": "Improvements or additions to documentation",
+        "color": "0075ca"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0TKA",
+        "name": "pm",
+        "description": "Planning, user studies, release",
+        "color": "f9d0c4"
+      }
+    ],
+    "number": 46,
+    "state": "OPEN",
+    "title": "Write MVP acceptance checklist and link the task tracker"
+  },
+  {
+    "assignees": [],
+    "body": "Check map rendering against the 2-second target (Risk 5). If it misses, default to the explorer and list view.\r\n\r\n**Done when**\r\n- [ ] Render time recorded for a 1,000-file repo\r\n- [ ] Fallback used if the target is missed",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0SWg",
+        "name": "frontend",
+        "description": "React app",
+        "color": "c5def5"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0S5w",
+        "name": "testing",
+        "description": "Tests, CI, benchmarks, evaluation",
+        "color": "d4c5f9"
+      }
+    ],
+    "number": 45,
+    "state": "OPEN",
+    "title": "Benchmark the dependency map on a 1,000-file repo"
+  },
+  {
+    "assignees": [],
+    "body": "Search comments, return a helpful response when nothing matches, and add ranking regression tests.\r\n\r\n**Done when**\r\n- [ ] Comment matches show up in results\r\n- [ ] No-result queries return a helpful message\r\n- [ ] Ranking tests on reference queries",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0R7w",
+        "name": "search",
+        "description": "Search, ranking, reading order",
+        "color": "fbca04"
+      }
+    ],
+    "number": 44,
+    "state": "OPEN",
+    "title": "Add comment search, no-result handling, and ranking checks"
+  },
+  {
+    "assignees": [],
+    "body": "Check that graph edges and source links are correct on reference repos.\r\n\r\n**Done when**\r\n- [ ] Tests compare graph output to expected edges\r\n- [ ] Source links open the right file and line",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0RpQ",
+        "name": "graph",
+        "description": "Graph schema, storage, graph endpoints",
+        "color": "0e8a16"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0S5w",
+        "name": "testing",
+        "description": "Tests, CI, benchmarks, evaluation",
+        "color": "d4c5f9"
+      }
+    ],
+    "number": 43,
+    "state": "CLOSED",
+    "title": "Validate graph data and source links"
+  },
+  {
+    "assignees": [],
+    "body": "Measure import classification on real repos against the 95% goal; run the parser on broken code.\r\n\r\n**Done when**\r\n- [ ] Accuracy percentage recorded for real repos\r\n- [ ] Broken code never raises an error",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0RZQ",
+        "name": "analysis",
+        "description": "Python AST parsing, imports, symbols",
+        "color": "5319e7"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0S5w",
+        "name": "testing",
+        "description": "Tests, CI, benchmarks, evaluation",
+        "color": "d4c5f9"
+      }
+    ],
+    "number": 42,
+    "state": "OPEN",
+    "title": "Check analysis accuracy on real repos and syntax-error handling"
+  },
+  {
+    "assignees": [],
+    "body": "A test repo whose code would cause a visible side effect if run. Analysis must finish with no side effect.\r\n\r\n**Done when**\r\n- [ ] Malicious test repo in the test suite\r\n- [ ] Test passes in CI\r\n- [ ] Code review confirms no `exec`/`import` of analyzed files",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0Qzg",
+        "name": "ingestion",
+        "description": "Repository download, filtering, caching",
+        "color": "1d76db"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0S5w",
+        "name": "testing",
+        "description": "Tests, CI, benchmarks, evaluation",
+        "color": "d4c5f9"
+      }
+    ],
+    "number": 41,
+    "state": "OPEN",
+    "title": "Prove no analyzed code is executed with a malicious test repo"
+  },
+  {
+    "assignees": [],
+    "body": "Tests for private repos, non-Python repos, oversized repos, rate limits, and expired cache. Time ingestion on repos of growing size against the 3-minute target (Risk 4).\r\n\r\n**Done when**\r\n- [ ] Tests for each error case\r\n- [ ] Ingestion timings recorded up to 1,000 files",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0Qzg",
+        "name": "ingestion",
+        "description": "Repository download, filtering, caching",
+        "color": "1d76db"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0S5w",
+        "name": "testing",
+        "description": "Tests, CI, benchmarks, evaluation",
+        "color": "d4c5f9"
+      }
+    ],
+    "number": 40,
+    "state": "OPEN",
+    "title": "Add ingestion error and cache-expiry tests; benchmark up to 1,000 files"
+  },
+  {
+    "assignees": [],
+    "body": "Handle expired analyses, rendering errors, and accessibility gaps in the UI.\r\n\r\n**Done when**\r\n- [x] Expired analyses, empty states, and errors have clear screens\r\n- [x] Accessibility gaps fixed\r\n\r\nCompleted in #12.",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0SWg",
+        "name": "frontend",
+        "description": "React app",
+        "color": "c5def5"
+      }
+    ],
+    "number": 39,
+    "state": "CLOSED",
+    "title": "Add loading, empty, and error screens and accessibility fixes"
+  },
+  {
+    "assignees": [],
+    "body": "Unrelated students try to complete one task on their own with the first public version.\r\n\r\n**Done when**\r\n- [ ] Walkthrough done\r\n- [ ] Findings filed as issues",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0TKA",
+        "name": "pm",
+        "description": "Planning, user studies, release",
+        "color": "f9d0c4"
+      }
+    ],
+    "number": 38,
+    "state": "OPEN",
+    "title": "Run walkthrough with outside students"
+  },
+  {
+    "assignees": [],
+    "body": "Label the correct files for a set of queries on three repos and compare top-5 precision against a grep filename baseline (Risk 1).\r\n\r\n**Done when**\r\n- [ ] Labeled queries for 3 repos\r\n- [ ] Top-5 precision for RepoLens and the grep baseline written down",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0R7w",
+        "name": "search",
+        "description": "Search, ranking, reading order",
+        "color": "fbca04"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0S5w",
+        "name": "testing",
+        "description": "Tests, CI, benchmarks, evaluation",
+        "color": "d4c5f9"
+      }
+    ],
+    "number": 37,
+    "state": "CLOSED",
+    "title": "Measure search precision on hand-labeled queries"
+  },
+  {
+    "assignees": [],
+    "body": "Recommend a reading order for files related to a query, based on definitions and imports.\r\n\r\n**Done when**\r\n- [ ] Search returns a suggested reading order\r\n- [ ] Tests on a reference repo",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0R7w",
+        "name": "search",
+        "description": "Search, ranking, reading order",
+        "color": "fbca04"
+      }
+    ],
+    "number": 36,
+    "state": "OPEN",
+    "title": "Add reading path recommendations"
+  },
+  {
+    "assignees": [],
+    "body": "Group files by module for the map and include source links on files and symbols.\r\n\r\n**Done when**\r\n- [ ] Graph responses include module groups\r\n- [ ] Files and symbols carry GitHub links",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0RpQ",
+        "name": "graph",
+        "description": "Graph schema, storage, graph endpoints",
+        "color": "0e8a16"
+      }
+    ],
+    "number": 35,
+    "state": "CLOSED",
+    "title": "Add module groups and source links to graph data"
+  },
+  {
+    "assignees": [],
+    "body": "Fixture repos for common layouts (src layout, namespace packages, re-exports from `__init__.py`) with expected classifications (Risk 2).\r\n\r\n**Done when**\r\n- [ ] Fixtures for each layout\r\n- [ ] Report the percentage of correctly classified and unresolved imports",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0RZQ",
+        "name": "analysis",
+        "description": "Python AST parsing, imports, symbols",
+        "color": "5319e7"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0S5w",
+        "name": "testing",
+        "description": "Tests, CI, benchmarks, evaluation",
+        "color": "d4c5f9"
+      }
+    ],
+    "number": 34,
+    "state": "CLOSED",
+    "title": "Verify import classification against hand-labeled fixtures"
+  },
+  {
+    "assignees": [],
+    "body": "Reuse a finished analysis for the same repo and commit; delete cached repos after 24 hours.\r\n\r\n**Done when**\r\n- [ ] Second request for the same (repo, SHA) skips re-analysis\r\n- [ ] Cache entries expire after 24 hours\r\n- [ ] Tests for reuse and expiry",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0Qzg",
+        "name": "ingestion",
+        "description": "Repository download, filtering, caching",
+        "color": "1d76db"
+      }
+    ],
+    "number": 33,
+    "state": "CLOSED",
+    "title": "Cache analyses by (repo, SHA) with 24-hour expiry"
+  },
+  {
+    "assignees": [],
+    "body": "File tree, file detail panel, and links to the exact file on GitHub.\r\n\r\n**Done when**\r\n- [x] Explorer and detail panel work on the fixture repo\r\n- [x] Each file links to GitHub at the analyzed commit\r\n\r\nCompleted in #7.",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0SWg",
+        "name": "frontend",
+        "description": "React app",
+        "color": "c5def5"
+      }
+    ],
+    "number": 32,
+    "state": "CLOSED",
+    "title": "Add file explorer and file detail panel with GitHub links"
+  },
+  {
+    "assignees": [],
+    "body": "Run the whole pipeline (ingest, parse, store, search) on a small hand-written repo in CI, to catch drift between components early (Risk 3).\r\n\r\n**Done when**\r\n- [ ] Reference repo with hand-written expected imports, symbols, and reading order\r\n- [ ] CI runs the pipeline and compares against expected output",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0S5w",
+        "name": "testing",
+        "description": "Tests, CI, benchmarks, evaluation",
+        "color": "d4c5f9"
+      }
+    ],
+    "number": 31,
+    "state": "CLOSED",
+    "title": "End-to-end CI test on a small reference repo"
+  },
+  {
+    "assignees": [],
+    "body": "Point the app at the FastAPI backend and show a real repo in the explorer and map.\r\n\r\n**Done when**\r\n- [ ] A real public repo shows in the explorer, map, and search\r\n- [ ] Mock client still used in tests",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0SWg",
+        "name": "frontend",
+        "description": "React app",
+        "color": "c5def5"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0SqA",
+        "name": "api",
+        "description": "FastAPI layer and frontend/backend contract",
+        "color": "bfdadc"
+      }
+    ],
+    "number": 30,
+    "state": "CLOSED",
+    "title": "Switch the frontend from the mock client to the real backend"
+  },
+  {
+    "assignees": [],
+    "body": "Implement `SearchIndex` on top of the graph store and add a search endpoint.\r\n\r\n**Done when**\r\n- [ ] Search endpoint returns ranked results for a real analysis",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0R7w",
+        "name": "search",
+        "description": "Search, ranking, reading order",
+        "color": "fbca04"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0SqA",
+        "name": "api",
+        "description": "FastAPI layer and frontend/backend contract",
+        "color": "bfdadc"
+      }
+    ],
+    "number": 29,
+    "state": "CLOSED",
+    "title": "Connect search to the graph store and expose a search endpoint"
+  },
+  {
+    "assignees": [],
+    "body": "Endpoints the frontend uses for the dependency map and the file detail panel.\r\n\r\n**Done when**\r\n- [ ] Endpoints return data matching the frontend contract\r\n- [ ] Tests for both endpoints",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0RpQ",
+        "name": "graph",
+        "description": "Graph schema, storage, graph endpoints",
+        "color": "0e8a16"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0SqA",
+        "name": "api",
+        "description": "FastAPI layer and frontend/backend contract",
+        "color": "bfdadc"
+      }
+    ],
+    "number": 28,
+    "state": "CLOSED",
+    "title": "Add graph and file-detail endpoints"
+  },
+  {
+    "assignees": [],
+    "body": "Resolve relative imports to files and mark each import internal or external. Files with syntax errors are reported, not fatal.\r\n\r\n**Done when**\r\n- [ ] Relative imports resolve to repo files\r\n- [ ] Each import is labeled internal or external\r\n- [ ] A file with a syntax error doesn't crash the analysis",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0RZQ",
+        "name": "analysis",
+        "description": "Python AST parsing, imports, symbols",
+        "color": "5319e7"
+      }
+    ],
+    "number": 27,
+    "state": "CLOSED",
+    "title": "Resolve relative imports, classify internal vs external, tolerate unparsable files"
+  },
+  {
+    "assignees": [],
+    "body": "Skip generated/vendored files and reject repos or files over the size limits.\r\n\r\n**Done when**\r\n- [ ] Filtered files never reach the analyzer\r\n- [ ] Oversized repos return a clear error\r\n- [ ] Tests for both",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0Qzg",
+        "name": "ingestion",
+        "description": "Repository download, filtering, caching",
+        "color": "1d76db"
+      }
+    ],
+    "number": 26,
+    "state": "CLOSED",
+    "title": "Filter auto-generated and vendored files and enforce size limits"
+  },
+  {
+    "assignees": [],
+    "body": "`repolens.search` matches queries against filenames, symbols, references, and comments, scores and ranks them, and gives a one-line reason per result.\r\n\r\n**Done when**\r\n- [x] Ranked, paginated results with reasons\r\n- [x] pytest tests for scoring and the service\r\n\r\nCompleted in #10.",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0R7w",
+        "name": "search",
+        "description": "Search, ranking, reading order",
+        "color": "fbca04"
+      }
+    ],
+    "number": 25,
+    "state": "CLOSED",
+    "title": "Search service: keyword matching and ranked results with reasons"
+  },
+  {
+    "assignees": [],
+    "body": "Backend HTTP layer whose OpenAPI schema matches `frontend/src/api/types.ts`. The OpenAPI schema is the source of truth (Risk 3); contract changes need an issue and agreement.\r\n\r\n**Done when**\r\n- [ ] FastAPI app runs locally\r\n- [ ] Endpoints and response shapes match the frontend client",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0SqA",
+        "name": "api",
+        "description": "FastAPI layer and frontend/backend contract",
+        "color": "bfdadc"
+      }
+    ],
+    "number": 24,
+    "state": "CLOSED",
+    "title": "Set up FastAPI app matching the frontend API contract"
+  },
+  {
+    "assignees": [],
+    "body": "Schema for files, modules, imports, and symbols, keyed by analysis ID.\r\n\r\n**Done when**\r\n- [ ] An analysis can be saved and loaded back\r\n- [ ] Schema documented in `backend/README.md`",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0RpQ",
+        "name": "graph",
+        "description": "Graph schema, storage, graph endpoints",
+        "color": "0e8a16"
+      }
+    ],
+    "number": 23,
+    "state": "CLOSED",
+    "title": "Define SQLite graph schema and save/load an analysis"
+  },
+  {
+    "assignees": [],
+    "body": "Use the built-in `ast` module to extract imports and top-level symbols per file. Sits behind a `LanguageAnalyzer` interface so another language can be added later.\r\n\r\n**Done when**\r\n- [ ] Sample repos parse into imports and symbols per file\r\n- [ ] pytest tests on fixture files",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0RZQ",
+        "name": "analysis",
+        "description": "Python AST parsing, imports, symbols",
+        "color": "5319e7"
+      }
+    ],
+    "number": 22,
+    "state": "CLOSED",
+    "title": "Parse Python files for imports and symbols behind a LanguageAnalyzer interface"
+  },
+  {
+    "assignees": [],
+    "body": "Fetch a single archive for (repo URL, commit SHA) and extract it. Nothing from the repo is ever imported or run.\r\n\r\n**Done when**\r\n- [ ] Given a public GitHub URL and SHA, the files are on disk\r\n- [ ] Invalid URLs and unsupported hosts are rejected with a clear error\r\n- [ ] Unit tests cover URL validation",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0Qzg",
+        "name": "ingestion",
+        "description": "Repository download, filtering, caching",
+        "color": "1d76db"
+      }
+    ],
+    "number": 21,
+    "state": "CLOSED",
+    "title": "Download a public repo archive by commit SHA without executing code"
+  },
+  {
+    "assignees": [],
+    "body": "GitHub Actions workflow that runs the backend pytest suite on PRs (Python 3.11-3.13). In progress on the `ci/backend-tests` branch.\r\n\r\n**Done when**\r\n- [ ] `.github/workflows/backend.yml` runs pytest on PRs and pushes to `main`\r\n- [ ] README documents how to run and add backend tests",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0S5w",
+        "name": "testing",
+        "description": "Tests, CI, benchmarks, evaluation",
+        "color": "d4c5f9"
+      }
+    ],
+    "number": 20,
+    "state": "CLOSED",
+    "title": "Add backend pytest suite to CI"
+  },
+  {
+    "assignees": [],
+    "body": "Search bar and ranked reading list in the analysis page.\r\n\r\n**Done when**\r\n- [x] Search results show in ranked order with reasons\r\n\r\nCompleted in #9.",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0R7w",
+        "name": "search",
+        "description": "Search, ranking, reading order",
+        "color": "fbca04"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0SWg",
+        "name": "frontend",
+        "description": "React app",
+        "color": "c5def5"
+      }
+    ],
+    "number": 19,
+    "state": "CLOSED",
+    "title": "Add feature search and ranked reading list (UI)"
+  },
+  {
+    "assignees": [],
+    "body": "React Flow dependency map with collapsed module nodes and a list view fallback.\r\n\r\n**Done when**\r\n- [x] Map renders the fixture repo\r\n- [x] List fallback works when the map can't render\r\n\r\nCompleted in #8.",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0SWg",
+        "name": "frontend",
+        "description": "React app",
+        "color": "c5def5"
+      }
+    ],
+    "number": 18,
+    "state": "CLOSED",
+    "title": "Add interactive dependency map with list fallback"
+  },
+  {
+    "assignees": [],
+    "body": "Progress indicator while a repo is analyzed, with cancel and a summary bar.\r\n\r\n**Done when**\r\n- [x] Progress, cancel, and summary are shown on the analysis page\r\n\r\nCompleted in #6.",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0SWg",
+        "name": "frontend",
+        "description": "React app",
+        "color": "c5def5"
+      }
+    ],
+    "number": 17,
+    "state": "CLOSED",
+    "title": "Add analysis progress, cancel, and summary"
+  },
+  {
+    "assignees": [],
+    "body": "Landing page where users paste a GitHub URL and optional commit.\r\n\r\n**Done when**\r\n- [x] Form validates input and starts an analysis\r\n\r\nCompleted in #5.",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0SWg",
+        "name": "frontend",
+        "description": "React app",
+        "color": "c5def5"
+      }
+    ],
+    "number": 16,
+    "state": "CLOSED",
+    "title": "Add landing page with repository input form"
+  },
+  {
+    "assignees": [],
+    "body": "Frontend API contract (`frontend/src/api/types.ts`) plus a mock client so the UI can be built before the backend exists.\r\n\r\n**Done when**\r\n- [x] Typed client and error model exist\r\n- [x] Mock backend serves a fixture repo\r\n\r\nCompleted in #4.",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0SWg",
+        "name": "frontend",
+        "description": "React app",
+        "color": "c5def5"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0SqA",
+        "name": "api",
+        "description": "FastAPI layer and frontend/backend contract",
+        "color": "bfdadc"
+      }
+    ],
+    "number": 15,
+    "state": "CLOSED",
+    "title": "Add typed API client, error model, and mock backend"
+  },
+  {
+    "assignees": [],
+    "body": "Vite + React + TypeScript app with ESLint, Prettier, Vitest, and a GitHub Actions workflow.\r\n\r\n**Done when**\r\n- [x] `npm test`, lint, typecheck, and build run in CI on PRs\r\n\r\nCompleted in #3.",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0SWg",
+        "name": "frontend",
+        "description": "React app",
+        "color": "c5def5"
+      },
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC_c0S5w",
+        "name": "testing",
+        "description": "Tests, CI, benchmarks, evaluation",
+        "color": "d4c5f9"
+      }
+    ],
+    "number": 14,
+    "state": "CLOSED",
+    "title": "Scaffold the frontend app with lint, test, and CI"
+  },
+  {
+    "assignees": [],
+    "body": "Shared conventions for code style, branching, and reviews.\r\n\r\n**Done when**\r\n- [x] `coding-guidelines.md` is in the repo\r\n\r\nCompleted in #2.",
+    "labels": [
+      {
+        "id": "LA_kwDOVFvlIc8AAAAC8d9PBw",
+        "name": "documentation",
+        "description": "Improvements or additions to documentation",
+        "color": "0075ca"
+      }
+    ],
+    "number": 13,
+    "state": "CLOSED",
+    "title": "Add coding guidelines"
+  }
+]

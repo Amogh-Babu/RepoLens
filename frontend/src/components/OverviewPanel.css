@@ -1,37 +1,131 @@
 .overview {
-  display: grid;
-  gap: 12px;
-  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 6px;
 }
 
-.overview__header h2,
-.overview__section h3 {
+.overview__header {
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.overview__header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.overview__header h2 {
   margin: 0;
   font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--color-text);
 }
 
-.overview__header p,
-.overview__section p {
-  margin: 4px 0 0;
+.overview__tour-btn.button {
+  min-height: 28px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: rgba(56, 189, 248, 0.18);
+  border-color: rgba(125, 211, 252, 0.55);
+  color: #e0f2fe;
 }
 
-.overview__header p {
-  color: var(--color-muted);
-  font-size: 0.8125rem;
+.overview__tour-btn.button:hover:not(:disabled) {
+  background: rgba(56, 189, 248, 0.3);
+  border-color: #ffffff;
+  color: #ffffff;
 }
 
-.overview__tour-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 8px;
+.overview__tour-next-btn.button {
+  min-height: 28px;
+  padding: 3px 10px;
+  font-size: 0.75rem;
+  align-self: flex-end;
 }
 
+/* Ant Design Collapse Style Section */
 .overview__section {
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  overflow: hidden;
+  transition: border-color 220ms cubic-bezier(0.645, 0.045, 0.355, 1);
+}
+
+.overview__section--open {
+  border-color: rgba(125, 211, 252, 0.5);
+}
+
+.overview__collapse-header {
+  padding: 10px 14px;
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: background-color 180ms ease;
+}
+
+.overview__collapse-header:hover {
+  background: var(--color-hover);
+}
+
+.overview__collapse-header:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+.overview__collapse-arrow {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  color: var(--color-accent);
+  transition: transform 240ms cubic-bezier(0.645, 0.045, 0.355, 1);
+}
+
+.overview__section--open .overview__collapse-arrow {
+  transform: rotate(90deg);
+}
+
+.overview__collapse-header h3 {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+/* Smooth animated collapse drawer (Ant Design cubic-bezier) */
+.overview__collapse-motion {
   display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 260ms cubic-bezier(0.645, 0.045, 0.355, 1);
+}
+
+.overview__section--open .overview__collapse-motion {
+  grid-template-rows: 1fr;
+}
+
+.overview__collapse-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.overview__collapse-body {
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
   gap: 6px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--color-border);
 }
 
 .overview__meta,
@@ -46,19 +140,23 @@
   display: flex;
   gap: 8px;
   width: 100%;
-  padding: 5px 4px;
-  border: 0;
-  border-radius: 4px;
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
   background: transparent;
   color: var(--color-text);
   font: inherit;
   text-align: left;
   cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
 }
 
 .overview__file:hover,
 .overview__area:hover:not(:disabled) {
   background: var(--color-hover);
+  border-color: var(--color-border);
 }
 
 .overview__file-copy {
@@ -68,8 +166,10 @@
 }
 
 .overview__path {
-  font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace;
-  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.78125rem;
+  font-weight: 600;
+  color: var(--color-accent);
   overflow-wrap: anywhere;
 }
 
@@ -97,7 +197,7 @@
 
 .overview__packages {
   display: grid;
-  gap: 4px;
+  gap: 6px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -108,6 +208,8 @@
   display: flex;
   justify-content: space-between;
   gap: 8px;
+  padding: 4px 6px;
+  border-radius: 4px;
 }
 
 .overview__failure {

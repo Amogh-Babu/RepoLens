@@ -55,7 +55,7 @@ describe('OverviewPanel', () => {
     );
 
     await screen.findByRole('heading', {name: 'Start here'});
-    expect(screen.getAllByText('Creates the application.')).toHaveLength(2);
+    expect(screen.getAllByText('Creates the application.')).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', {name: 'Start reading tour'}));
     fireEvent.click(screen.getByRole('button', {name: /app.*1 files/}));
 

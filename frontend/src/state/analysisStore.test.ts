@@ -142,11 +142,11 @@ describe('createAnalysisStore graph and selection', () => {
     return {client, store};
   }
 
-  it('loads the graph when the analysis completes', async () => {
+  it('loads the graph when the analysis completes with directories initially closed', async () => {
     const {store} = await completedStore();
 
     expect(store.getState().graph?.files.length).toBeGreaterThan(0);
-    expect([...store.getState().expandedDirs].sort()).toEqual(['app', 'tests']);
+    expect([...store.getState().expandedDirs]).toEqual([]);
   });
 
   it('selects a file, expands its directories and loads its details', async () => {

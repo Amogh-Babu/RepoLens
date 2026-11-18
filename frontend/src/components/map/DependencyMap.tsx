@@ -441,16 +441,6 @@ function MapCanvas({
               Hide unrelated files
             </label>
           )}
-          <button
-            type="button"
-            className="button"
-            aria-expanded={keyOpen}
-            aria-controls={keyId}
-            onClick={() => showKey(!keyOpen)}
-            title="What the boxes, colors and lines mean"
-          >
-            Key
-          </button>
           {toolbarEnd}
         </div>
         {selectedModuleIsCollapsed && selectedPath !== null && (
@@ -464,6 +454,16 @@ function MapCanvas({
             <p role="status">No matching files to show on the map.</p>
           )}
           {keyOpen && <MapKey id={keyId} onClose={() => showKey(false)} />}
+          <button
+            type="button"
+            className="button map__key-btn"
+            aria-expanded={keyOpen}
+            aria-controls={keyId}
+            onClick={() => showKey(!keyOpen)}
+            title="What the boxes, colors and lines mean"
+          >
+            Key
+          </button>
           <ReactFlow
             nodes={displayNodes}
             edges={displayEdges}

@@ -8,9 +8,9 @@ const STORAGE_KEY = 'repolens.map-key';
 
 export function loadKeyOpen(): boolean {
   try {
-    return globalThis.localStorage?.getItem(STORAGE_KEY) !== 'closed';
+    return globalThis.localStorage?.getItem(STORAGE_KEY) === 'open';
   } catch {
-    return true;
+    return false;
   }
 }
 
