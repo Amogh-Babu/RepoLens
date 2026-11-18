@@ -10,7 +10,9 @@ summaries as AI-generated and shows the evidence links, and why semantic
 accuracy is measured separately (see `tests/fixtures/ai_reference`).
 """
 
+import builtins
 from dataclasses import dataclass
+import keyword
 import re
 from typing import Any
 
@@ -23,6 +25,9 @@ from repolens.ai.models import CodeSummary, CodeSummaryContext
 _BACKTICKED = re.compile(r"`([^`\n]{1,120})`")
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 _MAX_PROBLEMS = 12
+# Python's own names (`None`, `len`, `self`...) can be mentioned without
+# appearing in the file.
+_PYTHON_WORDS = frozenset(keyword.kwlist) | frozenset(dir(builtins)) | {"self", "cls"}
 
 
 @dataclass(frozen=True)
@@ -158,13 +163,16 @@ def _check_ranges(summary: CodeSummary, context: CodeSummaryContext) -> list[str
 def _check_code_names(summary: CodeSummary, context: CodeSummaryContext) -> list[str]:
     """Reject backticked code names that appear nowhere in the inspected input.
 
-    A name counts as present if it occurs as a word in the inspected source,
-    or names a known symbol, import, or dependency path.
+    A name counts as present if each word of it occurs in the inspected
+    source, in a known file path (so `config.py` is fine), or is a Python
+    keyword or builtin; or if it names a known symbol, import, or path.
     """
-    source_words = set(_IDENTIFIER.findall(context.source))
     known = {symbol.name for symbol in context.symbols}
     known |= {item.raw_name for item in context.imports}
     known |= set(context.internal_imports) | set(context.imported_by) | {context.path}
+    source_words = set(_IDENTIFIER.findall(context.source)) | _PYTHON_WORDS
+    for path in known:
+        source_words.update(_IDENTIFIER.findall(path))
     problems = []
     reported: set[str] = set()
     for text in _prose(summary):

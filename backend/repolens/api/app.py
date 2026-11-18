@@ -16,7 +16,12 @@ from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from pydantic import BaseModel
 
-from repolens.ai import AiConfig, CodeSummaryService, create_ai_router
+from repolens.ai import (
+    AiConfig,
+    CodeSummaryService,
+    create_ai_router,
+    load_ai_config,
+)
 from repolens.graph.endpoints import (
     AnalysisIdPath,
     DependencyGraphResponse,
@@ -647,5 +652,5 @@ _STORE = SqliteGraphStore(
 app = create_app(
     store=_STORE,
     runner=PipelineAnalysisRunner(),
-    summaries=CodeSummaryService(_STORE, AiConfig.from_environment()),
+    summaries=CodeSummaryService(_STORE, load_ai_config()),
 )
