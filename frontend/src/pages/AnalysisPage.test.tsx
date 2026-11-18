@@ -313,6 +313,38 @@ describe('AnalysisPage search', () => {
     return user;
   }
 
+  it('generates an AI summary in the file panel and keeps navigating', async () => {
+    const user = userEvent.setup();
+    await renderFinished('flask-auth');
+    await user.click(await screen.findByRole('tab', {name: 'Files'}));
+    await user.click(await screen.findByRole('treeitem', {name: 'auth/'}));
+    await user.click(screen.getByRole('treeitem', {name: 'service.py'}));
+    const panel = await screen.findByRole('complementary', {
+      name: 'service.py',
+    });
+
+    await user.click(
+      await within(panel).findByRole('button', {name: 'Generate AI summary'}),
+    );
+
+    expect(
+      await within(panel).findByText(/Mock summary of app\/auth\/service\.py/),
+    ).toBeInTheDocument();
+    expect(within(panel).getByText('AI-generated')).toBeInTheDocument();
+    // The summary's verified dependency links to the same file as the
+    // static Imports section; follow the summary's link.
+    const aiSection = within(panel).getByRole('region', {
+      name: /AI File Summary/,
+    });
+    await user.click(
+      within(aiSection).getByRole('button', {name: 'app/models/user.py'}),
+    );
+    const next = await screen.findByRole('complementary', {name: 'user.py'});
+    expect(
+      await within(next).findByRole('button', {name: 'Generate AI summary'}),
+    ).toBeInTheDocument();
+  });
+
   it('shows the reading list in its own tab', async () => {
     await search('login');
 

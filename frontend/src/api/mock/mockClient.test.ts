@@ -277,3 +277,53 @@ describe('MockApiClient results', () => {
     },
   );
 });
+
+describe('MockApiClient AI summaries', () => {
+  async function finished(aiEnabled = true) {
+    const client = new MockApiClient({
+      latencyMs: 0,
+      stageDurationMs: 0,
+      aiEnabled,
+    });
+    const {analysisId} = await client.startAnalysis({
+      url: 'https://github.com/someone/flask-auth',
+    });
+    return {client, analysisId};
+  }
+
+  it('generates once, then serves the cached summary', async () => {
+    const {client, analysisId} = await finished();
+
+    expect((await client.getAiStatus()).enabled).toBe(true);
+    expect(
+      (await client.getFileSummary(analysisId, 'app/auth/service.py')).status,
+    ).toBe('notGenerated');
+    const generated = await client.generateFileSummary(
+      analysisId,
+      'app/auth/service.py',
+    );
+    const cached = await client.getFileSummary(
+      analysisId,
+      'app/auth/service.py',
+    );
+
+    expect(generated.metadata?.cacheStatus).toBe('miss');
+    expect(cached.status).toBe('completed');
+    expect(cached.metadata?.cached).toBe(true);
+    expect(cached.summary).toEqual(generated.summary);
+    for (const item of generated.summary?.evidence ?? []) {
+      expect(item.url).toContain(
+        `/blob/${generated.sha}/app/auth/service.py#L`,
+      );
+    }
+  });
+
+  it('answers AI_DISABLED when AI summaries are off', async () => {
+    const {client, analysisId} = await finished(false);
+
+    expect((await client.getAiStatus()).enabled).toBe(false);
+    await expect(
+      client.generateFileSummary(analysisId, 'app/auth/service.py'),
+    ).rejects.toMatchObject({code: 'AI_DISABLED'});
+  });
+});

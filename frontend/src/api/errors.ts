@@ -24,6 +24,20 @@ export const SERVER_ERROR_CODES = [
   'FILE_NOT_FOUND',
   'INVALID_QUERY',
   'INTERNAL_ERROR',
+  // AI file summaries. None of these affects the analysis itself.
+  'AI_DISABLED',
+  'AI_BUSY',
+  'AI_DAILY_LIMIT',
+  'AI_REGENERATE_COOLDOWN',
+  'AI_TIMEOUT',
+  'AI_UNAVAILABLE',
+  'AI_SUMMARY_UNVERIFIED',
+  'AI_SUMMARY_FAILED',
+  'SOURCE_UNSUPPORTED',
+  'SOURCE_UNAVAILABLE',
+  'SOURCE_NOT_FOUND',
+  'SOURCE_RATE_LIMITED',
+  'SOURCE_MISMATCH',
 ] as const;
 
 /** Error codes produced by the client itself, never by the backend. */
