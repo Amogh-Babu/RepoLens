@@ -50,6 +50,11 @@ describe('AnalysisPage', () => {
       selector: 'li',
     });
     expect(current).toHaveAttribute('aria-current', 'step');
+    expect(current).toHaveClass('progress__stage--current');
+    const progressBar = screen.getByRole('progressbar', {
+      name: 'Analysis stage progress',
+    });
+    expect(progressBar).toHaveAttribute('aria-valuenow', '4');
     expect(screen.getByRole('button', {name: 'Cancel'})).toBeInTheDocument();
   });
 
