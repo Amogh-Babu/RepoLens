@@ -9,6 +9,7 @@ default: set `REPOLENS_AI_MODEL` to change it without touching code.
 from collections.abc import Mapping
 from dataclasses import dataclass
 import logging
+import math
 import os
 
 
@@ -169,10 +170,7 @@ def _positive_float(env: Mapping[str, str], name: str, default: float) -> float:
     raw = _raw(env, name)
     if not raw:
         return default
-    try:
-        value = float(raw)
-    except ValueError:
-        raise AiConfigError(f"{name} must be a number, not {raw!r}.") from None
+    value = _finite_float(name, raw)
     if value <= 0:
         raise AiConfigError(f"{name} must be greater than zero.")
     return value
@@ -182,10 +180,18 @@ def _optional_price(env: Mapping[str, str], name: str) -> float | None:
     raw = _raw(env, name)
     if not raw:
         return None
+    value = _finite_float(name, raw)
+    if value < 0:
+        raise AiConfigError(f"{name} must not be negative.")
+    return value
+
+
+def _finite_float(name: str, raw: str) -> float:
+    # `float` accepts "nan" and "inf", and `nan` passes every comparison guard.
     try:
         value = float(raw)
     except ValueError:
         raise AiConfigError(f"{name} must be a number, not {raw!r}.") from None
-    if value < 0:
-        raise AiConfigError(f"{name} must not be negative.")
+    if not math.isfinite(value):
+        raise AiConfigError(f"{name} must be a finite number, not {raw!r}.")
     return value
