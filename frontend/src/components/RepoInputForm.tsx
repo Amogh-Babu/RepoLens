@@ -1,4 +1,4 @@
-import type {FormEvent} from 'react';
+import type {FormEvent, RefObject} from 'react';
 import {useId, useState} from 'react';
 import type {RepoTarget} from '../utils/repoInput.ts';
 import {EXAMPLE_REPO_URL, parseRepoInput} from '../utils/repoInput.ts';
@@ -17,6 +17,8 @@ interface RepoInputFormProps {
   onSubmit: (target: RepoTarget) => void;
   /** True while the analysis request is being sent. */
   submitting?: boolean;
+  /** Optional ref to focus the URL input from hero/closing CTAs. */
+  urlInputRef?: RefObject<HTMLInputElement | null>;
 }
 
 /**
@@ -29,6 +31,7 @@ export function RepoInputForm({
   onChange,
   onSubmit,
   submitting = false,
+  urlInputRef,
 }: RepoInputFormProps) {
   const urlId = useId();
   const refId = useId();
@@ -59,9 +62,10 @@ export function RepoInputForm({
 
   return (
     <form className="repo-form" onSubmit={handleSubmit} noValidate>
-      <div className="repo-form__field">
+      <div className="repo-form__field" data-tour="repo-url-field">
         <label htmlFor={urlId}>GitHub repository URL</label>
         <input
+          ref={urlInputRef}
           id={urlId}
           type="url"
           inputMode="url"
@@ -87,6 +91,7 @@ export function RepoInputForm({
       {/* Most people analyze the default branch, so this starts folded. */}
       <details
         className="repo-form__more"
+        data-tour="repo-ref-field"
         open={value.ref !== '' || refError !== null || undefined}
       >
         <summary>Analyze a specific branch, tag or commit</summary>
@@ -127,6 +132,7 @@ export function RepoInputForm({
       <button
         type="submit"
         className="button button--primary repo-form__submit"
+        data-tour="repo-analyze-btn"
         disabled={!result.ok || submitting}
       >
         {submitting ? 'Starting…' : 'Analyze'}

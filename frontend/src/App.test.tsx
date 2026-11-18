@@ -6,7 +6,10 @@ describe('App routes', () => {
   it('renders the landing page at /', () => {
     renderApp('/');
     expect(
-      screen.getByRole('heading', {level: 1, name: 'RepoLens'}),
+      screen.getByRole('heading', {
+        level: 1,
+        name: /Map your next commit like an architect/i,
+      }),
     ).toBeInTheDocument();
   });
 

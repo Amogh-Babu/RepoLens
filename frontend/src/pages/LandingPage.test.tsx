@@ -109,13 +109,53 @@ describe('LandingPage', () => {
     expect(screen.getByRole('button', {name: 'Retry'})).toBeInTheDocument();
   });
 
-  it('shows a short user guide', () => {
+  it('renders the top bar, first-time welcome popup, and 4-step Help guide', async () => {
+    const user = userEvent.setup();
     renderApp('/');
 
     expect(
-      screen.getByRole('heading', {name: 'How it works'}),
+      screen.getByRole('heading', {
+        level: 1,
+        name: /Map your next commit like an architect/i,
+      }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/up to 1,000 Python files/)).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', {name: 'Sample dependency map'}),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', {name: 'First time using RepoLens?'}),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', {name: 'Help'}));
+    expect(
+      await screen.findByRole('heading', {
+        name: /1\. Submit a repository link/i,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Only Python codebases work right now/i),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', {name: 'Next'}));
+    expect(
+      await screen.findByRole('heading', {
+        name: /2\. Specific branch, tag, or commit/i,
+      }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', {name: 'Next'}));
+    expect(
+      await screen.findByRole('heading', {
+        name: /3\. Submit with Analyze/i,
+      }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', {name: 'Next'}));
+    expect(
+      await screen.findByRole('heading', {
+        name: /4\. Sample dependency map/i,
+      }),
+    ).toBeInTheDocument();
   });
 
   it('lists recent repositories and reopens one when clicked', async () => {
@@ -137,6 +177,7 @@ describe('LandingPage', () => {
     expect(
       screen.getByRole('heading', {name: 'Recent repositories'}),
     ).toBeInTheDocument();
+    expect(screen.getByText('1 project')).toBeInTheDocument();
     const user = userEvent.setup();
     await user.click(
       screen.getByRole('link', {name: /repolens-demo\/flask-auth/}),
