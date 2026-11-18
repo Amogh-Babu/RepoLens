@@ -428,6 +428,22 @@ def test_the_overview_prefers_verified_ai_summaries_and_labels_them(
     assert after["areas"] == before["areas"]
 
 
+def test_the_overview_is_revalidated_while_ai_summaries_can_change_it(
+    store: SqliteGraphStore,
+) -> None:
+    client = _client(make_service(store), store)
+    first = client.get(f"/analyses/{ANALYSIS_ID}/overview")
+    assert first.headers["cache-control"] == "private, no-cache"
+
+    client.post(SUMMARY_URL)
+    second = client.get(
+        f"/analyses/{ANALYSIS_ID}/overview", headers={"If-None-Match": first.headers["etag"]}
+    )
+
+    assert second.status_code == 200
+    assert second.headers["etag"] != first.headers["etag"]
+
+
 def test_status_reports_usage_and_estimated_cost_without_secrets(
     store: SqliteGraphStore,
 ) -> None:

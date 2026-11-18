@@ -534,8 +534,14 @@ def create_analysis_router(
                 status_code=exc.status_code,
                 content=exc.to_dict(),
             )
+        # With AI summaries on, a description can change once a file is
+        # summarized, so the overview is revalidated instead of immutable.
+        ai_active = summaries is not None and summaries.active
         return cached_json_response(
-            request, payload, f"{analysis_id}-overview"
+            request,
+            payload,
+            f"{analysis_id}-overview",
+            cache_control="private, no-cache" if ai_active else "private, immutable",
         )
 
     return router
