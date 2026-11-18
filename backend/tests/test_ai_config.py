@@ -63,6 +63,11 @@ def test_enabled_without_a_key_is_not_active() -> None:
         ("REPOLENS_AI_MAX_INPUT_CHARS", "-1"),
         ("REPOLENS_AI_DAILY_CALL_LIMIT", "1.5"),
         ("REPOLENS_AI_INPUT_COST_PER_MILLION", "-0.1"),
+        ("REPOLENS_AI_TIMEOUT_SECONDS", "inf"),
+        ("REPOLENS_AI_REGENERATE_COOLDOWN_SECONDS", "nan"),
+        ("REPOLENS_AI_REGENERATE_COOLDOWN_SECONDS", "-inf"),
+        ("REPOLENS_AI_INPUT_COST_PER_MILLION", "nan"),
+        ("REPOLENS_AI_OUTPUT_COST_PER_MILLION", "Infinity"),
     ],
 )
 def test_invalid_numbers_are_rejected(name: str, value: str) -> None:
@@ -93,3 +98,15 @@ def test_an_invalid_setting_disables_ai_instead_of_stopping_the_server(
     assert config.active is False
     assert "REPOLENS_AI_DAILY_CALL_LIMIT" in caplog.text
     assert "sk-should-not-be-logged" not in caplog.text
+
+
+def test_a_non_finite_setting_disables_ai() -> None:
+    config = load_ai_config(
+        {
+            "REPOLENS_AI_ENABLED": "true",
+            "OPENAI_API_KEY": "sk-test",
+            "REPOLENS_AI_REGENERATE_COOLDOWN_SECONDS": "nan",
+        }
+    )
+
+    assert config.active is False
