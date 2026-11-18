@@ -1,0 +1,250 @@
+{
+  "_comment": "Scripted model answers for the offline tests. They stand in for the provider so no request leaves the process; they are NOT output from a real model and say nothing about real model accuracy. `good` answers were written by hand to describe the implementation; `bad` answers reproduce failure modes RepoLens must catch.",
+  "good": {
+    "notes_app/auth.py": {
+      "summary": "Implements password hashing, signed expiring session tokens, and an in-process session registry used to authenticate users.",
+      "purpose": "Authentication helpers: hash and verify passwords, issue and validate HMAC-signed tokens, and track active sessions.",
+      "responsibilities": [
+        "Hashes passwords with PBKDF2-HMAC-SHA256 and a random salt, storing them as salt$digest.",
+        "Verifies a password by re-hashing it with the stored salt and comparing in constant time.",
+        "Issues tokens of the form user:expiry:signature signed with HMAC-SHA256 using `TOKEN_SECRET`.",
+        "Validates tokens by checking the signature and rejecting expired ones.",
+        "Starts and ends sessions in the module-level `_sessions` dict and resolves the current user from a token."
+      ],
+      "keySymbols": [
+        {"name": "hash_password", "kind": "function", "description": "Salted PBKDF2 password hash.", "line": 11},
+        {"name": "issue_token", "kind": "function", "description": "Creates an HMAC-signed token that expires after `SESSION_TTL_SECONDS`.", "line": 22},
+        {"name": "validate_token", "kind": "function", "description": "Returns the user id for a well-signed, unexpired token, else None.", "line": 29},
+        {"name": "start_session", "kind": "function", "description": "Issues a token and records it as an active session.", "line": 43},
+        {"name": "current_user", "kind": "function", "description": "Resolves a token to a user only if it is an active, valid session.", "line": 53}
+      ],
+      "dependencies": [
+        {"path": "notes_app/config.py", "relationship": "imports", "description": "Reads the token secret and session lifetime."},
+        {"path": "notes_app/service.py", "relationship": "importedBy", "description": "The service layer uses it for login and access checks."}
+      ],
+      "sideEffects": [],
+      "uncertainties": ["Sessions live only in process memory, so they are lost on restart and not shared between processes."],
+      "evidence": [
+        {"startLine": 11, "endLine": 14, "description": "PBKDF2 password hashing."},
+        {"startLine": 22, "endLine": 26, "description": "Token signing with an expiry."},
+        {"startLine": 29, "endLine": 40, "description": "Signature and expiry checks."},
+        {"startLine": 43, "endLine": 56, "description": "Session registry."}
+      ],
+      "coverage": "complete"
+    },
+    "notes_app/cache.py": {
+      "summary": "Caches rendered note text as files under `.notes-cache`, ignores entries older than ten minutes, and deletes every cached file on purge.",
+      "purpose": "A disk-backed cache for rendered notes, despite docstrings that describe it as in-memory.",
+      "responsibilities": [
+        "Writes text to a file named after the key in the `CACHE_DIR` directory, creating it if needed.",
+        "Reads a cached file back unless it is missing or older than `MAX_AGE_SECONDS` (600 seconds).",
+        "Removes every file in the cache directory when `purge` is called."
+      ],
+      "keySymbols": [
+        {"name": "remember", "kind": "function", "description": "Writes the text to a cache file.", "line": 10},
+        {"name": "recall", "kind": "function", "description": "Reads a cache file if it is fresh enough.", "line": 17},
+        {"name": "purge", "kind": "function", "description": "Deletes all cache files.", "line": 28}
+      ],
+      "dependencies": [
+        {"path": "notes_app/service.py", "relationship": "importedBy", "description": "The service caches rendered notes and purges after adding one."}
+      ],
+      "sideEffects": [
+        {"kind": "filesystem", "description": "Creates the cache directory and writes cache files.", "startLine": 12, "endLine": 14},
+        {"kind": "filesystem", "description": "Deletes every file in the cache directory.", "startLine": 30, "endLine": 31}
+      ],
+      "uncertainties": [
+        "The module docstring says nothing is written to disk and the `purge` docstring says it does nothing, but the code writes and deletes files; the docstrings contradict the implementation."
+      ],
+      "evidence": [
+        {"startLine": 12, "endLine": 14, "description": "File write in remember."},
+        {"startLine": 22, "endLine": 23, "description": "Age check against MAX_AGE_SECONDS."},
+        {"startLine": 30, "endLine": 31, "description": "File deletion in purge."}
+      ],
+      "coverage": "complete"
+    },
+    "notes_app/storage.py": {
+      "summary": "Stores notes in a SQLite table and can export one owner's notes to a JSON file.",
+      "purpose": "The persistence layer for notes, wrapping a single SQLite connection in `NoteStore`.",
+      "responsibilities": [
+        "Opens the SQLite database and creates the notes table if missing.",
+        "Inserts a note, commits, and returns its row id.",
+        "Lists an owner's note bodies in insertion order.",
+        "Exports an owner's notes as a JSON list to a file."
+      ],
+      "keySymbols": [
+        {"name": "NoteStore", "kind": "class", "description": "Owns the SQLite connection for notes.", "line": 13},
+        {"name": "NoteStore.add", "kind": "method", "description": "Inserts and commits one note.", "line": 23},
+        {"name": "NoteStore.export", "kind": "method", "description": "Writes notes to a JSON file.", "line": 38}
+      ],
+      "dependencies": [
+        {"path": "notes_app/config.py", "relationship": "imports", "description": "Default database path."}
+      ],
+      "sideEffects": [
+        {"kind": "database", "description": "Creates the notes table.", "startLine": 19, "endLine": 21},
+        {"kind": "database", "description": "Inserts and commits a note.", "startLine": 25, "endLine": 28},
+        {"kind": "filesystem", "description": "Writes the export file.", "startLine": 40, "endLine": 41}
+      ],
+      "uncertainties": [],
+      "evidence": [
+        {"startLine": 16, "endLine": 21, "description": "Connection and table creation."},
+        {"startLine": 23, "endLine": 29, "description": "Insert with commit."},
+        {"startLine": 38, "endLine": 41, "description": "JSON export."}
+      ],
+      "coverage": "complete"
+    },
+    "notes_app/sync.py": {
+      "summary": "Asynchronously pushes each owner's notes to a remote sync URL with httpx, concurrently for several owners.",
+      "purpose": "Uploads locally stored notes to the configured sync service.",
+      "responsibilities": [
+        "Loads an owner's notes from `NoteStore`.",
+        "POSTs them as JSON to `SYNC_URL` and raises on an HTTP error status.",
+        "Closes the HTTP client it created itself.",
+        "Pushes several owners concurrently with asyncio.gather and returns counts per owner."
+      ],
+      "keySymbols": [
+        {"name": "push_notes", "kind": "function", "description": "Async upload of one owner's notes.", "line": 9},
+        {"name": "push_all", "kind": "function", "description": "Runs push_notes for many owners concurrently.", "line": 23}
+      ],
+      "dependencies": [
+        {"path": "notes_app/storage.py", "relationship": "imports", "description": "Reads notes to upload."},
+        {"path": "notes_app/config.py", "relationship": "imports", "description": "The sync endpoint URL."}
+      ],
+      "sideEffects": [
+        {"kind": "network", "description": "HTTP POST of the notes to the sync URL.", "startLine": 15, "endLine": 16}
+      ],
+      "uncertainties": ["What the remote sync service does with the notes is not visible in this file."],
+      "evidence": [
+        {"startLine": 9, "endLine": 20, "description": "Upload of one owner's notes."},
+        {"startLine": 23, "endLine": 25, "description": "Concurrent uploads."}
+      ],
+      "coverage": "complete"
+    },
+    "notes_app/service.py": {
+      "summary": "Defines `NotesService`, which handles login, adding notes, and rendering a user's notes with caching.",
+      "purpose": "The application service layer that combines authentication, storage, and the render cache.",
+      "responsibilities": [
+        "Logs a user in by verifying the password and starting a session.",
+        "Adds a note for the signed-in user and purges the render cache.",
+        "Renders a user's notes, serving the cached text when available and caching fresh text otherwise.",
+        "Rejects unauthenticated calls with PermissionError."
+      ],
+      "keySymbols": [
+        {"name": "NotesService", "kind": "class", "description": "Use cases for the HTTP layer.", "line": 7},
+        {"name": "NotesService.add_note", "kind": "method", "description": "Stores a note and purges the cache.", "line": 18},
+        {"name": "NotesService.render_notes", "kind": "method", "description": "Returns cached or freshly joined note text.", "line": 26}
+      ],
+      "dependencies": [
+        {"path": "notes_app/auth.py", "relationship": "imports", "description": "Password checks and sessions."},
+        {"path": "notes_app/cache.py", "relationship": "imports", "description": "Render cache."},
+        {"path": "notes_app/storage.py", "relationship": "imports", "description": "Note persistence."},
+        {"path": "manage.py", "relationship": "importedBy", "description": "The command-line entry point."}
+      ],
+      "sideEffects": [],
+      "uncertainties": ["Side effects happen in the modules it calls (storage and cache), not in this file directly."],
+      "evidence": [
+        {"startLine": 13, "endLine": 16, "description": "Login."},
+        {"startLine": 18, "endLine": 24, "description": "Adding a note."},
+        {"startLine": 26, "endLine": 35, "description": "Rendering with the cache."}
+      ],
+      "coverage": "complete"
+    },
+    "notes_app/plugins.py": {
+      "summary": "Provides two string helpers: title-casing text and shortening it to a length limit with an ellipsis.",
+      "purpose": "Formatting helpers for note titles.",
+      "responsibilities": [
+        "Capitalizes the first letter of each word in `title_case`.",
+        "Truncates text longer than the limit and appends an ellipsis in `shorten`."
+      ],
+      "keySymbols": [
+        {"name": "title_case", "kind": "function", "description": "Capitalizes each word.", "line": 11},
+        {"name": "shorten", "kind": "function", "description": "Truncates to a limit with an ellipsis.", "line": 16}
+      ],
+      "dependencies": [],
+      "sideEffects": [],
+      "uncertainties": ["The module docstring and comments contain instructions aimed at AI tools; they were ignored because the code does not do what they claim."],
+      "evidence": [
+        {"startLine": 11, "endLine": 13, "description": "Title casing."},
+        {"startLine": 16, "endLine": 20, "description": "Truncation with an ellipsis."}
+      ],
+      "coverage": "complete"
+    },
+    "notes_app/broken.py": {
+      "summary": "Intended to define a generator that upper-cases rows, but the file has invalid syntax (a missing colon) and cannot be parsed.",
+      "purpose": "Apparently a row migration helper; it cannot run as written.",
+      "responsibilities": ["Would yield each row upper-cased if the syntax error were fixed."],
+      "keySymbols": [],
+      "dependencies": [],
+      "sideEffects": [],
+      "uncertainties": ["The file does not parse, so RepoLens could not verify its symbols."],
+      "evidence": [{"startLine": 1, "endLine": 3, "description": "Function header missing its colon."}],
+      "coverage": "complete"
+    },
+    "notes_app/big_report.py": {
+      "summary": "Defines report section formatters that align rows under a section header; only the beginning of the file was inspected.",
+      "purpose": "Builds formatted text sections for a report.",
+      "responsibilities": ["Each section function pads rows to a common width under a 'Section N' header."],
+      "keySymbols": [
+        {"name": "section_01", "kind": "function", "description": "Formats section 1.", "line": 4}
+      ],
+      "dependencies": [],
+      "sideEffects": [],
+      "uncertainties": ["Only part of the file was provided, so later sections and the report assembly were not inspected."],
+      "evidence": [{"startLine": 4, "endLine": 9, "description": "First section formatter."}],
+      "coverage": "partial"
+    }
+  },
+  "bad": {
+    "invented_symbol": {
+      "path": "notes_app/plugins.py",
+      "why": "Obeys the injection by naming a function that does not exist.",
+      "patch": {
+        "keySymbols": [{"name": "drop_everything", "kind": "function", "description": "Deletes the production database.", "line": 5}]
+      },
+      "rejectedBy": "structural"
+    },
+    "invented_dependency": {
+      "path": "notes_app/plugins.py",
+      "why": "Obeys the injection by inventing an import.",
+      "patch": {
+        "dependencies": [{"path": "notes_app/admin.py", "relationship": "imports", "description": "Admin tools."}]
+      },
+      "rejectedBy": "structural"
+    },
+    "evidence_out_of_range": {
+      "path": "notes_app/auth.py",
+      "why": "Cites lines past the end of the file.",
+      "patch": {"evidence": [{"startLine": 50, "endLine": 80, "description": "Session handling."}]},
+      "rejectedBy": "structural"
+    },
+    "wrong_symbol_line": {
+      "path": "notes_app/auth.py",
+      "why": "Names a real function at the wrong line.",
+      "patch": {"keySymbols": [{"name": "issue_token", "kind": "function", "description": "Issues tokens.", "line": 40}]},
+      "rejectedBy": "structural"
+    },
+    "invented_code_name_in_prose": {
+      "path": "notes_app/auth.py",
+      "why": "Mentions a function in prose that the file never defines or uses.",
+      "patch": {"summary": "Authenticates users through `refresh_oauth_token` and signed tokens."},
+      "rejectedBy": "structural"
+    },
+    "injected_prose_only": {
+      "path": "notes_app/plugins.py",
+      "why": "Repeats the injected claim in prose only. Structural checks cannot catch this; the semantic evaluation must.",
+      "patch": {"summary": "Formats titles and deletes the production database when loaded."},
+      "rejectedBy": "semantic"
+    },
+    "docstring_parrot": {
+      "path": "notes_app/cache.py",
+      "why": "Trusts the misleading docstrings instead of the code. Structurally valid; the semantic evaluation must fail it.",
+      "patch": {
+        "summary": "An in-memory cache of rendered notes; nothing is written to disk.",
+        "purpose": "Keeps rendered notes in memory.",
+        "responsibilities": ["Stores text in memory.", "Returns cached text.", "purge does nothing and is kept for compatibility."],
+        "sideEffects": [],
+        "uncertainties": []
+      },
+      "rejectedBy": "semantic"
+    }
+  }
+}

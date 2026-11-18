@@ -1,0 +1,75 @@
+"""AI summary configuration: defaults, environment parsing, secrecy."""
+
+import pytest
+
+from repolens.ai import DEFAULT_MODEL, AiConfig, AiConfigError
+
+
+def test_defaults_keep_ai_off_and_bounded() -> None:
+    config = AiConfig.from_environment({})
+
+    assert config.enabled is False
+    assert config.active is False
+    assert config.model == DEFAULT_MODEL == "gpt-5.4-mini"
+    assert config.timeout_seconds == 30
+    assert config.max_input_chars == 40_000
+    assert config.max_output_tokens == 700
+    assert config.max_concurrent_requests == 2
+    assert config.daily_call_limit == 100
+    assert config.reasoning_effort == ""
+    assert config.input_cost_per_million is None
+
+
+def test_every_documented_variable_is_read() -> None:
+    config = AiConfig.from_environment(
+        {
+            "REPOLENS_AI_ENABLED": "true",
+            "OPENAI_API_KEY": " sk-test ",
+            "REPOLENS_AI_MODEL": "some-other-model",
+            "REPOLENS_AI_TIMEOUT_SECONDS": "12.5",
+            "REPOLENS_AI_MAX_INPUT_CHARS": "1000",
+            "REPOLENS_AI_MAX_OUTPUT_TOKENS": "300",
+            "REPOLENS_AI_MAX_CONCURRENT_REQUESTS": "1",
+            "REPOLENS_AI_DAILY_CALL_LIMIT": "5",
+            "REPOLENS_AI_REASONING_EFFORT": "low",
+            "REPOLENS_AI_INPUT_COST_PER_MILLION": "0.25",
+            "REPOLENS_AI_OUTPUT_COST_PER_MILLION": "2",
+        }
+    )
+
+    assert config.active
+    assert config.api_key == "sk-test"
+    assert config.model == "some-other-model"
+    assert config.timeout_seconds == 12.5
+    assert (config.max_input_chars, config.max_output_tokens) == (1000, 300)
+    assert (config.max_concurrent_requests, config.daily_call_limit) == (1, 5)
+    assert config.reasoning_effort == "low"
+    assert (config.input_cost_per_million, config.output_cost_per_million) == (0.25, 2.0)
+
+
+def test_enabled_without_a_key_is_not_active() -> None:
+    config = AiConfig.from_environment({"REPOLENS_AI_ENABLED": "1"})
+
+    assert config.enabled and not config.active
+
+
+@pytest.mark.parametrize(
+    "name, value",
+    [
+        ("REPOLENS_AI_TIMEOUT_SECONDS", "soon"),
+        ("REPOLENS_AI_TIMEOUT_SECONDS", "0"),
+        ("REPOLENS_AI_MAX_INPUT_CHARS", "-1"),
+        ("REPOLENS_AI_DAILY_CALL_LIMIT", "1.5"),
+        ("REPOLENS_AI_INPUT_COST_PER_MILLION", "-0.1"),
+    ],
+)
+def test_invalid_numbers_are_rejected(name: str, value: str) -> None:
+    with pytest.raises(AiConfigError, match=name):
+        AiConfig.from_environment({name: value})
+
+
+def test_the_key_never_appears_in_repr() -> None:
+    config = AiConfig(enabled=True, api_key="sk-very-secret")
+
+    assert "sk-very-secret" not in repr(config)
+    assert "api_key=<set>" in repr(config)
