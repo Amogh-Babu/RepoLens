@@ -6,7 +6,7 @@
 
 const PREFIX = 'repolens.seen.';
 
-export type SeenFlag = 'workspace-tour';
+export type SeenFlag = 'workspace-tour' | 'landing-welcome';
 
 export function hasSeen(flag: SeenFlag): boolean {
   try {
