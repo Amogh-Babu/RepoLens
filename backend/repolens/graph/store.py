@@ -4,6 +4,7 @@ from collections import defaultdict
 from collections.abc import Callable
 from datetime import datetime, timezone
 import functools
+import json
 import logging
 import struct
 import sqlite3
@@ -1069,6 +1070,219 @@ class SqliteGraphStore:
                 lines[key] = int(row["line"])
 
         return lines
+
+    @_locked
+    def get_ai_summary(
+        self,
+        analysis_id: str,
+        path: str,
+        *,
+        model_id: str,
+        prompt_version: str,
+        schema_version: str,
+    ) -> sqlite3.Row | None:
+        """Return the cached AI summary row for one file, or None.
+
+        Only a row for this analysis's repository and commit, made with the
+        given model, prompt, and schema version, is returned, so changing
+        any of them is a cache miss.
+        """
+        row = self._get_valid_analysis_row(analysis_id, require_completed=True)
+        return self._conn.execute(
+            """
+            SELECT * FROM ai_summaries
+            WHERE analysis_id = ? AND repo = ? AND commit_sha = ? AND file_path = ?
+              AND model_id = ? AND prompt_version = ? AND schema_version = ?
+              AND expires_at > ?
+            ORDER BY created_at DESC
+            LIMIT 1;
+            """,
+            (
+                analysis_id,
+                str(row["repo"]),
+                str(row["sha"]),
+                path,
+                model_id,
+                prompt_version,
+                schema_version,
+                time.time(),
+            ),
+        ).fetchone()
+
+    @_locked
+    def get_ai_summary_texts(
+        self,
+        analysis_id: str,
+        *,
+        model_id: str,
+        prompt_version: str,
+        schema_version: str,
+    ) -> dict[str, str]:
+        """Return `{path: one-line summary}` for every cached summary of an analysis."""
+        rows = self._conn.execute(
+            """
+            SELECT s.file_path, s.summary_json
+            FROM ai_summaries s
+            JOIN analyses a ON a.id = s.analysis_id
+            WHERE s.analysis_id = ? AND s.repo = a.repo AND s.commit_sha = a.sha
+              AND s.model_id = ? AND s.prompt_version = ? AND s.schema_version = ?
+              AND s.expires_at > ?
+            ORDER BY s.created_at ASC;
+            """,
+            (analysis_id, model_id, prompt_version, schema_version, time.time()),
+        ).fetchall()
+        texts: dict[str, str] = {}
+        for row in rows:
+            try:
+                summary = json.loads(str(row["summary_json"]))["summary"]
+            except (ValueError, KeyError, TypeError):
+                continue
+            if isinstance(summary, str) and summary.strip():
+                texts[str(row["file_path"])] = summary.strip()
+        return texts
+
+    @_locked
+    def save_ai_summary(
+        self,
+        analysis_id: str,
+        path: str,
+        *,
+        source_hash: str,
+        model_id: str,
+        prompt_version: str,
+        schema_version: str,
+        coverage: str,
+        inspected_lines: str,
+        line_count: int,
+        summary_json: str,
+        created_at: float | None = None,
+    ) -> sqlite3.Row:
+        """Insert or replace a validated summary; it expires with its analysis.
+
+        Raises:
+          GraphStoreError: The analysis is missing, expired, or not complete.
+        """
+        row = self._get_valid_analysis_row(analysis_id, require_completed=True)
+        now = created_at if created_at is not None else time.time()
+        with self._conn:
+            self._conn.execute(
+                """
+                INSERT INTO ai_summaries (
+                    analysis_id, repo, file_path, commit_sha, source_hash,
+                    model_id, prompt_version, schema_version, coverage,
+                    inspected_lines, line_count, summary_json, created_at, expires_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (
+                    repo, commit_sha, file_path, source_hash,
+                    model_id, prompt_version, schema_version
+                ) DO UPDATE SET
+                    analysis_id = excluded.analysis_id,
+                    coverage = excluded.coverage,
+                    inspected_lines = excluded.inspected_lines,
+                    line_count = excluded.line_count,
+                    summary_json = excluded.summary_json,
+                    created_at = excluded.created_at,
+                    expires_at = excluded.expires_at;
+                """,
+                (
+                    analysis_id,
+                    str(row["repo"]),
+                    path,
+                    str(row["sha"]),
+                    source_hash,
+                    model_id,
+                    prompt_version,
+                    schema_version,
+                    coverage,
+                    inspected_lines,
+                    line_count,
+                    summary_json,
+                    now,
+                    float(row["expires_at"]),
+                ),
+            )
+            # A file has one summary per model, prompt and schema version: drop
+            # rows for a different source hash of the same file and commit.
+            self._conn.execute(
+                """
+                DELETE FROM ai_summaries
+                WHERE analysis_id = ? AND file_path = ? AND model_id = ?
+                  AND prompt_version = ? AND schema_version = ? AND source_hash != ?;
+                """,
+                (analysis_id, path, model_id, prompt_version, schema_version, source_hash),
+            )
+        saved = self.get_ai_summary(
+            analysis_id,
+            path,
+            model_id=model_id,
+            prompt_version=prompt_version,
+            schema_version=schema_version,
+        )
+        assert saved is not None
+        return saved
+
+    @_locked
+    def reserve_ai_call(self, day: str, limit: int) -> bool:
+        """Count one model call against `day`'s budget, if any is left.
+
+        Checking and counting happen in one transaction, so concurrent
+        requests can never overspend the limit.
+        """
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO ai_usage (day) VALUES (?) ON CONFLICT (day) DO NOTHING;",
+                (day,),
+            )
+            cursor = self._conn.execute(
+                "UPDATE ai_usage SET calls = calls + 1 WHERE day = ? AND calls < ?;",
+                (day, limit),
+            )
+        return cursor.rowcount == 1
+
+    @_locked
+    def record_ai_usage(self, day: str, **counts: int) -> None:
+        """Add to `day`'s usage counters (see the `ai_usage` table)."""
+        allowed = {
+            "input_tokens",
+            "output_tokens",
+            "cache_hits",
+            "cache_misses",
+            "validation_failures",
+            "provider_failures",
+            "latency_ms",
+        }
+        unknown = counts.keys() - allowed
+        if unknown:
+            raise ValueError(f"Unknown AI usage counters: {sorted(unknown)}")
+        updates = {name: max(0, int(value)) for name, value in counts.items() if value}
+        if not updates:
+            return
+        assignments = ", ".join(f"{name} = {name} + ?" for name in updates)
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO ai_usage (day) VALUES (?) ON CONFLICT (day) DO NOTHING;",
+                (day,),
+            )
+            self._conn.execute(
+                f"UPDATE ai_usage SET {assignments} WHERE day = ?;",
+                (*updates.values(), day),
+            )
+
+    @_locked
+    def get_ai_usage(self, day: str) -> dict[str, int]:
+        """Return `day`'s usage counters (all zero when nothing was recorded)."""
+        row = self._conn.execute("SELECT * FROM ai_usage WHERE day = ?;", (day,)).fetchone()
+        names = (
+            "calls",
+            "input_tokens",
+            "output_tokens",
+            "cache_hits",
+            "cache_misses",
+            "validation_failures",
+            "provider_failures",
+            "latency_ms",
+        )
+        return {name: int(row[name]) if row is not None else 0 for name in names}
 
     @_locked
     def evict_expired(self, now: float | None = None) -> int:
