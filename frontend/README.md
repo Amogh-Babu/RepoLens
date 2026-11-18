@@ -64,8 +64,15 @@ All backend calls go through the `ApiClient` interface in
 [`src/api/types.ts`](src/api/types.ts) and error codes in
 [`src/api/errors.ts`](src/api/errors.ts). Every method rejects only with
 `ApiError` (`code`, `message`, `hint`), including network failures
-(`NETWORK_ERROR`), timeouts (`TIMEOUT`, 5 s for search and 10 s for
-everything else) and cancels (`ABORTED`).
+(`NETWORK_ERROR`), timeouts (`TIMEOUT`, 5 s for search, 120 s for
+generating an AI summary, and 10 s for everything else) and cancels
+(`ABORTED`).
+
+AI file summaries (optional; see the backend README) are shown by
+`AiSummarySection` in the file panel. It loads on its own, so the rest of the
+panel stays usable, and asks `GET /ai/status` first: when AI is off it only
+says so. `MockApiClient` serves made-up summaries unless constructed with
+`aiEnabled: false`.
 
 There are two implementations, chosen by `VITE_API_MODE`:
 
