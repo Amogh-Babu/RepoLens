@@ -1,5 +1,5 @@
 import type {ReactNode} from 'react';
-import {useId} from 'react';
+import {useId, useState} from 'react';
 import {encodeFilePath} from '../api/client.ts';
 import type {FileDetail, ImportInfo, SymbolKind} from '../api/types.ts';
 import type {RequestFailure} from '../state/analysisStore.ts';
@@ -40,8 +40,10 @@ const KIND_LABELS: Record<SymbolKind, string> = {
 };
 
 /**
- * Path, module, symbols, imports and importers of the selected file, with a
- * link to its source on GitHub at the analyzed commit (Use Case 3).
+ * File detail panel with a compact inline GitHub link icon to the left of the
+ * filename, a single combined File info accordion (Path, Commit, Module), and
+ * animated Collapse accordions starting closed for Symbols, Imports, Imported
+ * by, and External libraries.
  */
 export function FileDetailPanel({
   path,
@@ -62,7 +64,29 @@ export function FileDetailPanel({
   return (
     <aside className="detail" aria-labelledby={headingId}>
       <div className="detail__header">
-        <h2 id={headingId}>{name}</h2>
+        <div className="detail__title-row">
+          <a
+            className="detail__source-icon"
+            href={sourceUrl}
+            target="_blank"
+            rel="noreferrer"
+            title="Open source on GitHub"
+          >
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path
+                d="M6.5 9.5L9.5 6.5M7.2 4.6L8.8 3C10.1255 1.67452 12.2745 1.67452 13.6 3C14.9255 4.32548 14.9255 6.47452 13.6 7.8L12 9.4M8.8 11.4L7.2 13C5.87452 14.3255 3.72548 14.3255 2.4 13C1.07452 11.6745 1.07452 9.52548 2.4 8.2L4 6.6"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+              />
+            </svg>
+            <span className="visually-hidden">
+              Open source on GitHub (opens in a new tab)
+            </span>
+          </a>
+          <h2 id={headingId}>{name}</h2>
+        </div>
+
         <button
           type="button"
           className="button button--quiet detail__close"
@@ -97,39 +121,33 @@ export function FileDetailPanel({
         </section>
       )}
 
-      {/* Always shown, so the file can be found even if the link breaks. */}
-      <dl className="detail__facts">
-        <div>
-          <dt>Path</dt>
-          <dd>
-            <code>{path}</code>
-          </dd>
-        </div>
-        <div>
-          <dt>Commit</dt>
-          <dd>
-            <code title={sha}>{sha.slice(0, 7)}</code>
-          </dd>
-        </div>
-        {detail !== null && (
+      {/* Single accordion combining Path, Commit, and Module info */}
+      <CollapseSection title="File info">
+        <dl className="detail__facts">
           <div>
-            <dt>Module</dt>
+            <dt>Path</dt>
             <dd>
-              <code>{detail.module}</code>
+              <code className="detail__fact-value">{path}</code>
             </dd>
           </div>
-        )}
-      </dl>
-
-      <a
-        className="button button--primary detail__source"
-        href={sourceUrl}
-        target="_blank"
-        rel="noreferrer"
-      >
-        Open source on GitHub
-        <span className="visually-hidden"> (opens in a new tab)</span>
-      </a>
+          <div>
+            <dt>Commit</dt>
+            <dd>
+              <code className="detail__fact-value" title={sha}>
+                {sha.slice(0, 7)}
+              </code>
+            </dd>
+          </div>
+          {detail !== null && (
+            <div>
+              <dt>Module</dt>
+              <dd>
+                <code className="detail__fact-value">{detail.module}</code>
+              </dd>
+            </div>
+          )}
+        </dl>
+      </CollapseSection>
 
       {failure !== null ? (
         <ErrorBanner error={failure.error} onRetry={onRetry} />
@@ -183,7 +201,7 @@ function DetailBody({
         </p>
       )}
 
-      <Section title="Symbols" count={detail.symbols.length}>
+      <CollapseSection title="Symbols" count={detail.symbols.length}>
         {detail.symbols.length === 0 ? (
           <p className="detail__muted">No functions, classes or variables.</p>
         ) : (
@@ -206,25 +224,25 @@ function DetailBody({
             ))}
           </ul>
         )}
-      </Section>
+      </CollapseSection>
 
-      <Section title="Imports" count={internal.length}>
+      <CollapseSection title="Imports" count={internal.length}>
         <FileLinks
           paths={internal.map(imp => imp.targetPath)}
           empty="No files from this repository."
           onSelectFile={onSelectFile}
         />
-      </Section>
+      </CollapseSection>
 
-      <Section title="Imported by" count={detail.importedBy.length}>
+      <CollapseSection title="Imported by" count={detail.importedBy.length}>
         <FileLinks
           paths={detail.importedBy}
           empty="No other analyzed file imports this one."
           onSelectFile={onSelectFile}
         />
-      </Section>
+      </CollapseSection>
 
-      <Section title="External libraries" count={external.length}>
+      <CollapseSection title="External libraries" count={external.length}>
         {external.length === 0 ? (
           <p className="detail__muted">None.</p>
         ) : (
@@ -236,10 +254,10 @@ function DetailBody({
             ))}
           </ul>
         )}
-      </Section>
+      </CollapseSection>
 
       {unresolved.length > 0 && (
-        <Section title="Unresolved imports" count={unresolved.length}>
+        <CollapseSection title="Unresolved imports" count={unresolved.length}>
           <p className="detail__muted">
             Not matched to a file in this repository or a known library, for
             example a dynamic import.
@@ -251,27 +269,73 @@ function DetailBody({
               </li>
             ))}
           </ul>
-        </Section>
+        </CollapseSection>
       )}
     </>
   );
 }
 
-function Section({
+/** Ant Design-style animated collapse panel that starts closed by default. */
+function CollapseSection({
   title,
   count,
   children,
 }: {
   title: string;
-  count: number;
+  count?: number;
   children: ReactNode;
 }) {
+  const [open, setOpen] = useState(false);
+
   return (
-    <section className="detail__section">
-      <h3>
-        {title} <span className="detail__count">{count}</span>
-      </h3>
-      {children}
+    <section
+      className={`detail__section${open ? ' detail__section--open' : ''}`}
+    >
+      <div
+        className="detail__collapse-header"
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        onClick={() => setOpen(current => !current)}
+        onKeyDown={event => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            setOpen(current => !current);
+          }
+        }}
+      >
+        <div className="detail__collapse-title">
+          <svg
+            className="detail__collapse-arrow"
+            viewBox="0 0 12 12"
+            fill="none"
+            aria-hidden="true"
+          >
+            <path
+              d="M4 2.25L8 6L4 9.75"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          <h3>
+            {title}
+            {count !== undefined && (
+              <>
+                {' '}
+                <span className="detail__count">{count}</span>
+              </>
+            )}
+          </h3>
+        </div>
+      </div>
+
+      <div className="detail__collapse-motion">
+        <div className="detail__collapse-inner">
+          <div className="detail__collapse-body">{children}</div>
+        </div>
+      </div>
     </section>
   );
 }

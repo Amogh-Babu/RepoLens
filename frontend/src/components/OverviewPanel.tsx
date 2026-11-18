@@ -1,3 +1,4 @@
+import type {ReactNode} from 'react';
 import {useEffect, useState} from 'react';
 import {useApiClient} from '../api/apiClientContext.ts';
 import type {OverviewFile, RepositoryOverview} from '../api/types.ts';
@@ -87,59 +88,55 @@ export function OverviewPanel({
   return (
     <div className="overview" aria-label="Repository overview">
       <header className="overview__header">
-        <h2>Start here</h2>
-        <p>Begin with an entry point, then follow the files it depends on.</p>
-        {firstTourStep !== undefined && (
-          <div className="overview__tour-actions">
+        <div className="overview__header-row">
+          <h2>Start here</h2>
+          {firstTourStep !== undefined && (
             <button
               type="button"
-              className="button"
+              className="button overview__tour-btn"
               onClick={() => openFile(firstTourStep)}
             >
               Start reading tour
             </button>
-            {currentTourIndex >= 0 && (
-              <button
-                type="button"
-                className="button"
-                disabled={nextTourStep === undefined}
-                onClick={() => {
-                  if (nextTourStep !== undefined) openFile(nextTourStep);
-                }}
-              >
-                Next in tour →
-              </button>
-            )}
-          </div>
+          )}
+        </div>
+        {firstTourStep !== undefined && currentTourIndex >= 0 && (
+          <button
+            type="button"
+            className="button overview__tour-next-btn"
+            disabled={nextTourStep === undefined}
+            onClick={() => {
+              if (nextTourStep !== undefined) openFile(nextTourStep);
+            }}
+          >
+            Next in tour →
+          </button>
         )}
       </header>
 
-      <OverviewSection
+      <OverviewCollapse
         title="Entry points"
         empty="No conventional entry point found."
       >
         {overview.entryPoints.map(file => (
           <OverviewFileButton key={file.path} file={file} onSelect={openFile} />
         ))}
-      </OverviewSection>
+      </OverviewCollapse>
 
-      <OverviewSection title="Core files" empty="No parsed source files found.">
+      <OverviewCollapse
+        title="Core files"
+        empty="No parsed source files found."
+      >
         {overview.coreFiles.slice(0, 5).map(file => (
           <OverviewFileButton key={file.path} file={file} onSelect={openFile} />
         ))}
-      </OverviewSection>
+      </OverviewCollapse>
 
-      <section
-        className="overview__section"
-        aria-labelledby="overview-architecture"
+      <OverviewCollapse
+        title="Architecture"
+        headingId="overview-architecture"
+        empty="No packages found."
       >
-        <h3 id="overview-architecture">Architecture</h3>
-        <p className="overview__meta">
-          {overview.architecture.packages.length} packages
-          {' · '}
-          {overview.architecture.layers.length} layers
-          {overview.architecture.hasCycles ? ' · import cycles detected' : ''}
-        </p>
         <ul className="overview__packages">
           {overview.architecture.packages.slice(0, 8).map(pkg => (
             <li key={pkg.id}>
@@ -148,9 +145,9 @@ export function OverviewPanel({
             </li>
           ))}
         </ul>
-      </section>
+      </OverviewCollapse>
 
-      <OverviewSection
+      <OverviewCollapse
         title="Feature areas"
         empty="No connected source areas found."
       >
@@ -166,50 +163,70 @@ export function OverviewPanel({
             <span className="overview__meta">{area.files.length} files</span>
           </button>
         ))}
-      </OverviewSection>
-
-      <OverviewSection title="Reading tour" empty="No tour steps available.">
-        {overview.tour.slice(0, 12).map((file, index) => (
-          <OverviewFileButton
-            key={file.path}
-            file={file}
-            index={index + 1}
-            onSelect={openFile}
-          />
-        ))}
-      </OverviewSection>
-
-      <section
-        className="overview__section"
-        aria-labelledby="overview-inventory"
-      >
-        <h3 id="overview-inventory">File inventory</h3>
-        <p className="overview__meta">
-          {categoryCounts(overview)
-            .map(([category, count]) => `${count} ${category}`)
-            .join(' · ')}
-        </p>
-      </section>
+      </OverviewCollapse>
     </div>
   );
 }
 
-function OverviewSection({
+/** Ant Design-style animated collapse section that starts closed by default. */
+function OverviewCollapse({
   title,
+  headingId,
   empty,
   children,
 }: {
   title: string;
+  headingId?: string;
   empty: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
+  const [open, setOpen] = useState(false);
   const hasItems = Array.isArray(children)
     ? children.length > 0
     : children !== null;
+
   return (
-    <section className="overview__section">
-      <h3>{title}</h3>
-      {hasItems ? children : <p className="overview__meta">{empty}</p>}
+    <section
+      className={`overview__section${open ? ' overview__section--open' : ''}`}
+      aria-labelledby={headingId}
+    >
+      <div
+        className="overview__collapse-header"
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        onClick={() => setOpen(current => !current)}
+        onKeyDown={event => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            setOpen(current => !current);
+          }
+        }}
+      >
+        <svg
+          className="overview__collapse-arrow"
+          viewBox="0 0 12 12"
+          fill="none"
+          aria-hidden="true"
+        >
+          <path
+            d="M4 2.25L8 6L4 9.75"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+        <h3 id={headingId}>{title}</h3>
+      </div>
+
+      <div className="overview__collapse-motion">
+        <div className="overview__collapse-inner">
+          <div className="overview__collapse-body">
+            {hasItems ? children : <p className="overview__meta">{empty}</p>}
+          </div>
+        </div>
+      </div>
     </section>
   );
 }
@@ -238,12 +255,4 @@ function OverviewFileButton({
       </span>
     </button>
   );
-}
-
-function categoryCounts(overview: RepositoryOverview): Array<[string, number]> {
-  const counts = new Map<string, number>();
-  for (const item of overview.categories) {
-    counts.set(item.category, (counts.get(item.category) ?? 0) + 1);
-  }
-  return [...counts].sort(([left], [right]) => left.localeCompare(right));
 }

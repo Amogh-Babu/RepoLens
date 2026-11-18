@@ -24,8 +24,9 @@ interface AnalysisPageProps {
 }
 
 /**
- * Analysis page: progress while the analysis runs, then the summary, file
- * explorer, dependency map, search and reading list.
+ * Analysis page: progress while the analysis runs, then the merged header
+ * with an inline horizontal details accordion, full-width search bar,
+ * collapsible sidebars, and dependency map.
  */
 export function AnalysisPage({pollIntervalMs}: AnalysisPageProps) {
   const {analysisId = ''} = useParams();
@@ -70,33 +71,79 @@ function AnalysisContent() {
   const analysis = useAnalysisStore(state => state.analysis);
   useDocumentTitle(analysis === null ? 'Analysis' : repoName(analysis.repoUrl));
   const loadFailure = useAnalysisStore(state => state.loadFailure);
+  const [helpTourOpen, setHelpTourOpen] = useState(false);
+
+  const isCompletedWithSummary =
+    analysis !== null &&
+    analysis.status === 'completed' &&
+    analysis.summary !== null;
 
   return (
     <main className="page analysis" id="main" tabIndex={-1}>
       <header className="analysis__header">
-        <Link to="/" className="analysis__back">
-          ← Analyze another repository
-        </Link>
-        <h1>{analysis === null ? 'Analysis' : repoName(analysis.repoUrl)}</h1>
-        {analysis !== null && (
-          <a href={analysis.repoUrl} target="_blank" rel="noreferrer">
-            {analysis.repoUrl}
-          </a>
-        )}
+        <div className="analysis__header-nav">
+          <Link to="/" className="analysis__back">
+            &larr; Back
+          </Link>
+
+          {isCompletedWithSummary && (
+            <button
+              type="button"
+              className="button analysis__help-btn"
+              onClick={() => setHelpTourOpen(true)}
+              title="Take the tour of this page again"
+            >
+              Help
+            </button>
+          )}
+        </div>
+
+        <div className="analysis__heading-row">
+          <h1>{analysis === null ? 'Analysis' : repoName(analysis.repoUrl)}</h1>
+
+          {isCompletedWithSummary && analysis.summary !== null ? (
+            <SummaryBar analysis={analysis} summary={analysis.summary} />
+          ) : (
+            analysis !== null && (
+              <a
+                className="analysis__repo-link"
+                href={analysis.repoUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {analysis.repoUrl}
+              </a>
+            )
+          )}
+        </div>
       </header>
 
       {loadFailure !== null ? (
         <LoadFailure failure={loadFailure} />
       ) : analysis === null ? (
-        <p role="status">Loading the analysis…</p>
+        <p role="status" className="analysis__status-box">
+          Loading the analysis…
+        </p>
       ) : (
-        <AnalysisBody analysis={analysis} />
+        <AnalysisBody
+          analysis={analysis}
+          helpTourOpen={helpTourOpen}
+          onCloseHelpTour={() => setHelpTourOpen(false)}
+        />
       )}
     </main>
   );
 }
 
-function AnalysisBody({analysis}: {analysis: Analysis}) {
+function AnalysisBody({
+  analysis,
+  helpTourOpen,
+  onCloseHelpTour,
+}: {
+  analysis: Analysis;
+  helpTourOpen: boolean;
+  onCloseHelpTour: () => void;
+}) {
   const cancel = useAnalysisStore(state => state.cancel);
   const cancelling = useAnalysisStore(state => state.cancelling);
   const cancelFailure = useAnalysisStore(state => state.cancelFailure);
@@ -131,12 +178,15 @@ function AnalysisBody({analysis}: {analysis: Analysis}) {
       );
     default:
       return analysis.summary === null ? (
-        <p role="status">Loading the analysis…</p>
+        <p role="status" className="analysis__status-box">
+          Loading the analysis…
+        </p>
       ) : (
-        <>
-          <SummaryBar analysis={analysis} summary={analysis.summary} />
-          <Workspace analysis={analysis} />
-        </>
+        <Workspace
+          analysis={analysis}
+          helpTourOpen={helpTourOpen}
+          onCloseHelpTour={onCloseHelpTour}
+        />
       );
   }
 }

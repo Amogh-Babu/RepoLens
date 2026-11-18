@@ -1,5 +1,13 @@
 import type {KeyboardEvent} from 'react';
-import {lazy, Suspense, useCallback, useId, useMemo, useState} from 'react';
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useState,
+} from 'react';
 import {encodeFilePath} from '../api/client.ts';
 import type {Analysis, DependencyGraph, OverviewFile} from '../api/types.ts';
 import type {SearchState} from '../state/analysisStore.ts';
@@ -17,7 +25,6 @@ import {OverviewPanel} from './OverviewPanel.tsx';
 import {ReadingList} from './ReadingList.tsx';
 import {ReanalyzeButton} from './ReanalyzeButton.tsx';
 import {SearchBar} from './SearchBar.tsx';
-import {SearchHelp} from './SearchHelp.tsx';
 import type {TourStep} from './WorkspaceTour.tsx';
 import {WorkspaceTour} from './WorkspaceTour.tsx';
 import './Workspace.css';
@@ -32,10 +39,19 @@ const DependencyMap = lazy(() =>
 type SidebarTab = 'overview' | 'reading' | 'files';
 
 /**
- * Search, reading list, file explorer, dependency map and file details for
- * a finished analysis.
+ * Full-width search bar, collapsible left sidebar (overview, reading list,
+ * file explorer), full-screen-capable dependency map, and collapsible right
+ * file detail sidebar.
  */
-export function Workspace({analysis}: {analysis: Analysis}) {
+export function Workspace({
+  analysis,
+  helpTourOpen = false,
+  onCloseHelpTour,
+}: {
+  analysis: Analysis;
+  helpTourOpen?: boolean;
+  onCloseHelpTour?: () => void;
+}) {
   const graph = useAnalysisStore(state => state.graph);
   const graphFailure = useAnalysisStore(state => state.graphFailure);
   const loadGraph = useAnalysisStore(state => state.loadGraph);
@@ -60,6 +76,9 @@ export function Workspace({analysis}: {analysis: Analysis}) {
   const [tourSteps, setTourSteps] = useState<readonly OverviewFile[] | null>(
     null,
   );
+  const [leftCollapsed, setLeftCollapsed] = useState(false);
+  const [rightCollapsed, setRightCollapsed] = useState(false);
+
   const changeTab = useCallback(
     (nextTab: SidebarTab) => {
       setTab(nextTab);
@@ -78,6 +97,9 @@ export function Workspace({analysis}: {analysis: Analysis}) {
   );
   const selectWorkspaceFile = useCallback(
     (path: string | null) => {
+      if (path !== null) {
+        setRightCollapsed(false);
+      }
       if (path !== null && scopePaths !== null && !scopePaths.has(path)) {
         changeScopePaths(null);
       }
@@ -86,11 +108,16 @@ export function Workspace({analysis}: {analysis: Analysis}) {
     [scopePaths, changeScopePaths, selectFile],
   );
   // The tour opens by itself the first time a viewer reaches a workspace.
-  const [touring, setTouring] = useState(() => !hasSeen('workspace-tour'));
+  const [firstRunTouring, setFirstRunTouring] = useState(
+    () => !hasSeen('workspace-tour'),
+  );
+  const touring = firstRunTouring || helpTourOpen;
+
   const endTour = useCallback(() => {
     markSeen('workspace-tour');
-    setTouring(false);
-  }, []);
+    setFirstRunTouring(false);
+    onCloseHelpTour?.();
+  }, [onCloseHelpTour]);
 
   const sourceUrlFor = useCallback(
     (path: string) =>
@@ -117,8 +144,22 @@ export function Workspace({analysis}: {analysis: Analysis}) {
     return <ErrorBanner error={graphFailure.error} onRetry={loadGraph} />;
   }
   if (graph === null) {
-    return expiredBanner || <p role="status">Loading the files…</p>;
+    return (
+      expiredBanner || (
+        <p role="status" className="analysis__status-box">
+          Loading the files…
+        </p>
+      )
+    );
   }
+
+  const gridClass = [
+    'workspace',
+    leftCollapsed ? 'workspace--left-collapsed' : '',
+    rightCollapsed ? 'workspace--right-collapsed' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
 
   return (
     <div className="workspace-area">
@@ -132,6 +173,7 @@ export function Workspace({analysis}: {analysis: Analysis}) {
             onSearch={query => {
               changeScopePaths(null);
               selectFile(null);
+              setLeftCollapsed(false);
               changeTab('reading');
               runSearch(query);
             }}
@@ -142,18 +184,9 @@ export function Workspace({analysis}: {analysis: Analysis}) {
             }}
           />
         </div>
-        <SearchHelp />
-        <button
-          type="button"
-          className="button"
-          onClick={() => setTouring(true)}
-          title="Take the tour of this page again"
-        >
-          Help
-        </button>
       </div>
 
-      <div className="workspace">
+      <div className={gridClass}>
         <Sidebar
           analysisId={analysis.analysisId}
           selectedPath={selectedPath}
@@ -169,6 +202,8 @@ export function Workspace({analysis}: {analysis: Analysis}) {
             if (firstPath !== undefined) selectWorkspaceFile(firstPath);
           }}
           onTourLoaded={setTourSteps}
+          collapsed={leftCollapsed}
+          onToggleCollapse={() => setLeftCollapsed(current => !current)}
         />
 
         <MapPanel
@@ -181,24 +216,53 @@ export function Workspace({analysis}: {analysis: Analysis}) {
           onClearScope={() => changeScopePaths(null)}
         />
 
-        <div className="workspace__detail" data-tour="detail">
-          {selectedPath === null ? (
-            <p className="workspace__hint">
-              Select a file to see its symbols, imports and the files that
-              import it.
-            </p>
+        <div
+          className={`workspace__detail${rightCollapsed ? ' workspace__detail--collapsed' : ''}`}
+          data-tour="detail"
+        >
+          {rightCollapsed ? (
+            <button
+              type="button"
+              className="workspace__rail-btn"
+              onClick={() => setRightCollapsed(false)}
+              aria-label="Show right sidebar"
+              title="Show file details sidebar"
+            >
+              &laquo; Details
+            </button>
           ) : (
-            <FileDetailPanel
-              path={selectedPath}
-              repoUrl={analysis.repoUrl}
-              sha={analysis.sha}
-              detail={detail}
-              failure={fileFailure}
-              onSelectFile={selectWorkspaceFile}
-              onRetry={() => selectWorkspaceFile(selectedPath)}
-              onClose={() => selectWorkspaceFile(null)}
-              readingOrder={readingOrder}
-            />
+            <>
+              <div className="workspace__detail-bar">
+                <span className="workspace__detail-title">File details</span>
+                <button
+                  type="button"
+                  className="workspace__collapse-toggle"
+                  onClick={() => setRightCollapsed(true)}
+                  aria-label="Hide right sidebar"
+                  title="Hide file details sidebar"
+                >
+                  Hide &raquo;
+                </button>
+              </div>
+              {selectedPath === null ? (
+                <p className="workspace__hint">
+                  Select a file to see its symbols, imports and the files that
+                  import it.
+                </p>
+              ) : (
+                <FileDetailPanel
+                  path={selectedPath}
+                  repoUrl={analysis.repoUrl}
+                  sha={analysis.sha}
+                  detail={detail}
+                  failure={fileFailure}
+                  onSelectFile={selectWorkspaceFile}
+                  onRetry={() => selectWorkspaceFile(selectedPath)}
+                  onClose={() => selectWorkspaceFile(null)}
+                  readingOrder={readingOrder}
+                />
+              )}
+            </>
           )}
         </div>
       </div>
@@ -226,19 +290,11 @@ const TOUR_STEPS: readonly TourStep[] = [
     target: 'search',
     title: 'Start with a search',
     body: (
-      <>
-        <p>
-          Type the feature you want to understand, like “checkout”, or a
-          function or class name. RepoLens lists the files involved, in the
-          order to read them.
-        </p>
-        <p>
-          It combines exact matches in names, code and prose with local semantic
-          search, so plain-language questions can find related files.{' '}
-          <strong>How search works</strong>, next to the search bar, explains
-          how results are ranked and ordered.
-        </p>
-      </>
+      <p>
+        Type the feature you want to understand, like “checkout”, or a function
+        or class name. RepoLens lists the files involved, in the order to read
+        them.
+      </p>
     ),
   },
   {
@@ -252,8 +308,8 @@ const TOUR_STEPS: readonly TourStep[] = [
         </p>
         <p>
           <strong>Files</strong> lists every analyzed file by folder.{' '}
-          <strong>Overview</strong> highlights entry points, central files and a
-          guided reading path.
+          <strong>Overview</strong> highlights entry points, core files, and a
+          guided reading tour.
         </p>
       </>
     ),
@@ -266,13 +322,8 @@ const TOUR_STEPS: readonly TourStep[] = [
         <p>
           Each box is a folder. Click one to zoom in and see its files. Arrows
           point from a file to the files it imports. <strong>Key</strong> in the
-          toolbar explains the colors.
-        </p>
-        <p>
-          During a search the map shows only the matching files. Untick
-          <strong> Only show matches</strong> to see everything again. With a
-          file selected, the files it is not connected to are greyed out; tick
-          <strong> Hide unrelated files</strong> to hide them.
+          toolbar explains the colors, and <strong>Full screen</strong> expands
+          the map.
         </p>
       </>
     ),
@@ -350,7 +401,7 @@ function readingOrderFor(
   return null;
 }
 
-/** Reading list and file explorer, as tabs. */
+/** Reading list and file explorer, as tabs, with a collapse toggle. */
 function Sidebar({
   analysisId,
   selectedPath,
@@ -362,6 +413,8 @@ function Sidebar({
   onSelectFile,
   onSelectArea,
   onTourLoaded,
+  collapsed,
+  onToggleCollapse,
 }: {
   analysisId: string;
   selectedPath: string | null;
@@ -373,6 +426,8 @@ function Sidebar({
   onSelectFile: (path: string) => void;
   onSelectArea: (paths: string[]) => void;
   onTourLoaded: (tour: OverviewFile[]) => void;
+  collapsed: boolean;
+  onToggleCollapse: () => void;
 }) {
   const id = useId();
   const tabs: Array<{key: SidebarTab; label: string}> = [
@@ -402,29 +457,59 @@ function Sidebar({
     event.preventDefault();
   }
 
+  if (collapsed) {
+    return (
+      <div
+        className="workspace__sidebar workspace__sidebar--collapsed"
+        data-tour="sidebar"
+      >
+        <button
+          type="button"
+          className="workspace__rail-btn"
+          onClick={onToggleCollapse}
+          aria-label="Show left sidebar"
+          title="Show overview and files sidebar"
+        >
+          Sidebar &raquo;
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="workspace__sidebar" data-tour="sidebar">
-      <div
-        className="workspace__tabs"
-        role="tablist"
-        aria-label="Sidebar"
-        onKeyDown={handleKeyDown}
-      >
-        {tabs.map(t => (
-          <button
-            key={t.key}
-            id={`${id}-tab-${t.key}`}
-            type="button"
-            role="tab"
-            className="workspace__tab"
-            aria-selected={tab === t.key}
-            aria-controls={`${id}-panel`}
-            tabIndex={tab === t.key ? 0 : -1}
-            onClick={() => onTabChange(t.key)}
-          >
-            {t.label}
-          </button>
-        ))}
+      <div className="workspace__sidebar-header">
+        <div
+          className="workspace__tabs"
+          role="tablist"
+          aria-label="Sidebar"
+          onKeyDown={handleKeyDown}
+        >
+          {tabs.map(t => (
+            <button
+              key={t.key}
+              id={`${id}-tab-${t.key}`}
+              type="button"
+              role="tab"
+              className="workspace__tab"
+              aria-selected={tab === t.key}
+              aria-controls={`${id}-panel`}
+              tabIndex={tab === t.key ? 0 : -1}
+              onClick={() => onTabChange(t.key)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          className="workspace__collapse-toggle"
+          onClick={onToggleCollapse}
+          aria-label="Hide left sidebar"
+          title="Hide sidebar"
+        >
+          &laquo; Hide
+        </button>
       </div>
       <div
         id={`${id}-panel`}
@@ -542,6 +627,7 @@ function MapPanel({
   const [savedView] = useState(() => loadViewState(repoUrl));
   // 'list' when chosen by the user; a message when the map failed.
   const [view, setView] = useState<'map' | 'list'>('map');
+  const [fullScreen, setFullScreen] = useState(false);
   // During a search the map shows only the matches unless the user asks
   // for everything (user test feedback, #92).
   const [matchesOnly, setMatchesOnly] = useState(
@@ -551,6 +637,18 @@ function MapPanel({
   const [hideUnrelated, setHideUnrelated] = useState(
     savedView?.hideUnrelated ?? false,
   );
+
+  useEffect(() => {
+    if (!fullScreen) return;
+    function handleKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setFullScreen(false);
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [fullScreen]);
+
   const changeMatchesOnly = useCallback(
     (next: boolean) => {
       setMatchesOnly(next);
@@ -602,6 +700,36 @@ function MapPanel({
       >
         List
       </button>
+      <button
+        type="button"
+        className="button workspace__fullscreen-btn"
+        aria-label={fullScreen ? 'Exit full screen' : 'Full screen'}
+        title={fullScreen ? 'Exit full screen' : 'Full screen'}
+        aria-pressed={fullScreen}
+        onClick={() => setFullScreen(current => !current)}
+      >
+        {fullScreen ? (
+          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path
+              d="M6 2V6H2M10 2V6H14M6 14V10H2M10 14V10H14"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        ) : (
+          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path
+              d="M2 6V2H6M14 6V2H10M2 10V14H6M14 10V14H10"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        )}
+      </button>
       {showList && matchedPaths !== null && (
         <label className="workspace__list-filter">
           <input
@@ -622,7 +750,7 @@ function MapPanel({
 
   return (
     <section
-      className="workspace__map"
+      className={`workspace__map${fullScreen ? ' workspace__map--fullscreen' : ''}`}
       aria-label="Dependency map"
       data-tour="map"
     >

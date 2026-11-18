@@ -12,7 +12,7 @@ import type {
   RankedFile,
   SearchIntent,
 } from '../api/types.ts';
-import {ancestorDirs, topLevelDirs} from '../utils/fileTree.ts';
+import {ancestorDirs} from '../utils/fileTree.ts';
 import {
   loadViewState,
   saveRecentRepo,
@@ -232,12 +232,12 @@ export function createAnalysisStore(
         set({
           graph,
           graphFailure: null,
-          expandedDirs: new Set([
-            ...topLevelDirs(graph.files.map(f => f.path)),
-            ...(restoredSelectedPath === null
+          // All directories start closed unless needed to reveal a restored selected file.
+          expandedDirs: new Set(
+            restoredSelectedPath === null
               ? []
-              : ancestorDirs(restoredSelectedPath)),
-          ]),
+              : ancestorDirs(restoredSelectedPath),
+          ),
           // Modules start collapsed, unless there is only one or saved state restores them.
           expandedModules: new Set(
             graph.modules.length === 1

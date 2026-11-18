@@ -154,6 +154,7 @@ describe('DependencyMap', () => {
     expect(
       document.querySelector('.react-flow__edge.map-edge--imported-by'),
     ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', {name: 'Key'}));
     const key = screen.getByRole('region', {name: 'Map key'});
     expect(key).toHaveTextContent('The selected file imports this');
     expect(key).toHaveTextContent('This imports the selected file');
@@ -284,8 +285,13 @@ describe('DependencyMap', () => {
     ).toBeInTheDocument();
   });
 
-  it('explains every box, color and line in a key that starts open', () => {
+  it('explains every box, color and line in a key opened from the bottom-left button', async () => {
+    const user = userEvent.setup();
     renderMap();
+
+    const keyButton = screen.getByRole('button', {name: 'Key'});
+    expect(keyButton).toHaveAttribute('aria-expanded', 'false');
+    await user.click(keyButton);
 
     const key = screen.getByRole('region', {name: 'Map key'});
     for (const text of [
@@ -302,15 +308,16 @@ describe('DependencyMap', () => {
     ]) {
       expect(key).toHaveTextContent(text);
     }
-    expect(screen.getByRole('button', {name: 'Key'})).toHaveAttribute(
-      'aria-expanded',
-      'true',
-    );
+    expect(keyButton).toHaveAttribute('aria-expanded', 'true');
   });
 
-  it('hides the key and remembers it', async () => {
+  it('shows and hides the key and remembers the preference', async () => {
     const user = userEvent.setup();
     renderMap();
+
+    await user.click(screen.getByRole('button', {name: 'Key'}));
+    expect(screen.getByRole('region', {name: 'Map key'})).toBeInTheDocument();
+    expect(localStorage.getItem('repolens.map-key')).toBe('open');
 
     await user.click(screen.getByRole('button', {name: 'Hide the key'}));
 
@@ -318,13 +325,9 @@ describe('DependencyMap', () => {
       screen.queryByRole('region', {name: 'Map key'}),
     ).not.toBeInTheDocument();
     expect(localStorage.getItem('repolens.map-key')).toBe('closed');
-
-    await user.click(screen.getByRole('button', {name: 'Key'}));
-    expect(screen.getByRole('region', {name: 'Map key'})).toBeInTheDocument();
   });
 
-  it('starts with the key closed if the viewer closed it before', () => {
-    localStorage.setItem('repolens.map-key', 'closed');
+  it('starts with the key closed by default', () => {
     renderMap();
 
     expect(

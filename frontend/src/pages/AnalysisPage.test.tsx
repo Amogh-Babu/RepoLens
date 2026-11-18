@@ -152,6 +152,7 @@ describe('AnalysisPage workspace', () => {
     await renderFinished('flask-auth');
     await user.click(await screen.findByRole('tab', {name: 'Files'}));
 
+    await user.click(await screen.findByRole('treeitem', {name: 'app/'}));
     await user.click(await screen.findByRole('treeitem', {name: 'auth/'}));
     await user.click(screen.getByRole('treeitem', {name: 'service.py'}));
 
@@ -175,12 +176,36 @@ describe('AnalysisPage workspace', () => {
     );
   });
 
-  it('prompts the user to select a file', async () => {
+  it('prompts the user to select a file and supports collapsing both sidebars and full-screening the map', async () => {
+    const user = userEvent.setup();
     await renderFinished('flask-auth');
 
     expect(
       await screen.findByText(/Select a file to see its symbols/),
     ).toBeInTheDocument();
+    expect(screen.getByRole('link', {name: /Back/})).toBeInTheDocument();
+
+    // Collapse and restore left sidebar
+    await user.click(screen.getByRole('button', {name: 'Hide left sidebar'}));
+    expect(
+      screen.getByRole('button', {name: 'Show left sidebar'}),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', {name: 'Show left sidebar'}));
+
+    // Collapse and restore right sidebar
+    await user.click(screen.getByRole('button', {name: 'Hide right sidebar'}));
+    expect(
+      screen.getByRole('button', {name: 'Show right sidebar'}),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', {name: 'Show right sidebar'}));
+
+    // Toggle full screen on dependency map
+    const fullScreenBtn = screen.getByRole('button', {name: 'Full screen'});
+    expect(fullScreenBtn).toHaveAttribute('aria-pressed', 'false');
+    await user.click(fullScreenBtn);
+    expect(
+      screen.getByRole('button', {name: 'Exit full screen'}),
+    ).toHaveAttribute('aria-pressed', 'true');
   });
 });
 
@@ -253,6 +278,7 @@ describe('AnalysisPage map', () => {
     await renderFinished('flask-auth');
     await user.click(await screen.findByRole('tab', {name: 'Files'}));
 
+    await user.click(await screen.findByRole('treeitem', {name: 'app/'}));
     await user.click(await screen.findByRole('treeitem', {name: 'db.py'}));
 
     expect(
@@ -398,6 +424,7 @@ describe('AnalysisPage expiry', () => {
       'This analysis has expired',
     );
     await user.click(await screen.findByRole('tab', {name: 'Files'}));
+    await user.click(await screen.findByRole('treeitem', {name: 'app/'}));
     expect(
       await screen.findByRole('treeitem', {name: 'auth/'}),
     ).toBeInTheDocument();
