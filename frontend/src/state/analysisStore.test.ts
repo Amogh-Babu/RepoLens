@@ -113,6 +113,25 @@ describe('createAnalysisStore', () => {
     expect(store.getState().cancelling).toBe(false);
   });
 
+  it('shows cancelled locally even when another user keeps the backend job running', async () => {
+    const {client} = setUp();
+    const {analysisId} = await client.startAnalysis({
+      url: 'https://github.com/o/flask-auth',
+    });
+    vi.spyOn(client, 'cancelAnalysis').mockResolvedValue(undefined);
+    const store = createAnalysisStore(client, analysisId, {
+      pollIntervalMs: POLL_MS,
+    });
+    store.getState().startPolling();
+    await vi.waitFor(() => expect(store.getState().analysis).not.toBeNull());
+
+    await store.getState().cancel();
+
+    expect(store.getState().analysis?.status).toBe('cancelled');
+    expect(store.getState().analysis?.stage).toBeNull();
+    expect(store.getState().cancelling).toBe(false);
+  });
+
   it('records a cancel failure', async () => {
     const {client} = setUp();
     vi.spyOn(client, 'cancelAnalysis').mockRejectedValue(

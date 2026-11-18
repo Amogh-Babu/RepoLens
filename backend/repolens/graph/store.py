@@ -216,6 +216,7 @@ class SqliteGraphStore:
         self._db_path = db_path
         self.embedder = embedder
         self._lock = threading.RLock()
+        self._waiters: dict[str, int] = {}
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         if db_path != ":memory:":
@@ -467,6 +468,11 @@ class SqliteGraphStore:
                         ],
                     )
 
+        if analysis.status in _ACTIVE_STATUSES:
+            self._waiters[analysis.analysis_id] = 1
+        else:
+            self._waiters.pop(analysis.analysis_id, None)
+
     @_locked
     def find_cached_analysis(
         self,
@@ -540,12 +546,15 @@ class SqliteGraphStore:
             (repo_url, sha, cutoff),
         ).fetchone()
         if existing is not None:
+            existing_id = str(existing["id"])
             if str(existing["status"]) == "completed":
                 with self._conn:
                     self._conn.execute(
                         "UPDATE analyses SET from_cache = 1 WHERE id = ?;",
-                        (existing["id"],),
+                        (existing_id,),
                     )
+            else:
+                self._waiters[existing_id] = self._waiters.get(existing_id, 1) + 1
             return existing, False
 
         analysis_id = f"analysis-{uuid.uuid4().hex[:12]}"
@@ -569,9 +578,14 @@ class SqliteGraphStore:
 
     @_locked
     def cancel_analysis(self, analysis_id: str) -> None:
-        """Cancel a queued or running analysis."""
+        """Cancel a queued or running analysis once its last waiter cancels."""
         row = self._get_valid_analysis_row(analysis_id, require_completed=False)
-        if row["status"] in ("queued", "running"):
+        if row["status"] in _ACTIVE_STATUSES:
+            remaining = self._waiters.get(analysis_id, 1) - 1
+            if remaining > 0:
+                self._waiters[analysis_id] = remaining
+                return
+            self._waiters.pop(analysis_id, None)
             with self._conn:
                 self._conn.execute(
                     "UPDATE analyses SET status = 'cancelled', stage = NULL WHERE id = ?;",
@@ -601,6 +615,7 @@ class SqliteGraphStore:
 
         Returns False, changing nothing, when the analysis is no longer active.
         """
+        self._waiters.pop(analysis_id, None)
         with self._conn:
             cursor = self._conn.execute(
                 """

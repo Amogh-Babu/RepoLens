@@ -345,3 +345,44 @@ def test_concurrent_post_analyses_share_one_in_flight_analysis(
     executor.run_pending()
     assert len(source.destinations) == 1
     assert client.get(f"/analyses/{first['analysisId']}").json()["status"] == "completed"
+
+
+def test_shared_in_flight_analysis_only_cancels_when_all_waiters_cancel(
+    tmp_path: Path,
+) -> None:
+    executor = ManualExecutor(run_immediately=False)
+    source = FakeSource()
+    client = _client(tmp_path, source=source, executor=executor)
+
+    first = client.post("/analyses", json={"url": REPO_URL}).json()
+    second = client.post("/analyses", json={"url": REPO_URL}).json()
+    analysis_id = first["analysisId"]
+    assert second["analysisId"] == analysis_id
+
+    # First user cancels: second user is still waiting, so the job stays queued.
+    assert client.delete(f"/analyses/{analysis_id}").status_code == 204
+    assert client.get(f"/analyses/{analysis_id}").json()["status"] == "queued"
+
+    # Second user also cancels: count hits 0, so the job is cancelled.
+    assert client.delete(f"/analyses/{analysis_id}").status_code == 204
+    assert client.get(f"/analyses/{analysis_id}").json()["status"] == "cancelled"
+    executor.run_pending()
+    assert source.destinations == []
+
+
+def test_shared_in_flight_analysis_completes_when_one_of_two_waiters_cancels(
+    tmp_path: Path,
+) -> None:
+    executor = ManualExecutor(run_immediately=False)
+    source = FakeSource()
+    client = _client(tmp_path, source=source, executor=executor)
+
+    first = client.post("/analyses", json={"url": REPO_URL}).json()
+    client.post("/analyses", json={"url": REPO_URL})
+    analysis_id = first["analysisId"]
+
+    assert client.delete(f"/analyses/{analysis_id}").status_code == 204
+    executor.run_pending()
+
+    assert len(source.destinations) == 1
+    assert client.get(f"/analyses/{analysis_id}").json()["status"] == "completed"

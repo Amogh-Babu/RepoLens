@@ -445,7 +445,13 @@ export function createAnalysisStore(
         set({cancelling: true, cancelFailure: null});
         try {
           await api.cancelAnalysis(analysisId);
-          get().startPolling();
+          const current = get().analysis;
+          if (current !== null && isInProgress(current.status)) {
+            get().stopPolling();
+            set({analysis: {...current, status: 'cancelled', stage: null}});
+          } else {
+            get().startPolling();
+          }
         } catch (error: unknown) {
           set({cancelFailure: failureFrom(error)});
         } finally {
