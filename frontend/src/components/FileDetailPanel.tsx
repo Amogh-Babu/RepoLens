@@ -8,11 +8,17 @@ import type {
   SymbolKind,
 } from '../api/types.ts';
 import type {RequestFailure} from '../state/analysisStore.ts';
+import {AiSummarySection} from './AiSummarySection.tsx';
 import {ErrorBanner} from './ErrorBanner.tsx';
 import './FileDetailPanel.css';
 
 interface FileDetailPanelProps {
   path: string;
+  /**
+   * The analysis the file belongs to. When set, the panel shows the AI File
+   * Summary section, which loads on its own without blocking the rest.
+   */
+  analysisId?: string;
   /** Repository URL and commit, to link the source before details load. */
   repoUrl: string;
   sha: string;
@@ -58,6 +64,7 @@ const KIND_LABELS: Record<SymbolKind, string> = {
  */
 export function FileDetailPanel({
   path,
+  analysisId,
   repoUrl,
   sha,
   detail,
@@ -231,6 +238,14 @@ export function FileDetailPanel({
           )}
         </dl>
       </CollapseSection>
+
+      {analysisId !== undefined && (
+        <AiSummarySection
+          analysisId={analysisId}
+          path={path}
+          onSelectFile={onSelectFile}
+        />
+      )}
 
       {failure !== null ? (
         <ErrorBanner error={failure.error} onRetry={onRetry} />

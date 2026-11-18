@@ -268,6 +268,7 @@ export function Workspace({
               ) : (
                 <FileDetailPanel
                   path={selectedPath}
+                  analysisId={analysis.analysisId}
                   repoUrl={analysis.repoUrl}
                   sha={analysis.sha}
                   detail={detail}

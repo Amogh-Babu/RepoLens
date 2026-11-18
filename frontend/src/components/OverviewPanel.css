@@ -229,3 +229,13 @@
 .overview__failure p {
   margin: 0;
 }
+
+.overview__ai-label {
+  margin-right: 4px;
+  padding: 0 4px;
+  border: 1px solid var(--color-accent);
+  border-radius: 8px;
+  color: var(--color-accent);
+  font-size: 0.625rem;
+  font-weight: 600;
+}
