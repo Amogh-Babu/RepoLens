@@ -317,6 +317,7 @@ describe('AnalysisPage search', () => {
     const user = userEvent.setup();
     await renderFinished('flask-auth');
     await user.click(await screen.findByRole('tab', {name: 'Files'}));
+    await user.click(await screen.findByRole('treeitem', {name: 'app/'}));
     await user.click(await screen.findByRole('treeitem', {name: 'auth/'}));
     await user.click(screen.getByRole('treeitem', {name: 'service.py'}));
     const panel = await screen.findByRole('complementary', {
