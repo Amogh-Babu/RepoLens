@@ -173,8 +173,14 @@ def cached_json_response(
     request: Request,
     payload: dict[str, Any],
     etag_scope: str,
+    cache_control: str = "private, immutable",
 ) -> Response:
-    """Return a JSONResponse with ETag and Cache-Control, or 304 Not Modified."""
+    """Return a JSONResponse with ETag and Cache-Control, or 304 Not Modified.
+
+    `cache_control` defaults to immutable, for payloads fixed by the analysis.
+    A payload that can change during an analysis's lifetime passes
+    `"private, no-cache"`, so the browser revalidates it with the ETag.
+    """
     body_bytes = json.dumps(
         payload, sort_keys=True, separators=(",", ":")
     ).encode("utf-8")
@@ -182,7 +188,7 @@ def cached_json_response(
     etag = f'"{etag_scope}-{digest}"'
     headers = {
         "ETag": etag,
-        "Cache-Control": "private, immutable",
+        "Cache-Control": cache_control,
     }
     if _etag_matches(request.headers.get("if-none-match"), etag):
         return Response(status_code=304, headers=headers)
