@@ -37,7 +37,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from repolens.ai import AiConfig, CodeSummaryService
+from repolens.ai import CodeSummaryService, load_ai_config
 from repolens.api.app import AnalysisRunner, create_app
 from repolens.graph.store import SqliteGraphStore
 from repolens.pipeline import DEFAULT_MAX_CONCURRENT_ANALYSES, PipelineAnalysisRunner
@@ -141,7 +141,7 @@ store = SqliteGraphStore(
         ),
         frontend_dir=Path(frontend) if frontend else None,
         cors_origins=origins,
-        summaries=CodeSummaryService(store, AiConfig.from_environment(environ)),
+        summaries=CodeSummaryService(store, load_ai_config(environ)),
     )
 
 

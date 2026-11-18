@@ -8,10 +8,13 @@ default: set `REPOLENS_AI_MODEL` to change it without touching code.
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+import logging
 import os
 
 
 DEFAULT_MODEL = "gpt-5.4-mini"
+
+_LOGGER = logging.getLogger(__name__)
 
 _TRUE = frozenset({"1", "true", "yes", "on"})
 
@@ -117,6 +120,19 @@ class AiConfig:
                 env, "REPOLENS_AI_OUTPUT_COST_PER_MILLION"
             ),
         )
+
+
+def load_ai_config(environ: Mapping[str, str] | None = None) -> AiConfig:
+    """Read the configuration, or disable AI summaries if it is invalid.
+
+    AI summaries are optional, so a malformed `REPOLENS_AI_*` value must not
+    stop the server: it is logged and AI stays off.
+    """
+    try:
+        return AiConfig.from_environment(environ)
+    except AiConfigError as error:
+        _LOGGER.error("AI file summaries are disabled: %s", error)
+        return AiConfig()
 
 
 def _raw(env: Mapping[str, str], name: str) -> str:

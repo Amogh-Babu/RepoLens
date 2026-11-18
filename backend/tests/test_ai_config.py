@@ -2,7 +2,9 @@
 
 import pytest
 
-from repolens.ai import DEFAULT_MODEL, AiConfig, AiConfigError
+import logging
+
+from repolens.ai import DEFAULT_MODEL, AiConfig, AiConfigError, load_ai_config
 
 
 def test_defaults_keep_ai_off_and_bounded() -> None:
@@ -73,3 +75,21 @@ def test_the_key_never_appears_in_repr() -> None:
 
     assert "sk-very-secret" not in repr(config)
     assert "api_key=<set>" in repr(config)
+
+
+def test_an_invalid_setting_disables_ai_instead_of_stopping_the_server(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.ERROR)
+
+    config = load_ai_config(
+        {
+            "REPOLENS_AI_ENABLED": "true",
+            "OPENAI_API_KEY": "sk-should-not-be-logged",
+            "REPOLENS_AI_DAILY_CALL_LIMIT": "lots",
+        }
+    )
+
+    assert config.active is False
+    assert "REPOLENS_AI_DAILY_CALL_LIMIT" in caplog.text
+    assert "sk-should-not-be-logged" not in caplog.text

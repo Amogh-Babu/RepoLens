@@ -151,6 +151,14 @@ def test_backticked_code_names_must_exist_in_the_source() -> None:
     )
 
 
+def test_python_names_and_file_names_may_be_mentioned() -> None:
+    answer = good_auth_answer(
+        summary="Returns `None` for bad tokens; reads `SECRET` from `config.py` via `str`."
+    )
+
+    assert _problems(answer) == ()
+
+
 @pytest.mark.parametrize(
     "overrides",
     [
