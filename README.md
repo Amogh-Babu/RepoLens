@@ -1,43 +1,23 @@
 # RepoLens
 
-RepoLens is a web-based code exploration platform designed to help developers onboard onto unfamiliar GitHub repositories. By pairing interactive dependency graphs with feature-centric reading recommendations, RepoLens enables developers to quickly locate entry points, trace code workflows, and understand file relationships without manually sifting through complex directory structures.
+RepoLens is a web-based code exploration tool that helps onboarding developers get oriented in an unfamiliar codebase.
 
----
+Given a public GitHub repository and a branch, tag, or commit, RepoLens statically analyzes the source, graphs file and module dependencies on an interactive map, and lists files related to a specific feature. You can quickly find entry points, trace code workflows, and understand file relationships without manually sifting through the directories.
 
-## Goals
+RepoLens does not import, execute, or build code from analyzed repositories.
 
-* Help onboarding developers locate entry points for specific features without deciphering unfamiliar repository directory trees.
-* Generate clear dependency graphs from static code analysis to visualize how relevant files and modules connect.
-* Recommend a reading order for related files based on symbol definitions and import relationships.
-* Deliver an interactive web tool that parses public Python repositories safely without executing untrusted code.
+## Try RepoLens
 
----
+Once RepoLens releases, you'll be able to access the tool online.
 
-## Repository Layout
+### Run locally with Docker
 
-```text
-├── frontend/          # Web user interface (React 19, TypeScript, Vite, React Flow, Vitest)
-├── backend/           # API server, GitHub ingestion, AST analysis, graph store, and search (Python / FastAPI / SQLite)
-├── docs/              # Living document snapshots, specifications, and architecture diagrams
-├── .github/           # Issue templates, PR templates, and GitHub Actions CI/CD workflows
-├── Dockerfile         # The whole app (frontend + backend) in one pinned image
-├── compose.yaml       # `docker compose up` runs it on http://localhost:8000
-├── .python-version    # The Python version the image and CI use (3.12)
-├── .nvmrc             # The Node.js version the image and CI use (22)
-├── Makefile           # Optional shortcuts for developers on macOS/Linux
-└── README.md          # Project overview and instructions for building, testing, and running
-```
+You can also run RepoLens locally with [Docker](https://docker.com). This means you don't need Python, Node.js, `make`, or a virtual environment. Depending on your operating system, you just need:
 
----
+- **Windows, macOS:** Docker Desktop
+- **Linux:** Docker Engine with the Docker Compose plugin
 
-## Run RepoLens (Docker, one command)
-
-The only thing you need installed is **Docker** (Docker Desktop on macOS and
-Windows, or Docker Engine with the Compose plugin on Linux). You do not need
-Python, Node.js, `make`, or a virtual environment: the image carries its own
-pinned versions of everything.
-
-From the repository root:
+Next, from the repository root, run:
 
 ```bash
 docker compose up --build
@@ -72,32 +52,16 @@ downloads it the first time an analysis is indexed; set
 
 ### Prerequisites
 
-* **Python 3.11 or newer.** The pinned version in [`.python-version`](.python-version) (3.12) is what the image and CI use; CI also runs the suite on 3.11 and the newest Python release.
-* **[uv](https://docs.astral.sh/uv/getting-started/installation/)** to install the backend's locked dependencies. uv also downloads the pinned Python for you if it is missing, so you do not need `venv` or a system Python.
-* **Node.js 22** (see [`.nvmrc`](.nvmrc)) with `npm`.
-* `make` is optional; every step below is a plain command.
-
-### Install
+To run an image already published to GitHub Container Registry instead of building locally, run:
 
 ```bash
-cd backend && uv sync --locked && cd ..
+docker compose pull && docker compose up
 ```
 
-```bash
-npm --prefix frontend ci
-```
-
-`uv sync --locked` creates `backend/.venv` with exactly the versions in
-[`backend/uv.lock`](backend/uv.lock). Without uv,
-`python -m pip install -r backend/requirements-dev.txt` installs the same
-pinned versions (the file is exported from the lockfile and checked in CI).
-
-### Run the Development Servers
-
-Run the backend and the frontend in two terminals:
+Analyses are kept in a Docker volume and expire after 24 hours. To raise GitHub's anonymous API rate limit, you can set a personal token in your shell before starting RepoLens:
 
 ```bash
-cd backend && uv run uvicorn repolens.api.app:app --reload --port 8000
+GITHUB_TOKEN=your_token_here docker compose up
 ```
 
 ```bash
@@ -168,23 +132,19 @@ Because this is an initial end-to-end prototype, several areas are still being h
 * **Search Ranking Calibration**: Field weights and dependency tie-breaking heuristics are functional but still undergoing precision evaluation and tuning against hand-labeled queries.
 * **Synchronous Pipeline Execution**: Analysis currently runs within the request lifecycle; concurrent request deduplication and background progress streaming are still being refined.
 
----
+Open **http://localhost:8000** (or **http://localhost:5173** when running the development servers below).
 
-## Continuous Integration and Delivery
+In the web application, paste a GitHub repository URL (for example, https://github.com/pallets/click). Optionally, you can choose a branch, tag, or commit SHA. Then press **Analyze**. When analysis is finished, there will be a summary, file explorer, and interactive dependency map.
 
-GitHub Actions workflows live in [`.github/workflows/`](.github/workflows/):
+You can search for a task, feature, or question, like "serializer" or "where is a signature checked?". RepoLens will search file paths, module-level symbols, class members, imports, docstrings, and comments. You'll get a ranked reading list with a short explanation and the reasoning behind each result.
 
-* [`backend.yml`](.github/workflows/backend.yml) checks that `backend/uv.lock` and the exported requirements files are current, runs `pytest` on the pinned Python from `.python-version` with the locked dependencies, runs a compatibility job on Python 3.11 (the minimum) and the newest Python release, and runs a dedicated end-to-end job that runs the full pipeline on a hand-written reference repository and compares the results against expected output.
-* [`frontend.yml`](.github/workflows/frontend.yml) runs ESLint, Prettier, the TypeScript typecheck, Vitest, and the production build on the Node version in `.nvmrc`.
-* [`release.yml`](.github/workflows/release.yml) builds the Docker image, runs the backend suite inside it, starts the container and smoke-tests the UI and API, and on `main` publishes it to `ghcr.io/amogh-babu/repolens` (`:latest` and the commit SHA). If the repository has a `DEPLOY_HOOK_URL` secret (for example a Render deploy hook), it then redeploys the hosted demo.
+Search results are reflected on the map. Selecting a file highlights its direct dependencies and dependents, helping you explore and narrow a large repository down to the code relevant to your task.
 
-The backend and frontend workflows run on pull requests and on pushes to `main` that modify their part of the repository; the release workflow runs on every push to `main` and on pull requests that change the image. All of them can also be started from the Actions tab (**Run workflow**).
+To inspect a file, select it to open its detail panel. You'll see the file path and module, parsed symbols, imports, and files that import it. Press **Open Source on GitHub** to open the file at the exact commit you're analyzing. Symbol links will point you to the corresponding line.
 
----
+## Contributing
 
-## Documentation & Links
+Interested in improving RepoLens?
 
-* **Living Document**: [RepoLens Requirements Specification (Google Docs)](https://docs.google.com/document/d/1ZTgu6tfoWwx9FWWS-5DqG5CtgXJ-zucDNXEEca_Qy4s/edit?tab=t.sql8ybk4ej5d#heading=h.18mw63g8e8ay) | [Snapshot in `docs/`](docs/LivingDoc.md)
-* **Issue Tracker**: [GitHub Issues](https://github.com/Amogh-Babu/RepoLens/issues)
-* **Coding Guidelines**: [`coding-guidelines.md`](coding-guidelines.md)
-* **Component Docs**: [`backend/README.md`](backend/README.md) | [`frontend/README.md`](frontend/README.md)
+- Start with [docs/DEVELOPERS.md](https://github.com/Amogh-Babu/RepoLens/tree/main/docs/DEVELOPERS.md) for architecture, setup, tests, benchmarks, and guidance for extending the analyzer.
+- Discuss bugs and proposed changes at the [issue tracker](https://github.com/Amogh-Babu/RepoLens/issues).
