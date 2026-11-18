@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from pydantic import BaseModel
 
+from repolens.ai import AiConfig, CodeSummaryService, create_ai_router
 from repolens.graph.endpoints import (
     AnalysisIdPath,
     DependencyGraphResponse,
@@ -153,6 +154,8 @@ class OverviewFileResponse(BaseModel):
     path: str
     reason: str
     summary: str
+    # "ai" when `summary` is a verified AI summary, "static" otherwise.
+    summarySource: Literal["static", "ai"] = "static"
     score: float | None = None
 
 
@@ -367,11 +370,15 @@ async def _contract_validation_handler(
 def create_analysis_router(
     store: SqliteGraphStore,
     runner: AnalysisRunner | None = None,
+    summaries: CodeSummaryService | None = None,
 ) -> APIRouter:
     """Create routes for starting, polling, cancelling, and searching analyses."""
     active_runner = runner or DefaultAnalysisRunner()
     search_service = SearchService(store)
-    overview_service = OverviewService(store)
+    overview_service = OverviewService(
+        store,
+        ai_summaries=summaries.cached_summary_texts if summaries is not None else None,
+    )
     router = APIRouter(route_class=_ContractRoute)
 
     @router.post(
@@ -568,6 +575,7 @@ def create_app(
     runner: AnalysisRunner | None = None,
     *,
     cors_origins: Sequence[str] = ("*",),
+    summaries: CodeSummaryService | None = None,
 ) -> FastAPI:
     """Create the RepoLens FastAPI application matching the frontend contract.
 
@@ -575,8 +583,16 @@ def create_app(
     another origin. The default allows any, which suits local development;
     `repolens.api.server` serves the frontend from the same origin and passes
     none, so no CORS headers are sent at all.
+
+    `summaries` serves AI file summaries. Without one, AI summaries are off
+    and every route answers as it did before they existed.
     """
     graph_store = store if store is not None else SqliteGraphStore()
+    summary_service = (
+        summaries
+        if summaries is not None
+        else CodeSummaryService(graph_store, AiConfig())
+    )
 
     application = FastAPI(
         title="RepoLens API",
@@ -594,7 +610,10 @@ def create_app(
     application.add_exception_handler(RequestValidationError, _contract_validation_handler)
     application.state.store = graph_store
     application.include_router(create_health_router(graph_store))
-    application.include_router(create_analysis_router(graph_store, runner=runner))
+    application.include_router(
+        create_analysis_router(graph_store, runner=runner, summaries=summary_service)
+    )
+    application.include_router(create_ai_router(summary_service))
     application.include_router(create_graph_router(graph_store))
 
     return application
@@ -614,11 +633,13 @@ def _error_response(
 
 # The server analyzes real repositories. `create_app()` without a runner keeps
 # the offline stub for tests.
+_STORE = SqliteGraphStore(
+    embedder=FastEmbedEmbedder(
+        cache_dir=os.environ.get("REPOLENS_EMBEDDING_CACHE") or None
+    )
+)
 app = create_app(
-    store=SqliteGraphStore(
-        embedder=FastEmbedEmbedder(
-            cache_dir=os.environ.get("REPOLENS_EMBEDDING_CACHE") or None
-        )
-    ),
+    store=_STORE,
     runner=PipelineAnalysisRunner(),
+    summaries=CodeSummaryService(_STORE, AiConfig.from_environment()),
 )
