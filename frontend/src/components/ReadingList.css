@@ -166,29 +166,3 @@
   padding-left: 1.25rem;
   color: var(--color-muted);
 }
-
-.reading-list__start {
-  appearance: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  width: 100%;
-  padding: 12px 16px;
-  border: 1.5px solid #ffffff;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #38bdf8, #2563eb);
-  color: #ffffff;
-  font-family: var(--font-sans);
-  font-size: 1rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition:
-    transform 160ms ease,
-    filter 160ms ease;
-}
-
-.reading-list__start:hover {
-  transform: translateY(-1px);
-  filter: brightness(1.12);
-}

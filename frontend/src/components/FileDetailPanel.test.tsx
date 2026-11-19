@@ -191,14 +191,16 @@ describe('FileDetailPanel', () => {
         total: 5,
         reason: 'Defines authenticate',
         orderReason: 'Comes after app/auth/models.py, which it imports.',
-        onPrev: null,
         onNext,
       },
     });
 
     const section = screen.getByRole('region', {name: 'Reading order'});
     expect(section).toHaveTextContent('#2 of 5 for “login”');
-    expect(section).not.toHaveTextContent('Why #2');
+    expect(section).toHaveTextContent('Defines authenticate');
+    expect(section).toHaveTextContent(
+      'Why #2: Comes after app/auth/models.py, which it imports.',
+    );
     await user.click(
       within(section).getByRole('button', {name: /Next in reading order/}),
     );
@@ -213,7 +215,6 @@ describe('FileDetailPanel', () => {
         total: 5,
         reason: 'r',
         orderReason: '',
-        onPrev: null,
         onNext: null,
       },
     });

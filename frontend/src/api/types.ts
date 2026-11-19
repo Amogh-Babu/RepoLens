@@ -199,13 +199,6 @@ export interface FileDetail {
   sourceUrl: string;
 }
 
-/** AI-generated overview of a single file. */
-export interface FileAiSummary {
-  path: string;
-  summary: string;
-  cached: boolean;
-}
-
 export type MatchKind =
   'filename' | 'symbol' | 'import' | 'comment' | 'semantic';
 

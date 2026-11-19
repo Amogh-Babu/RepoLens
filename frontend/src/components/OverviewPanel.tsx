@@ -8,7 +8,6 @@ interface OverviewPanelProps {
   analysisId: string;
   selectedPath?: string | null;
   onSelectFile: (path: string) => void;
-  onStartTour?: () => void;
   onSelectArea: (paths: string[]) => void;
   onTourLoaded?: (tour: OverviewFile[]) => void;
 }
@@ -20,7 +19,6 @@ type OverviewResult =
 export function OverviewPanel({
   analysisId,
   onSelectFile,
-  onStartTour,
   onSelectArea,
   onTourLoaded,
 }: OverviewPanelProps) {
@@ -82,21 +80,20 @@ export function OverviewPanel({
 
   return (
     <div className="overview" aria-label="Repository overview">
-      {firstTourStep !== undefined && (
-        <button
-          type="button"
-          className="overview__start"
-          onClick={() => {
-            openFile(firstTourStep);
-            onStartTour?.();
-          }}
-        >
-          <span>Start reading tour</span>
-          <span className="overview__start-arrow" aria-hidden="true">
-            →
-          </span>
-        </button>
-      )}
+      <header className="overview__header">
+        <div className="overview__header-row">
+          <h2>Start here</h2>
+          {firstTourStep !== undefined && (
+            <button
+              type="button"
+              className="button overview__tour-btn"
+              onClick={() => openFile(firstTourStep)}
+            >
+              Start
+            </button>
+          )}
+        </div>
+      </header>
 
       <OverviewCollapse
         title="Entry points"
@@ -234,9 +231,8 @@ function OverviewFileButton({
       {index !== undefined && <span className="overview__step">{index}</span>}
       <span className="overview__file-copy">
         <span className="overview__path">{file.path}</span>
-        {index !== undefined && (
-          <span className="overview__reason">{file.reason}</span>
-        )}
+        {file.summary && <span className="overview__meta">{file.summary}</span>}
+        <span className="overview__reason">{file.reason}</span>
       </span>
     </button>
   );
