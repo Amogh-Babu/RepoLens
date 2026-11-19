@@ -20,7 +20,7 @@ QUERY_MARKER = "query: "
 # BGE's own instruction for short retrieval queries. BGE embeds passages as
 # they are, with no prefix.
 _BGE_QUERY_INSTRUCTION = "Represent this sentence for searching relevant passages: "
-_MAX_CHUNK_WORDS = 160
+_MAX_CHUNK_WORDS = 200
 _MAX_CHUNKS_PER_FILE = 64
 
 
@@ -108,8 +108,6 @@ def document_text(document: SearchDocument) -> str:
         *(_expand_words(symbol) for symbol in document.symbols),
         *(_expand_words(member) for member in document.members),
         *(_expand_words(reference) for reference in document.references),
-        *document.docstrings,
-        *document.comments,
     ]
     return "\n".join(segment.strip() for segment in segments if segment.strip())
 
@@ -125,8 +123,6 @@ def document_chunks(document: SearchDocument) -> list[str]:
         _expand_words(symbol)
         for symbol in (*document.symbols, *document.members, *document.references)
     ]
-    segments.extend(document.docstrings)
-    segments.extend(document.comments)
     prefix = _expand_words(document.path)
     chunk_words = max(1, _MAX_CHUNK_WORDS - len(prefix.split()))
     chunks = []

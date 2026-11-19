@@ -91,8 +91,8 @@ class SearchServiceTest(unittest.TestCase):
     def test_large_files_keep_symbols_in_separate_search_chunks(self) -> None:
         document = SearchDocument(
             path="app/runtime.py",
-            symbols=("start_server", "load_config"),
-            docstrings=("Runtime details " + "context " * 200,),
+            symbols=("start_server", "load_config")
+            + tuple(f"helper_function_name_extra_{i}" for i in range(60)),
         )
 
         chunks = document_chunks(document)
