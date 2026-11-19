@@ -39,6 +39,7 @@ _RRF_K = 60
 _KEYWORD_RRF_WEIGHT = 8
 _SEMANTIC_RRF_WEIGHT = 4
 _SEMANTIC_RESULT_LIMIT = 100
+_MAX_READING_LIST_RESULTS = 20
 SearchIntent = Literal["implementation", "configuration", "tests"]
 # How much a reading goal moves the files it is about, up or down.
 _GOAL_BOOST = 2.0
@@ -177,6 +178,14 @@ class SearchService:
                     matches=matches,
                 )
             )
+
+        if len(ranked) > _MAX_READING_LIST_RESULTS:
+            ranked = sorted(
+                ranked,
+                key=lambda item: (-item.score, item.path.casefold()),
+            )[:_MAX_READING_LIST_RESULTS]
+            top_paths = {item.path for item in ranked}
+            candidates = [c for c in candidates if c[0].path in top_paths]
 
         ordered = self._reading_order(
             ranked, candidates, prioritize_relevance=bool(semantic_scores or intent)
