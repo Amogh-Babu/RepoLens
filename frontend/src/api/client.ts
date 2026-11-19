@@ -2,6 +2,7 @@ import {ApiError, isApiErrorBody} from './errors.ts';
 import type {
   Analysis,
   DependencyGraph,
+  FileAiSummary,
   FileDetail,
   RepositoryOverview,
   SearchRequest,
@@ -23,6 +24,9 @@ export const DEFAULT_TIMEOUT_MS = 10_000;
 
 /** Search must answer within 5 seconds (Use Case 2). */
 export const SEARCH_TIMEOUT_MS = 5_000;
+
+/** AI file summary generation may take longer on the first request. */
+export const AI_SUMMARY_TIMEOUT_MS = 60_000;
 
 /**
  * Everything the UI needs from the backend. Every method rejects only with
@@ -62,6 +66,13 @@ export interface ApiClient {
     path: string,
     options?: RequestOptions,
   ): Promise<FileDetail>;
+
+  /** GET /analyses/{id}/file-summary/{path}: AI-generated overview of a file. */
+  getFileSummary(
+    analysisId: string,
+    path: string,
+    options?: RequestOptions,
+  ): Promise<FileAiSummary>;
 
   /** GET /analyses/{id}/search: one page of the ranked reading list. */
   search(
@@ -153,6 +164,18 @@ export class HttpApiClient implements ApiClient {
       'GET',
       `/analyses/${encodeURIComponent(analysisId)}/files/${encodeFilePath(path)}`,
       options,
+    );
+  }
+
+  getFileSummary(
+    analysisId: string,
+    path: string,
+    options?: RequestOptions,
+  ): Promise<FileAiSummary> {
+    return this.request(
+      'GET',
+      `/analyses/${encodeURIComponent(analysisId)}/file-summary/${encodeFilePath(path)}`,
+      {timeoutMs: AI_SUMMARY_TIMEOUT_MS, ...options},
     );
   }
 
