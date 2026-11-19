@@ -624,19 +624,24 @@ function MapPanel({
   const collapseAllModules = useAnalysisStore(
     state => state.collapseAllModules,
   );
-  const [savedView] = useState(() => loadViewState(repoUrl));
   // 'list' when chosen by the user; a message when the map failed.
   const [view, setView] = useState<'map' | 'list'>('map');
   const [fullScreen, setFullScreen] = useState(false);
   // During a search the map shows only the matches unless the user asks
   // for everything (user test feedback, #92).
-  const [matchesOnly, setMatchesOnly] = useState(
-    savedView?.matchesOnly ?? true,
-  );
+  const [matchesOnly, setMatchesOnly] = useState(true);
   // A selection greys out unrelated files; this hides them instead.
-  const [hideUnrelated, setHideUnrelated] = useState(
-    savedView?.hideUnrelated ?? false,
-  );
+  const [hideUnrelated, setHideUnrelated] = useState(false);
+  // Each new search starts with matches only, even if the user turned it off
+  // for an earlier search.
+  const [hadMatches, setHadMatches] = useState(matchedPaths !== null);
+  if (hadMatches !== (matchedPaths !== null)) {
+    setHadMatches(matchedPaths !== null);
+    if (matchedPaths !== null) {
+      setMatchesOnly(true);
+      setHideUnrelated(true);
+    }
+  }
 
   useEffect(() => {
     if (!fullScreen) return;

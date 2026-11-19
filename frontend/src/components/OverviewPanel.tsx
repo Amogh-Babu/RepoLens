@@ -18,7 +18,6 @@ type OverviewResult =
 
 export function OverviewPanel({
   analysisId,
-  selectedPath = null,
   onSelectFile,
   onSelectArea,
   onTourLoaded,
@@ -78,12 +77,6 @@ export function OverviewPanel({
   const {overview} = current;
   const openFile = (file: OverviewFile) => onSelectFile(file.path);
   const firstTourStep = overview.tour[0];
-  const currentTourIndex =
-    selectedPath === null
-      ? -1
-      : overview.tour.findIndex(step => step.path === selectedPath);
-  const nextTourStep =
-    currentTourIndex >= 0 ? overview.tour[currentTourIndex + 1] : undefined;
 
   return (
     <div className="overview" aria-label="Repository overview">
@@ -96,22 +89,10 @@ export function OverviewPanel({
               className="button overview__tour-btn"
               onClick={() => openFile(firstTourStep)}
             >
-              Start reading tour
+              Start
             </button>
           )}
         </div>
-        {firstTourStep !== undefined && currentTourIndex >= 0 && (
-          <button
-            type="button"
-            className="button overview__tour-next-btn"
-            disabled={nextTourStep === undefined}
-            onClick={() => {
-              if (nextTourStep !== undefined) openFile(nextTourStep);
-            }}
-          >
-            Next in tour →
-          </button>
-        )}
       </header>
 
       <OverviewCollapse
