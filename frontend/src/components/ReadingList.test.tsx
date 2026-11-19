@@ -44,18 +44,13 @@ function renderList(search: SearchState, selectedPath: string | null = null) {
     onRetry: vi.fn(),
   };
   render(
-    <ReadingList
-      search={search}
-      selectedPath={selectedPath}
-      sourceUrlFor={path => `https://github.com/o/r/blob/abc/${path}`}
-      {...handlers}
-    />,
+    <ReadingList search={search} selectedPath={selectedPath} {...handlers} />,
   );
   return handlers;
 }
 
 describe('ReadingList', () => {
-  it('lists files in reading order with reasons and source links', () => {
+  it('lists files in reading order without reasons', () => {
     renderList(searchState());
 
     const entries = screen
@@ -66,28 +61,8 @@ describe('ReadingList', () => {
     expect(first.getByRole('button')).toHaveAccessibleName(
       '1. app/auth/service.py',
     );
-    expect(first.getByText(/^Defines login_user/)).toBeVisible();
-    expect(first.getByText('Why #1')).toBeVisible();
-    expect(
-      first.getByText('Comes before app/auth/views.py, which imports it.'),
-    ).toBeVisible();
-    expect(first.getByRole('link', {name: /Source/})).toHaveAttribute(
-      'href',
-      'https://github.com/o/r/blob/abc/app/auth/service.py',
-    );
-    expect(screen.getByText(/not the order the code runs in/)).toBeVisible();
-  });
-
-  it('expands an entry to show every match, linked to its line', async () => {
-    const user = userEvent.setup();
-    renderList(searchState());
-
-    await user.click(screen.getAllByText('2 matches')[0] as HTMLElement);
-
-    expect(screen.getByRole('link', {name: 'login_user'})).toHaveAttribute(
-      'href',
-      'https://github.com/o/r/blob/abc/app/auth/service.py#L22',
-    );
+    expect(first.queryByText(/Why/)).toBeNull();
+    expect(first.queryByRole('link')).toBeNull();
   });
 
   it('selects a file', async () => {

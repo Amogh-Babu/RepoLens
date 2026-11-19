@@ -5,52 +5,59 @@
   padding: 6px;
 }
 
-.overview__header {
-  padding: 10px 14px;
-  border-radius: 10px;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.overview__header-row {
+.overview__start {
+  appearance: none;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   gap: 10px;
-}
-
-.overview__header h2 {
-  margin: 0;
-  font-size: 0.9375rem;
-  font-weight: 700;
-  color: var(--color-text);
-}
-
-.overview__tour-btn.button {
-  min-height: 28px;
-  padding: 3px 10px;
-  border-radius: 6px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  background: rgba(56, 189, 248, 0.18);
-  border-color: rgba(125, 211, 252, 0.55);
-  color: #e0f2fe;
-}
-
-.overview__tour-btn.button:hover:not(:disabled) {
-  background: rgba(56, 189, 248, 0.3);
-  border-color: #ffffff;
+  width: 100%;
+  padding: 14px 16px;
+  border: 1.5px solid #ffffff;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #38bdf8, #2563eb);
   color: #ffffff;
+  font-family: var(--font-sans);
+  font-size: 1.0625rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  box-shadow: 0 0 0 0 rgba(125, 211, 252, 0.7);
+  animation: overview-start-pulse 2.4s ease-out infinite;
+  transition:
+    transform 160ms ease,
+    filter 160ms ease;
 }
 
-.overview__tour-next-btn.button {
-  min-height: 28px;
-  padding: 3px 10px;
-  font-size: 0.75rem;
-  align-self: flex-end;
+.overview__start:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.12);
+}
+
+.overview__start-arrow {
+  transition: transform 180ms ease;
+}
+
+.overview__start:hover .overview__start-arrow {
+  transform: translateX(4px);
+}
+
+@keyframes overview-start-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(125, 211, 252, 0.65);
+  }
+  70% {
+    box-shadow: 0 0 0 12px rgba(125, 211, 252, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(125, 211, 252, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overview__start {
+    animation: none;
+  }
 }
 
 /* Ant Design Collapse Style Section */
