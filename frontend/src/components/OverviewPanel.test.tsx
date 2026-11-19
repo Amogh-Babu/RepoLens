@@ -54,9 +54,9 @@ describe('OverviewPanel', () => {
       </ApiClientContext>,
     );
 
-    await screen.findByRole('heading', {name: 'Start here'});
-    expect(screen.getAllByText('Creates the application.')).toHaveLength(1);
-    fireEvent.click(screen.getByRole('button', {name: 'Start'}));
+    await screen.findByRole('button', {name: /Start reading tour/});
+    expect(screen.queryByText('Creates the application.')).toBeNull();
+    fireEvent.click(screen.getByRole('button', {name: /Start reading tour/}));
     fireEvent.click(screen.getByRole('button', {name: /app.*1 files/}));
 
     expect(onSelectFile).toHaveBeenCalledWith('app/main.py');

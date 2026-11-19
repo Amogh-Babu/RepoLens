@@ -1,4 +1,4 @@
-import type {MatchKind, RankedFile, SearchIntent} from '../api/types.ts';
+import type {RankedFile, SearchIntent} from '../api/types.ts';
 import type {SearchState} from '../state/analysisStore.ts';
 import {ErrorBanner} from './ErrorBanner.tsx';
 import './ReadingList.css';
@@ -6,32 +6,23 @@ import './ReadingList.css';
 interface ReadingListProps {
   search: SearchState;
   selectedPath: string | null;
-  /** Builds the GitHub link for a file at the analyzed commit. */
-  sourceUrlFor: (path: string) => string;
   onSelectFile: (path: string) => void;
+  onStartTour?: () => void;
   onLoadMore: () => void;
   onRefine: (intent?: SearchIntent) => void;
   refinementDisabled?: boolean;
   onRetry: () => void;
 }
 
-const MATCH_LABELS: Record<MatchKind, string> = {
-  filename: 'file name',
-  symbol: 'symbol',
-  import: 'import',
-  comment: 'comment',
-  semantic: 'semantic match',
-};
-
 /**
  * The ranked reading list for a search (Use Cases 2 and 4): position, path,
- * a one-line reason and a source link per file, 20 at a time.
+ * just the position and path per file, 20 at a time.
  */
 export function ReadingList({
   search,
   selectedPath,
-  sourceUrlFor,
   onSelectFile,
+  onStartTour,
   onLoadMore,
   onRefine,
   refinementDisabled = false,
@@ -83,12 +74,23 @@ export function ReadingList({
 
       {hasResults && total > 0 && (
         <>
+          {results[0] !== undefined && (
+            <button
+              type="button"
+              className="reading-list__start"
+              onClick={() => {
+                onSelectFile((results[0] as RankedFile).path);
+                onStartTour?.();
+              }}
+            >
+              <span>Start reading tour</span>
+              <span aria-hidden="true">→</span>
+            </button>
+          )}
           <div className="reading-list__header">
             <h2>Reading order for “{query}”</h2>
             <p className="reading-list__meta">
-              Showing {results.length} of {total}. Strong starting points and
-              their dependencies shape this reading order. This is not the order
-              the code runs in.
+              Showing {results.length} of {total}.
             </p>
           </div>
           <ol className="reading-list__entries">
@@ -97,8 +99,10 @@ export function ReadingList({
                 key={entry.path}
                 entry={entry}
                 selected={entry.path === selectedPath}
-                sourceUrl={sourceUrlFor(entry.path)}
-                onSelect={() => onSelectFile(entry.path)}
+                onSelect={() => {
+                  onSelectFile(entry.path);
+                  onStartTour?.();
+                }}
               />
             ))}
           </ol>
@@ -126,12 +130,10 @@ export function ReadingList({
 function ReadingListEntry({
   entry,
   selected,
-  sourceUrl,
   onSelect,
 }: {
   entry: RankedFile;
   selected: boolean;
-  sourceUrl: string;
   onSelect: () => void;
 }) {
   return (
@@ -148,51 +150,6 @@ function ReadingListEntry({
         <span className="reading-list__position">{entry.position}</span>
         <code>{entry.path}</code>
       </button>
-      <dl className="reading-list__why">
-        <div>
-          <dt>Why it matches</dt>
-          <dd>{entry.reason}</dd>
-        </div>
-        {entry.orderReason !== '' && (
-          <div>
-            <dt>Why #{entry.position}</dt>
-            <dd>{entry.orderReason}</dd>
-          </div>
-        )}
-      </dl>
-      <div className="reading-list__links">
-        {entry.matches.length > 0 && (
-          <details>
-            <summary>
-              {entry.matches.length}{' '}
-              {entry.matches.length === 1 ? 'match' : 'matches'}
-            </summary>
-            <ul className="reading-list__matches">
-              {entry.matches.map((match, index) => (
-                <li key={`${match.kind}:${match.text}:${index}`}>
-                  <span className="reading-list__match-kind">
-                    {MATCH_LABELS[match.kind]}
-                  </span>{' '}
-                  {match.line === null ? (
-                    <code>{match.text}</code>
-                  ) : (
-                    <a
-                      href={`${sourceUrl}#L${match.line}`}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      <code>{match.text}</code>
-                    </a>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </details>
-        )}
-        <a href={sourceUrl} target="_blank" rel="noreferrer">
-          Source<span className="visually-hidden"> of {entry.path}</span>
-        </a>
-      </div>
     </li>
   );
 }
