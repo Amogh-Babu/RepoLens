@@ -37,7 +37,7 @@ _TOKEN_PATTERN = re.compile(r"[\w]+", re.UNICODE)
 _LOGGER = logging.getLogger(__name__)
 _RRF_K = 60
 _KEYWORD_RRF_WEIGHT = 8
-_SEMANTIC_RRF_WEIGHT = 1
+_SEMANTIC_RRF_WEIGHT = 4
 _SEMANTIC_RESULT_LIMIT = 100
 SearchIntent = Literal["implementation", "configuration", "tests"]
 # How much a reading goal moves the files it is about, up or down.
@@ -279,7 +279,7 @@ class SearchService:
                 if (
                     prioritize_relevance
                     and results_by_path[dependency_path].score
-                    < results_by_path[dependent_path].score * 0.5
+                    < results_by_path[dependent_path].score * 0.55
                 ):
                     deferred[dependent_path].add(dependency_path)
                     deferred_by[dependency_path].add(dependent_path)
@@ -501,8 +501,6 @@ class SearchService:
             ("symbol", document.symbols),
             ("member", document.members),
             ("reference", document.references),
-            ("docstring", document.docstrings),
-            ("comment", document.comments),
         )
         prose_patterns = {
             term: re.compile(rf"(?<![^\W_]){re.escape(term)}")

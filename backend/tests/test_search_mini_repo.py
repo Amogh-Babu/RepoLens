@@ -39,10 +39,10 @@ class SearchMiniRepoTest(unittest.TestCase):
             ordered_paths.index("app/authentication/service.py"),
             ordered_paths.index("app/authentication/routes.py"),
         )
-        repository_result = next(
-            result for result in page.results if result.path == "app/users/repository.py"
+        routes_result = next(
+            result for result in page.results if result.path == "app/authentication/routes.py"
         )
-        self.assertIn("depended on by 2 other matching file(s)", repository_result.reason)
+        self.assertIn("app/authentication/service.py", routes_result.order_reason)
 
 
 if __name__ == "__main__":

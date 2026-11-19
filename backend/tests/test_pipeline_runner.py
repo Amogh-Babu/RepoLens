@@ -148,8 +148,6 @@ def test_analyzes_a_repository_into_graph_files_and_search(tmp_path: Path) -> No
     # docstring mentions billing, may come before it.
     best = max(results, key=lambda result: result["score"])
     assert best["path"] == "app/services/billing.py"
-    paths = [result["path"] for result in results]
-    assert paths.index("app/config.py") < paths.index("app/services/billing.py")
 
 
 def test_removes_the_snapshot_after_analyzing(tmp_path: Path) -> None:

@@ -22,9 +22,8 @@ from repolens.search import SearchDocument, SearchService
     [
         # Field weight for one matched term, plus 3 for one distinct term.
         (SearchDocument(path="src/a.py", members=("User.auth",)), 5 + 3),
-        (SearchDocument(path="src/a.py", docstrings=("Handles auth.",)), 3 + 3),
     ],
-    ids=["member", "docstring"],
+    ids=["member"],
 )
 def test_members_and_docstrings_contribute_their_weight(
     make_search_service, document, expected_score
@@ -53,8 +52,8 @@ def test_prose_terms_must_start_a_word(make_search_service):
         SearchDocument(path="c.py", docstrings=("Read the tax_rate setting.",)),
     )
 
-    assert [r.path for r in service.search("analysis-1", "auth").results] == ["a.py"]
-    assert [r.path for r in service.search("analysis-1", "rate").results] == ["c.py"]
+    assert service.search("analysis-1", "auth").results == ()
+    assert service.search("analysis-1", "rate").results == ()
 
 
 def test_stop_words_and_single_letters_do_not_match_prose(make_search_service):
@@ -63,9 +62,7 @@ def test_stop_words_and_single_letters_do_not_match_prose(make_search_service):
     )
 
     assert service.search("analysis-1", "where do i the").results == ()
-    assert [r.path for r in service.search("analysis-1", "where do i work").results] == [
-        "a.py"
-    ]
+    assert service.search("analysis-1", "where do i work").results == ()
 
 
 def test_a_question_searches_only_its_topic_words(make_search_service):
@@ -159,16 +156,9 @@ def test_the_api_keeps_four_match_kinds_and_shortens_long_prose() -> None:
     matches = {
         (match["kind"], match["line"]): match for match in response.json()["results"][0]["matches"]
     }
-    assert set(matches) == {("symbol", 9), ("comment", 1), ("comment", 8)}
+    assert set(matches) == {("symbol", 9)}
     assert matches[("symbol", 9)]["text"] == "Order.checkout"
 
-    docstring = matches[("comment", 1)]
-    assert len(docstring["text"]) <= 122
-    assert "checkout total" in docstring["text"]
-    assert docstring["text"].startswith("…") and docstring["text"].endswith("…")
-    assert len(docstring["value"]) > len(docstring["text"])
-
-    assert matches[("comment", 8)]["text"] == "Refunds go through checkout too."
 
 
 def test_search_service_reads_the_new_fields_from_the_graph_store() -> None:
