@@ -44,11 +44,7 @@ function renderList(search: SearchState, selectedPath: string | null = null) {
     onRetry: vi.fn(),
   };
   render(
-    <ReadingList
-      search={search}
-      selectedPath={selectedPath}
-      {...handlers}
-    />,
+    <ReadingList search={search} selectedPath={selectedPath} {...handlers} />,
   );
   return handlers;
 }

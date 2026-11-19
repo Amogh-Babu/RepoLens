@@ -355,8 +355,8 @@ const TOUR_STEPS: readonly TourStep[] = [
       <p>
         Select a file, in the list or on the map, to see what it defines, what
         it imports and what imports it, with links to its source on GitHub. From
-        a reading list, the <strong>next arrow</strong> takes you to the
-        next file.
+        a reading list, the <strong>next arrow</strong> takes you to the next
+        file.
       </p>
     ),
   },
@@ -551,10 +551,7 @@ function Sidebar({
             onTourLoaded={onTourLoaded}
           />
         ) : tab === 'reading' ? (
-          <ReadingPanel
-            onSelectFile={onSelectFile}
-            onStartTour={onStartTour}
-          />
+          <ReadingPanel onSelectFile={onSelectFile} onStartTour={onStartTour} />
         ) : (
           <ExplorerPanel onSelectFile={onSelectFile} />
         )}
