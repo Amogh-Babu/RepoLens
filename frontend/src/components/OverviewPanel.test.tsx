@@ -56,50 +56,10 @@ describe('OverviewPanel', () => {
 
     await screen.findByRole('heading', {name: 'Start here'});
     expect(screen.getAllByText('Creates the application.')).toHaveLength(1);
-    fireEvent.click(screen.getByRole('button', {name: 'Start reading tour'}));
+    fireEvent.click(screen.getByRole('button', {name: 'Start'}));
     fireEvent.click(screen.getByRole('button', {name: /app.*1 files/}));
 
     expect(onSelectFile).toHaveBeenCalledWith('app/main.py');
     expect(onSelectArea).toHaveBeenCalledWith(['app/main.py']);
-  });
-
-  it('advances to the next tour file when Next in tour is clicked', async () => {
-    const onSelectFile = vi.fn();
-    const onTourLoaded = vi.fn();
-    const multiStepOverview: RepositoryOverview = {
-      ...OVERVIEW,
-      tour: [
-        {
-          path: 'app/config.py',
-          reason: 'Read before its callers.',
-          summary: 'Settings.',
-        },
-        {
-          path: 'app/main.py',
-          reason: 'Start here.',
-          summary: 'Creates the application.',
-        },
-      ],
-    };
-    const client = {
-      getOverview: vi.fn().mockResolvedValue(multiStepOverview),
-    } as unknown as ApiClient;
-    render(
-      <ApiClientContext value={client}>
-        <OverviewPanel
-          analysisId="analysis-1"
-          selectedPath="app/config.py"
-          onSelectFile={onSelectFile}
-          onSelectArea={vi.fn()}
-          onTourLoaded={onTourLoaded}
-        />
-      </ApiClientContext>,
-    );
-
-    await screen.findByRole('heading', {name: 'Start here'});
-    expect(onTourLoaded).toHaveBeenCalledWith(multiStepOverview.tour);
-    fireEvent.click(screen.getByRole('button', {name: 'Next in tour →'}));
-
-    expect(onSelectFile).toHaveBeenCalledWith('app/main.py');
   });
 });

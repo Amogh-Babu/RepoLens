@@ -3,8 +3,8 @@ import type {Edge, Node} from '@xyflow/react';
 import {MarkerType} from '@xyflow/react';
 import type {DependencyGraph} from '../../api/types.ts';
 
-export const MODULE_SIZE = {width: 190, height: 56};
-export const FILE_SIZE = {width: 170, height: 40};
+export const MODULE_SIZE = {width: 260, height: 76};
+export const FILE_SIZE = {width: 230, height: 56};
 /** Extra room above an expanded module's files for its header. */
 export const GROUP_HEADER = 22;
 
