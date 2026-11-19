@@ -333,7 +333,7 @@ describe('AnalysisPage search', () => {
     const panel = await screen.findByRole('complementary', {
       name: 'service.py',
     });
-    expect(within(panel).getByText(/#1 of \d+/)).toBeInTheDocument();
+    expect(within(panel).getByText(/#1 of \d+ for/)).toBeInTheDocument();
 
     await user.click(
       within(panel).getByRole('button', {name: /Next in reading order/}),
@@ -342,7 +342,7 @@ describe('AnalysisPage search', () => {
     const next = await screen.findByRole('complementary', {
       name: /^(?!service\.py)/,
     });
-    expect(within(next).getByText(/#2 of \d+/)).toBeInTheDocument();
+    expect(within(next).getByText(/#2 of \d+ for/)).toBeInTheDocument();
   });
 
   it('says when nothing matches', async () => {
@@ -373,7 +373,12 @@ describe('AnalysisPage search', () => {
       'tests',
     );
     expect(
-      await screen.findByRole('heading', {name: 'Reading order for “login”'}),
+      await screen.findByText('Ranked higher: a test or example file.', {
+        exact: false,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', {name: 'Reading order for “login”'}),
     ).toBeInTheDocument();
   });
 
