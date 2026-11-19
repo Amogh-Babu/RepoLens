@@ -148,3 +148,41 @@ Interested in improving RepoLens?
 
 - Start with [docs/DEVELOPERS.md](https://github.com/Amogh-Babu/RepoLens/tree/main/docs/DEVELOPERS.md) for architecture, setup, tests, benchmarks, and guidance for extending the analyzer.
 - Discuss bugs and proposed changes at the [issue tracker](https://github.com/Amogh-Babu/RepoLens/issues).
+
+## Reporting Issues
+ 
+Found a bug or have an idea for RepoLens? Open an issue on the [issue tracker](../../issues) and include the details below. Clear reports help us fix problems faster.
+ 
+### Issue Template
+ 
+Copy this into a new issue and fill in each section:
+ 
+```markdown
+**Summary**
+A one-sentence description of the problem or request.
+ 
+**Type**
+Bug / Feature request / Question / Documentation
+ 
+**Steps to reproduce** (for bugs)
+1.
+2.
+3.
+ 
+**Expected behavior**
+What you expected to happen.
+ 
+**Actual behavior**
+What actually happened, including any error messages.
+ 
+**Repository analyzed** (if relevant)
+A link to the public Python repository, and the branch, tag, or commit if you used one.
+ 
+**Environment**
+- OS:
+- Docker version:
+- Browser:
+ 
+**Screenshots or logs** (optional)
+```
+ 
