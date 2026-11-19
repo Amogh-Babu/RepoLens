@@ -83,7 +83,7 @@ class SearchServiceTest(unittest.TestCase):
 
         self.assertEqual(["src/authentication.py"], [result.path for result in page.results])
         self.assertEqual(
-            {"filename", "symbol", "reference", "comment"},
+            {"filename", "symbol", "reference"},
             {match.kind for match in page.results[0].matches},
         )
         self.assertIn("authentication.py", page.results[0].reason)
@@ -111,7 +111,7 @@ class SearchServiceTest(unittest.TestCase):
                 symbols=("authenticate_request",),
                 depended_on_by=("auth/tests.py",),
             ),
-            SearchDocument(path="auth/tests.py", comments=("authenticate user",)),
+            SearchDocument(path="auth/tests.py", symbols=("authenticate_test",)),
         ]
         service = SearchService(InMemorySearchIndex({"analysis-1": documents}))
 
@@ -197,12 +197,12 @@ class SearchServiceTest(unittest.TestCase):
             SearchDocument(path="pkg/entry_cycle.py", symbols=("cycle_entry",)),
             SearchDocument(
                 path="pkg/loop_a.py",
-                comments=("cycle",),
+                symbols=("cycle_a",),
                 depended_on_by=("pkg/entry_cycle.py", "pkg/loop_b.py"),
             ),
             SearchDocument(
                 path="pkg/loop_b.py",
-                comments=("cycle",),
+                symbols=("cycle_b",),
                 depended_on_by=("pkg/loop_a.py",),
             ),
         ]
@@ -329,10 +329,10 @@ class SearchServiceTest(unittest.TestCase):
                     self.service.search("analysis-1", "auth", offset=offset, limit=limit)
 
     def test_reasons_are_single_line_and_bound_evidence_length(self) -> None:
-        long_comment = "authentication " + "context " * 30
+        long_symbol = "authentication_" + "context_" * 15
         service = SearchService(
             InMemorySearchIndex(
-                {"analysis-1": [SearchDocument(path="src/auth.py", comments=(long_comment,))]}
+                {"analysis-1": [SearchDocument(path="src/auth.py", symbols=(long_symbol,))]}
             )
         )
 
