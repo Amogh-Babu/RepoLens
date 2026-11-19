@@ -62,4 +62,44 @@ describe('OverviewPanel', () => {
     expect(onSelectFile).toHaveBeenCalledWith('app/main.py');
     expect(onSelectArea).toHaveBeenCalledWith(['app/main.py']);
   });
+
+  it('labels verified AI descriptions and leaves static ones unlabelled', async () => {
+    const client = {
+      getOverview: vi.fn().mockResolvedValue({
+        ...OVERVIEW,
+        entryPoints: [
+          {
+            path: 'app/main.py',
+            reason: 'Start here.',
+            summary: 'Builds the Flask app and registers routes.',
+            summarySource: 'ai',
+          },
+        ],
+        tour: [
+          {
+            path: 'app/main.py',
+            reason: 'Start here.',
+            summary: 'Creates the application.',
+            summarySource: 'static',
+          },
+        ],
+      }),
+    } as unknown as ApiClient;
+    render(
+      <ApiClientContext value={client}>
+        <OverviewPanel
+          analysisId="analysis-1"
+          onSelectFile={vi.fn()}
+          onSelectArea={vi.fn()}
+        />
+      </ApiClientContext>,
+    );
+
+    const aiText = await screen.findByText(
+      'Builds the Flask app and registers routes.',
+      {exact: false},
+    );
+    expect(aiText).toHaveTextContent(/^AI summary:/);
+    expect(screen.getAllByText('AI')).toHaveLength(1);
+  });
 });

@@ -231,7 +231,20 @@ function OverviewFileButton({
       {index !== undefined && <span className="overview__step">{index}</span>}
       <span className="overview__file-copy">
         <span className="overview__path">{file.path}</span>
-        {file.summary && <span className="overview__meta">{file.summary}</span>}
+        {file.summary && (
+          <span className="overview__meta">
+            {file.summarySource === 'ai' && (
+              <span
+                className="overview__ai-label"
+                title="AI-generated summary, checked against static analysis"
+              >
+                AI
+                <span className="visually-hidden"> summary:</span>
+              </span>
+            )}
+            {file.summary}
+          </span>
+        )}
         <span className="overview__reason">{file.reason}</span>
       </span>
     </button>

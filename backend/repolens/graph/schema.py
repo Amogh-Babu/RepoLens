@@ -27,13 +27,15 @@ from repolens.search.embedding import MODEL_NAME
 
 
 # Bump whenever a table, column, or constraint below changes.
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 # STRICT tables need SQLite 3.37 (2021). Older libraries still get every CHECK
 # constraint, just without SQLite's own column type enforcement.
 _STRICT_MIN_VERSION = (3, 37, 0)
 
 _TABLES = (
+    "ai_usage",
+    "ai_summaries",
     "embeddings",
     "members",
     "comments",
@@ -146,6 +148,45 @@ CREATE TABLE IF NOT EXISTS embeddings (
     PRIMARY KEY (file_id, chunk_index)
 ){table_options};
 
+-- Validated AI file summaries. A row is one summary's effective identity:
+-- repository, commit, path, source hash, model, prompt and schema version.
+-- It is deleted with its analysis, so it never outlives the analysis TTL.
+CREATE TABLE IF NOT EXISTS ai_summaries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    analysis_id TEXT NOT NULL,
+    repo TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    commit_sha TEXT NOT NULL,
+    source_hash TEXT NOT NULL,
+    model_id TEXT NOT NULL,
+    prompt_version TEXT NOT NULL,
+    schema_version TEXT NOT NULL,
+    coverage TEXT NOT NULL CHECK (coverage IN ('complete', 'partial')),
+    inspected_lines TEXT NOT NULL,
+    line_count INTEGER NOT NULL {_non_negative("line_count")},
+    summary_json TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    expires_at REAL NOT NULL,
+    FOREIGN KEY (analysis_id) REFERENCES analyses(id) ON DELETE CASCADE,
+    UNIQUE (
+        repo, commit_sha, file_path, source_hash,
+        model_id, prompt_version, schema_version
+    )
+){table_options};
+
+-- Model usage per UTC day, for the daily call limit and cost logging.
+CREATE TABLE IF NOT EXISTS ai_usage (
+    day TEXT PRIMARY KEY,
+    calls INTEGER NOT NULL DEFAULT 0 {_non_negative("calls")},
+    input_tokens INTEGER NOT NULL DEFAULT 0 {_non_negative("input_tokens")},
+    output_tokens INTEGER NOT NULL DEFAULT 0 {_non_negative("output_tokens")},
+    cache_hits INTEGER NOT NULL DEFAULT 0 {_non_negative("cache_hits")},
+    cache_misses INTEGER NOT NULL DEFAULT 0 {_non_negative("cache_misses")},
+    validation_failures INTEGER NOT NULL DEFAULT 0 {_non_negative("validation_failures")},
+    provider_failures INTEGER NOT NULL DEFAULT 0 {_non_negative("provider_failures")},
+    latency_ms INTEGER NOT NULL DEFAULT 0 {_non_negative("latency_ms")}
+){table_options};
+
 CREATE INDEX IF NOT EXISTS idx_analyses_repo_sha ON analyses(repo, sha);
 CREATE INDEX IF NOT EXISTS idx_files_analysis_id ON files(analysis_id);
 CREATE INDEX IF NOT EXISTS idx_symbols_file_id ON symbols(file_id);
@@ -153,6 +194,8 @@ CREATE INDEX IF NOT EXISTS idx_imports_file_id ON imports(file_id);
 CREATE INDEX IF NOT EXISTS idx_imports_target_file_id ON imports(target_file_id);
 CREATE INDEX IF NOT EXISTS idx_comments_file_id ON comments(file_id);
 CREATE INDEX IF NOT EXISTS idx_members_file_id ON members(file_id);
+CREATE INDEX IF NOT EXISTS idx_ai_summaries_analysis_path
+    ON ai_summaries(analysis_id, file_path);
 """
 
 

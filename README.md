@@ -96,6 +96,25 @@ requirements files:
 cd backend && uv lock && uv export --locked --no-dev --format requirements-txt --no-emit-project -o requirements.txt && uv export --locked --format requirements-txt --no-emit-project -o requirements-dev.txt
 ```
 
+## Optional: AI File Summaries
+
+RepoLens can add an AI-generated summary to the file panel, written from the
+file's actual source (not just its docstrings) and checked against the static
+analysis before it is shown. It is **off by default**; everything else works
+without it. To turn it on, set these before `docker compose up` (or in a
+`.env` file at the repository root):
+
+```bash
+REPOLENS_AI_ENABLED=true OPENAI_API_KEY=sk-... docker compose up --build
+```
+
+Summaries are generated one file at a time, only when you click **Generate AI
+summary**, and cached for the life of the analysis. Generating one sends that
+file's source to OpenAI. The model (`REPOLENS_AI_MODEL`, default
+`gpt-5.4-mini`), limits, and cost controls are described in
+[`backend/README.md`](backend/README.md#ai-file-summaries-repolensai) and
+[`backend/.env.example`](backend/.env.example).
+
 ---
 
 ## Operational Use Cases (First Prototype Status)

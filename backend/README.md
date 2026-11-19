@@ -603,6 +603,124 @@ shadows `app/config/`, and the classifier reports an internal edge instead.
 `benchmarks/measured_classification.json`, and the fixture README has the
 per-layout table, the labeling rules, and what each layout covers.
 
+## AI File Summaries (`repolens.ai`)
+
+Optional, **off by default**. When enabled, a user can ask for an AI summary
+of one analyzed Python file from the file panel. Deterministic analysis still
+owns all structure (symbols, imports, the dependency graph, search, the
+reading order); the model only writes the natural-language description, and
+that description is verified against the structure before it is cached or
+shown. Nothing is summarized during ingestion, and ingestion, the map, search
+and the overview work exactly as before without a key.
+
+### Request flow
+
+```text
+POST /analyses/{id}/ai-summaries/{path}
+  -> analysis completed and not expired?  file part of the analysis?
+  -> cached summary (same repo, commit, path, model, prompt, schema)? -> serve
+  -> download the file from raw.githubusercontent.com at the analyzed SHA
+  -> re-parse it with PythonAnalyzer; refuse if it does not match the graph
+  -> build a bounded, line-numbered context (cut on def/class boundaries)
+  -> OpenAI Responses API, strict JSON schema       (limits apply, see below)
+  -> verify the answer; one repair attempt; else AI_SUMMARY_UNVERIFIED
+  -> cache in SQLite, serve with evidence links pinned to the commit
+```
+
+| Endpoint | What it does |
+| --- | --- |
+| `GET /ai/status` | Whether summaries are on, the provider notice, and today's usage (calls, tokens, cache hit rate, validation failures, latency, estimated cost). Never includes the key. |
+| `GET /analyses/{id}/ai-summaries/{path}` | The cached summary, or `status: "notGenerated"`. Never calls the model. |
+| `POST /analyses/{id}/ai-summaries/{path}` | The cached summary, or a newly generated and verified one. `?regenerate=true` replaces a cached summary, at most once a minute per file. |
+
+Errors use the usual `{code, message, hint}` shape: `AI_DISABLED` (503),
+`AI_BUSY`, `AI_DAILY_LIMIT`, `AI_REGENERATE_COOLDOWN` (429), `AI_TIMEOUT`
+(504), `AI_UNAVAILABLE`, `AI_SUMMARY_UNVERIFIED`, `SOURCE_UNAVAILABLE` (502),
+`SOURCE_NOT_FOUND`, `FILE_NOT_FOUND`, `ANALYSIS_NOT_FOUND` (404),
+`SOURCE_MISMATCH`, `ANALYSIS_NOT_READY` (409), `SOURCE_UNSUPPORTED` (422) and
+`ANALYSIS_EXPIRED` (410). None of them changes the analysis.
+
+A summary has `summary`, `purpose`, `responsibilities`, `keySymbols`,
+`dependencies`, `sideEffects`, `uncertainties`, `evidence` and `coverage`; the
+response's `metadata` (model, prompt and schema version, source hash,
+timestamps, cache status, inspected line ranges) is filled in by RepoLens,
+not the model. The overview uses a cached, verified summary as a file's
+description when there is one and marks it `summarySource: "ai"`; it never
+changes which files are listed or their order.
+
+### Configuration
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `REPOLENS_AI_ENABLED` | `false` | Turn AI summaries on. |
+| `OPENAI_API_KEY` | (empty) | Required when enabled. Server-side only; never logged or sent to the browser. |
+| `REPOLENS_AI_MODEL` | `gpt-5.4-mini` | Any Responses API model that supports Structured Outputs. |
+| `REPOLENS_AI_TIMEOUT_SECONDS` | `30` | Per-request provider timeout. |
+| `REPOLENS_AI_MAX_INPUT_CHARS` | `40000` | Most numbered source characters sent per request. Larger files are cut and marked partial. |
+| `REPOLENS_AI_MAX_OUTPUT_TOKENS` | `700` | Cap on generated tokens (reasoning models count reasoning tokens too). |
+| `REPOLENS_AI_MAX_CONCURRENT_REQUESTS` | `2` | Model calls at the same time; more answer `AI_BUSY`. |
+| `REPOLENS_AI_DAILY_CALL_LIMIT` | `100` | Model calls per UTC day, repair attempts included. |
+| `REPOLENS_AI_MAX_RETRIES` | `1` | SDK retries on transient provider errors. |
+| `REPOLENS_AI_REGENERATE_COOLDOWN_SECONDS` | `60` | Minimum gap between regenerations of one summary. |
+| `REPOLENS_AI_REASONING_EFFORT` | (empty) | Optional `reasoning.effort` for reasoning models; empty sends none. |
+| `REPOLENS_AI_INPUT_COST_PER_MILLION`, `REPOLENS_AI_OUTPUT_COST_PER_MILLION` | (empty) | USD prices used only to estimate cost in logs and `/ai/status`. No prices are built in. |
+
+See [`.env.example`](.env.example). The defaults are starting points, not
+measured optima: no live run has tuned them yet.
+
+### Verification
+
+`repolens.ai.validation` rejects an answer unless every `keySymbols` entry
+exists in the file's syntax tree with the same name, kind and line; every
+dependency is an edge of the analyzed graph in the stated direction; every
+evidence and side-effect line range lies inside the lines actually sent; and
+every backticked code name in the prose occurs in the inspected source. A
+partially inspected file cannot be reported as complete. A rejected answer
+gets one repair attempt with the problems listed; if that fails too, nothing
+is cached or shown.
+
+These checks are structural. They catch invented functions, dependencies and
+citations, but not a wrong sentence next to a valid line range. The UI says
+so, labels summaries as AI-generated, and links every claim to its lines.
+`benchmarks/ai_summary_eval.py` checks the prose against hand-written
+expectations for `tests/fixtures/ai_reference/` (missing and misleading
+docstrings, async code, side effects, invalid syntax, a large file, embedded
+prompt injection):
+
+```bash
+python -m benchmarks.ai_summary_eval          # scripted answers and the deterministic baseline
+python -m benchmarks.ai_summary_eval --live   # the configured model; sends the fixture to it
+```
+
+The offline tests replay hand-written answers, so they test RepoLens, not a
+model. **No live evaluation has been recorded yet.**
+
+### Cache, limits and privacy
+
+- `ai_summaries` holds verified summaries only, unique on (repository,
+  commit, path, source hash, model, prompt version, schema version). Rows
+  are deleted with their analysis, so they share its 24-hour lifetime;
+  changing the model, `PROMPT_VERSION` or the summary `SCHEMA_VERSION` is a
+  cache miss. `ai_usage` counts calls, tokens and failures per UTC day and
+  enforces the daily limit in one transaction. Both tables are part of the
+  graph schema (version 5), so an older database is rebuilt as usual.
+- Concurrent requests for one file share one generation; at most
+  `REPOLENS_AI_MAX_CONCURRENT_REQUESTS` model calls run at once. Routes run on
+  FastAPI's worker threads, so a slow call never blocks the event loop.
+- Source is downloaded only from `raw.githubusercontent.com` (redirects
+  elsewhere are refused), for paths that are files of the analysis, capped at
+  the ingestion file-size limit, and must be UTF-8 text. The GitHub token is
+  never sent there or to the model. Source is held in memory for the request
+  only and never stored.
+- The model gets trusted instructions separately from the untrusted file,
+  which is sent as numbered lines inside a fence derived from its own hash.
+  Instructions inside the source are treated as data; `tests/test_ai_*` covers
+  an injection attempt.
+- Enabling this sends the selected file's source and its static-analysis
+  metadata to OpenAI; the UI shows that notice before generating. Logs record
+  counts, token usage and latency, never source, prompts or keys. Search
+  embeddings stay local.
+
 ## Tests
 
 Backend tests use [pytest](https://docs.pytest.org/). From `backend/`:
