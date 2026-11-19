@@ -1,7 +1,12 @@
 import type {ReactNode} from 'react';
 import {useId, useState} from 'react';
 import {encodeFilePath} from '../api/client.ts';
-import type {FileDetail, ImportInfo, SymbolKind} from '../api/types.ts';
+import type {
+  FileAiSummary,
+  FileDetail,
+  ImportInfo,
+  SymbolKind,
+} from '../api/types.ts';
 import type {RequestFailure} from '../state/analysisStore.ts';
 import {ErrorBanner} from './ErrorBanner.tsx';
 import './FileDetailPanel.css';
@@ -14,6 +19,10 @@ interface FileDetailPanelProps {
   /** Null while loading or after a failure. */
   detail: FileDetail | null;
   failure: RequestFailure | null;
+  aiSummary?: FileAiSummary | null;
+  aiSummaryLoading?: boolean;
+  aiSummaryFailure?: RequestFailure | null;
+  onRetryAiSummary?: () => void;
   onSelectFile: (path: string) => void;
   onRetry: () => void;
   onClose: () => void;
@@ -29,6 +38,8 @@ export interface ReadingOrderInfo {
   reason: string;
   /** Why the file sits at this position in the order. */
   orderReason: string;
+  /** Selects the previous file in the reading order; null at the start. */
+  onPrev: (() => void) | null;
   /** Selects the next file in the reading order; null at the end. */
   onNext: (() => void) | null;
 }
@@ -51,6 +62,10 @@ export function FileDetailPanel({
   sha,
   detail,
   failure,
+  aiSummary = null,
+  aiSummaryLoading = false,
+  aiSummaryFailure = null,
+  onRetryAiSummary,
   onSelectFile,
   onRetry,
   onClose,
@@ -97,29 +112,97 @@ export function FileDetailPanel({
         </button>
       </div>
 
-      {readingOrder !== null && (
-        <section className="detail__reading" aria-label="Reading order">
-          <p className="detail__reading-position">
-            #{readingOrder.position} of {readingOrder.total} for “
-            {readingOrder.query}”
-          </p>
-          <p className="detail__muted">{readingOrder.reason}</p>
-          {readingOrder.orderReason !== '' && (
-            <p className="detail__muted">
-              <strong>Why #{readingOrder.position}:</strong>{' '}
-              {readingOrder.orderReason}
-            </p>
-          )}
-          <button
-            type="button"
-            className="button"
-            onClick={readingOrder.onNext ?? undefined}
-            disabled={readingOrder.onNext === null}
+      {(() => {
+        const hasAiBlock =
+          aiSummaryLoading || aiSummary !== null || aiSummaryFailure !== null;
+        const aiBlock = !hasAiBlock ? null : aiSummaryLoading &&
+          aiSummary === null ? (
+          <div
+            className="detail__ai-skeleton"
+            role="status"
+            aria-busy="true"
+            aria-label="Generating AI overview…"
           >
-            Next in reading order →
-          </button>
-        </section>
-      )}
+            <span className="detail__ai-skeleton-line detail__ai-skeleton-line--wide" />
+            <span className="detail__ai-skeleton-line detail__ai-skeleton-line--full" />
+            <span className="detail__ai-skeleton-line detail__ai-skeleton-line--mid" />
+          </div>
+        ) : aiSummaryFailure !== null ? (
+          aiSummaryFailure.code === 'TIMEOUT' ? (
+            <p className="detail__muted">AI overview timed out.</p>
+          ) : aiSummaryFailure.code === 'FILE_NOT_FOUND' ||
+            aiSummaryFailure.code === 'UNKNOWN' ? (
+            <p className="detail__muted">AI overview unavailable.</p>
+          ) : (
+            <ErrorBanner
+              error={aiSummaryFailure.error}
+              onRetry={onRetryAiSummary}
+            />
+          )
+        ) : (
+          aiSummary !== null && <AiSummaryContent text={aiSummary.summary} />
+        );
+
+        if (readingOrder !== null) {
+          return (
+            <section className="detail__reading" aria-label="Reading order">
+              <div className="detail__reading-nav">
+                <button
+                  type="button"
+                  className="detail__reading-arrow"
+                  aria-label="Previous in reading order"
+                  onClick={readingOrder.onPrev ?? undefined}
+                  disabled={readingOrder.onPrev === null}
+                >
+                  <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <path
+                      d="M10 3L5 8L10 13"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
+                <p className="detail__reading-position">
+                  <span className="detail__reading-step">
+                    #{readingOrder.position} of {readingOrder.total}
+                  </span>{' '}
+                  <span className="detail__reading-query">
+                    for “{readingOrder.query}”
+                  </span>
+                </p>
+                <button
+                  type="button"
+                  className="detail__reading-arrow"
+                  aria-label="Next in reading order"
+                  onClick={readingOrder.onNext ?? undefined}
+                  disabled={readingOrder.onNext === null}
+                >
+                  <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <path
+                      d="M6 3L11 8L6 13"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
+              </div>
+              {aiBlock !== null && (
+                <div className="detail__reading-summary">{aiBlock}</div>
+              )}
+            </section>
+          );
+        }
+
+        return aiBlock !== null ? (
+          <div className="detail__ai-summary" aria-label="AI overview">
+            {aiBlock}
+          </div>
+        ) : null;
+      })()}
 
       {/* Single accordion combining Path, Commit, and Module info */}
       <CollapseSection title="File info">
@@ -367,4 +450,53 @@ function FileLinks({
       ))}
     </ul>
   );
+}
+
+function renderInlineCode(text: string): ReactNode[] {
+  const parts = text.split(/(`[^`]+`)/g);
+  return parts.map((part, index) => {
+    if (part.startsWith('`') && part.endsWith('`') && part.length > 2) {
+      return <code key={index}>{part.slice(1, -1)}</code>;
+    }
+    return part;
+  });
+}
+
+function AiSummaryContent({text}: {text: string}) {
+  const lines = text.split(/\r?\n/);
+  const blocks: ReactNode[] = [];
+  let listItems: string[] = [];
+
+  const flushList = (keyPrefix: string) => {
+    if (listItems.length === 0) return;
+    blocks.push(
+      <ul key={`${keyPrefix}-ul`} className="detail__ai-list">
+        {listItems.map((item, idx) => (
+          <li key={idx}>{renderInlineCode(item)}</li>
+        ))}
+      </ul>,
+    );
+    listItems = [];
+  };
+
+  lines.forEach((rawLine, index) => {
+    const line = rawLine.trim();
+    if (line === '') {
+      flushList(`line-${index}`);
+      return;
+    }
+    if (line.startsWith('- ') || line.startsWith('* ')) {
+      listItems.push(line.slice(2).trim());
+      return;
+    }
+    flushList(`line-${index}`);
+    blocks.push(
+      <p key={`p-${index}`} className="detail__ai-paragraph">
+        {renderInlineCode(line)}
+      </p>,
+    );
+  });
+  flushList('end');
+
+  return <div className="detail__ai-body">{blocks}</div>;
 }
