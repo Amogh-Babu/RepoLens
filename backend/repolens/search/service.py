@@ -39,7 +39,7 @@ _RRF_K = 60
 _KEYWORD_RRF_WEIGHT = 8
 _SEMANTIC_RRF_WEIGHT = 4
 _SEMANTIC_RESULT_LIMIT = 100
-_MAX_READING_LIST_RESULTS = 12
+_MAX_READING_LIST_RESULTS = 20
 SearchIntent = Literal["implementation", "configuration", "tests"]
 # How much a reading goal moves the files it is about, up or down.
 _GOAL_BOOST = 2.0
