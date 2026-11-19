@@ -56,9 +56,9 @@ You can skip this step for normal use.
 4. RepoLens works through several stages: resolving, downloading, filtering, parsing, classifying, indexing, and storing. Watch the stage indicator as it moves along.
 When it finishes, you'll see three things:
  
-- **Summary bar:** how many files were analyzed, how many were excluded (such as generated or vendored files), and how many couldn't be read.
-- **File explorer:** the project's folders and files, shown as a tree.
-- **Dependency map:** a diagram of how the Python modules import one another.
+    - **Summary bar:** how many files were analyzed, how many were excluded (such as generated or vendored files), and how many couldn't be read.
+    - **File explorer:** the project's folders and files, shown as a tree.
+    - **Dependency map:** a diagram of how the Python modules import one another.
 ---
  
 ## Part 3: Reading the Dependency Map
