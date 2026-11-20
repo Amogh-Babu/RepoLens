@@ -9,7 +9,7 @@ from repolens.search.embedding import (
     QUERY_MARKER,
     Embedder,
     HashEmbedder,
-    cosine_similarity,
+    ChunkVectors,
 )
 from repolens.search.models import (
     MatchEvidence,
@@ -236,27 +236,23 @@ class SearchService:
             return {}
         try:
             embeddings = get_embeddings(analysis_id)
+            if not isinstance(embeddings, ChunkVectors):
+                embeddings = ChunkVectors.from_pairs(embeddings)
+            if not len(embeddings):
+                return {}
             query_vector = self._embedder.embed([f"{QUERY_MARKER}{query}"])[0]
         except Exception:
             _LOGGER.warning(
                 "Semantic search unavailable for analysis %s", analysis_id, exc_info=True
             )
             return {}
-        scores: dict[str, tuple[float, str]] = {}
-        for document in documents:
-            chunks = embeddings.get(document.path)
-            if not chunks:
-                continue
-            best_score, best_text = max(
-                (
-                    (cosine_similarity(query_vector, vector), text)
-                    for text, vector in chunks
-                ),
-                key=lambda item: item[0],
-            )
-            if best_score > 0:
-                scores[document.path] = (best_score, best_text)
-        return scores
+        # One matrix product scores the query against every chunk.
+        best = embeddings.best_by_path(query_vector)
+        return {
+            document.path: best[document.path]
+            for document in documents
+            if document.path in best
+        }
 
     @staticmethod
     def _reading_order(

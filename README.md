@@ -38,6 +38,32 @@ The Docker image includes the 67 MB local search model. A development server
 downloads it the first time an analysis is indexed; set
 `REPOLENS_EMBEDDING_CACHE` to choose where those model files are stored.
 
+### System requirements
+
+Plan for **1 GB of free memory** for the server. Indexing files for semantic
+search is the memory peak of an analysis; the rest of the time the server
+holds a few hundred megabytes. Measured peak
+resident memory of the whole server process, analyzing a repository and then
+running five searches (`python -m benchmarks.memory_profile <url>` from
+`backend/`, 12-core Windows machine, Python 3.11):
+
+| Repository | Files analyzed | Analysis time | Peak memory | Search |
+| ---------- | -------------: | ------------: | ----------: | -----: |
+| RepoLens itself | 152 | 9 s | 450 MB | ~10 ms |
+| `vmware/pyvmomi` | 112 | 15 s | 459 MB | ~15 ms |
+| `numpy/numpy` | 774 | 66 s | 689 MB | ~20 ms |
+
+Analysis time includes downloading the archive from GitHub. A repository may
+hold at most 5,000 analyzable Python files and 128 MiB of analyzable source.
+These settings trade speed for memory:
+
+* `REPOLENS_MAX_CONCURRENT_ANALYSES` (default 1): analyses that run at once.
+  Each one adds its own indexing peak; others wait in a queue.
+* `REPOLENS_EMBED_BATCH_SIZE` (default 32): texts per model call. Larger
+  batches need more memory and are not faster on CPU.
+* `REPOLENS_EMBED_THREADS` (default: every core): model inference threads.
+  Fewer threads make indexing slower but do not lower memory.
+
 ### Using RepoLens in the Browser
 
 1. Open **http://localhost:8000** (or **http://localhost:5173** when running the development servers below).
@@ -127,8 +153,8 @@ First-version implementations of all major system components (**React Frontend**
 ### Current Prototype Limitations & Ongoing Work
 Because this is an initial end-to-end prototype, several areas are still being hardened and may exhibit bugs:
 * **Import Resolution Edge Cases**: Non-standard `sys.path` manipulations, dynamic imports, and complex multi-package/namespace repository layouts may classify some internal imports as `unresolved` or `external`.
-* **Large Repository Performance & Layout**: Repositories approaching the 1,000-file cap or containing dense cross-module import graphs are still being benchmarked against the 3-minute ingestion target and 2-second map layout target.
-* **Semantic Indexing Time**: Embedding files for semantic search is the slowest step. Measured on a 12-core CPU, it takes about 0.3 seconds per file for typical project code and about 0.5 seconds per file for docstring-heavy code (Python standard library). A repository near the 1,000-file cap therefore spends roughly 5 to 8 minutes indexing, over the 3-minute target. If the embedding model cannot load, the analysis still completes and search uses keywords only.
+* **Large Repository Performance & Layout**: Repositories with thousands of files or dense cross-module import graphs are still being benchmarked against the 3-minute ingestion target and 2-second map layout target. See [System requirements](#system-requirements) for measured memory and time.
+* **Semantic Indexing Time**: Embedding files for semantic search is the slowest step, at roughly 0.03 seconds per file on a 12-core machine (numpy's 774 files index in about 25 seconds). If the embedding model cannot load, the analysis still completes and search uses keywords only.
 * **Search Ranking Calibration**: Field weights and dependency tie-breaking heuristics are functional but still undergoing precision evaluation and tuning against hand-labeled queries.
 * **Synchronous Pipeline Execution**: Analysis currently runs within the request lifecycle; concurrent request deduplication and background progress streaming are still being refined.
 

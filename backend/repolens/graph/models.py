@@ -120,13 +120,18 @@ class AnalysisErrorRecord:
 
 @dataclass(frozen=True)
 class FileEmbeddingRecord:
-    """One vectorized text chunk belonging to an analyzed file."""
+    """One vectorized text chunk belonging to an analyzed file.
+
+    `vector` is the unit-length vector packed as little-endian float32, the
+    form it is stored in: 1.5 KB for BGE-small's 384 dimensions, against
+    about 12 KB as a tuple of Python floats.
+    """
 
     path: str
     chunk_index: int
     text: str
     model: str
-    vector: tuple[float, ...]
+    vector: bytes
 
 
 @dataclass(frozen=True)

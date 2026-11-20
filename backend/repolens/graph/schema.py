@@ -153,6 +153,7 @@ CREATE INDEX IF NOT EXISTS idx_imports_file_id ON imports(file_id);
 CREATE INDEX IF NOT EXISTS idx_imports_target_file_id ON imports(target_file_id);
 CREATE INDEX IF NOT EXISTS idx_comments_file_id ON comments(file_id);
 CREATE INDEX IF NOT EXISTS idx_members_file_id ON members(file_id);
+CREATE INDEX IF NOT EXISTS idx_embeddings_file_id ON embeddings(file_id);
 """
 
 

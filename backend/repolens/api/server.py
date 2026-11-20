@@ -20,6 +20,10 @@ Configuration comes from the environment:
   from elsewhere. Empty by default.
 - `GITHUB_TOKEN`: optional, raises GitHub's API rate limit (see the
   ingestion docs).
+- `REPOLENS_MAX_CONCURRENT_ANALYSES`: analyses run at once (default 1). Each
+  one adds its own indexing memory peak.
+- `REPOLENS_EMBED_BATCH_SIZE` and `REPOLENS_EMBED_THREADS`: see
+  `FastEmbedEmbedder`.
 """
 
 from collections.abc import Mapping
@@ -32,7 +36,7 @@ from fastapi.staticfiles import StaticFiles
 
 from repolens.api.app import AnalysisRunner, create_app
 from repolens.graph.store import SqliteGraphStore
-from repolens.pipeline import PipelineAnalysisRunner
+from repolens.pipeline import DEFAULT_MAX_CONCURRENT_ANALYSES, PipelineAnalysisRunner
 from repolens.search.embedding import FastEmbedEmbedder
 
 
@@ -115,13 +119,36 @@ def create_server_from_environment(
             db_path,
             embedder=FastEmbedEmbedder(
                 cache_dir=environ.get("REPOLENS_EMBEDDING_CACHE", "").strip()
-                or None
+                or None,
+                batch_size=_positive_int(environ, "REPOLENS_EMBED_BATCH_SIZE"),
+                threads=_positive_int(environ, "REPOLENS_EMBED_THREADS"),
             ),
         ),
-        runner=runner if runner is not None else PipelineAnalysisRunner(),
+        runner=(
+            runner
+            if runner is not None
+            else PipelineAnalysisRunner(
+                max_concurrent_analyses=_positive_int(
+                    environ, "REPOLENS_MAX_CONCURRENT_ANALYSES"
+                )
+                or DEFAULT_MAX_CONCURRENT_ANALYSES
+            )
+        ),
         frontend_dir=Path(frontend) if frontend else None,
         cors_origins=origins,
     )
+
+
+def _positive_int(environ: Mapping[str, str], name: str) -> int | None:
+    """Read a positive integer setting, or None when it is unset or invalid."""
+    raw = environ.get(name, "").strip()
+    if not raw:
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        return None
+    return value if value > 0 else None
 
 
 app = create_server_from_environment()

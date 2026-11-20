@@ -82,7 +82,7 @@ no file is opened, imported, executed, or evaluated.
 - **Oversized repositories**: `require_repository_within_limits(count, bytes)`
   raises `RepositoryTooLargeError` (`REPOSITORY_TOO_LARGE`) once the files
   being kept pass `max_analyzable_bytes` (128 MiB) or
-  `max_analyzable_file_count` (20,000). It is the single enforcement point:
+  `max_analyzable_file_count` (5,000). It is the single enforcement point:
   `filter_files` and `filter_snapshot` call it while filtering a snapshot's
   file list, and `AnalysisService.analyze_repository` calls it with its running
   totals as it walks a checkout, so both paths reject an oversized repository
