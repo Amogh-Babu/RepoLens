@@ -469,6 +469,7 @@ numpy==2.4.6 ; python_full_version < '3.12' \
     # via
     #   fastembed
     #   onnxruntime
+    #   repolens-backend
 numpy==2.5.4 ; python_full_version >= '3.12' \
     --hash=sha256:067374eb538c34c745436365cf7b0112595c1d326f21ce4ff340f61230239fbb \
     --hash=sha256:0b4724a19de67bea8cfc4970798efa78bcbbe2ac2613cfac16721a42d44de2a5 \
@@ -539,6 +540,7 @@ numpy==2.5.4 ; python_full_version >= '3.12' \
     # via
     #   fastembed
     #   onnxruntime
+    #   repolens-backend
 onnxruntime==1.31.0 \
     --hash=sha256:09d56445c1753e66e0912de69d3f0184016ad9a191dcd6925bf5dd570d2bfbe5 \
     --hash=sha256:0ba02a44acb6203040354d9a1f160e3f37a43feac7bb05caa3e0ea545efed505 \
