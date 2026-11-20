@@ -1,6 +1,7 @@
+import dagre from '@dagrejs/dagre';
 import type {DependencyGraph} from '../../api/types.ts';
 import type {MapNode} from './mapLayout.ts';
-import {highlightAround, layoutMap} from './mapLayout.ts';
+import {highlightAround, layoutMap, limitExpanded} from './mapLayout.ts';
 
 const GRAPH: DependencyGraph = {
   modules: [
@@ -127,5 +128,56 @@ describe('highlightAround', () => {
 
     expect(highlight.selected).toBeNull();
     expect(highlight.related.size).toBe(0);
+  });
+});
+
+describe('limitExpanded', () => {
+  it('keeps every open folder while the files fit', () => {
+    const expanded = new Set(['app', 'app/auth']);
+
+    expect(limitExpanded(GRAPH, expanded, 4)).toEqual({
+      expanded,
+      skipped: [],
+    });
+  });
+
+  it('keeps the most recently opened folders that fit', () => {
+    // Opened in this order: root (1 file), app (2), app/auth (2).
+    const result = limitExpanded(GRAPH, new Set(['.', 'app', 'app/auth']), 3);
+
+    expect([...result.expanded]).toEqual(['.', 'app/auth']);
+    expect(result.skipped).toEqual(['app']);
+  });
+
+  it('leaves a folder bigger than the limit collapsed', () => {
+    const result = limitExpanded(GRAPH, new Set(['app']), 1);
+
+    expect([...result.expanded]).toEqual([]);
+    expect(result.skipped).toEqual(['app']);
+  });
+});
+
+describe('layoutMap fallback', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('retries with another ranker when dagre cannot place edge ends', () => {
+    const real = dagre.layout;
+    const rankers: string[] = [];
+    vi.spyOn(dagre, 'layout').mockImplementation((graph, options) => {
+      rankers.push(String((graph.graph() as {ranker?: string}).ranker));
+      if (rankers.length === 1) {
+        throw new Error(
+          'Not possible to find intersection inside of the rectangle',
+        );
+      }
+      return real(graph, options);
+    });
+
+    const layout = layoutMap(GRAPH, new Set(['app']));
+
+    expect(rankers).toEqual(['network-simplex', 'tight-tree']);
+    expect(layout.nodes.length).toBeGreaterThan(0);
   });
 });
