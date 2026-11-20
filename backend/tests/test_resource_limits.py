@@ -15,8 +15,8 @@ import pytest
 from repolens.api.app import create_app
 from repolens.api.server import create_server_from_environment
 from repolens.graph import SqliteGraphStore
-from repolens.graph.models import AnalyzedFile, SymbolRecord
-from repolens.graph.store import IndexingCancelled
+from repolens.graph.models import AnalyzedFile, CommentRecord, SymbolRecord
+from repolens.graph.store import IndexingCancelled, _search_document
 from repolens.pipeline import PipelineAnalysisRunner
 from repolens.pipeline.runner import DEFAULT_MAX_CONCURRENT_ANALYSES
 from repolens.resources import ResourceConfigError, ResourceLimits, create_embedder
@@ -202,6 +202,24 @@ def test_vectors_are_packed_float32_in_chunk_order() -> None:
         assert len(record.vector) == 16 * 4
         expected = HashEmbedder(dimensions=16).embed([record.text])[0]
         assert struct.unpack("<16f", record.vector) == pytest.approx(expected, abs=1e-6)
+
+
+def test_search_document_keeps_every_field_main_indexed() -> None:
+    """Indexing hands the chunker the same document main built, prose included."""
+    file = AnalyzedFile(
+        path="pkg/config.py",
+        symbols=(SymbolRecord(name="load_config", kind="function", line=3),),
+        comments=(
+            CommentRecord(line=1, text="Reads settings from disk.", kind="comment"),
+            CommentRecord(line=4, text="Parse the YAML file.", kind="docstring"),
+        ),
+    )
+
+    document = _search_document(file)
+
+    assert document.comments == ("Reads settings from disk.",)
+    assert document.docstrings == ("Parse the YAML file.",)
+    assert document.symbols == ("load_config",)
 
 
 def test_over_budget_repository_is_not_embedded_and_says_so() -> None:

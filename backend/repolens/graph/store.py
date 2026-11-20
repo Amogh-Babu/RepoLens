@@ -197,7 +197,13 @@ def _search_document(file: AnalyzedFile) -> SearchDocument:
         path=file.path,
         symbols=tuple(symbol.name for symbol in file.symbols),
         references=tuple(imported.raw_name for imported in file.imports),
+        comments=tuple(
+            comment.text for comment in file.comments if comment.kind == "comment"
+        ),
         members=tuple(member.qualified_name for member in file.members),
+        docstrings=tuple(
+            comment.text for comment in file.comments if comment.kind == "docstring"
+        ),
     )
 
 
