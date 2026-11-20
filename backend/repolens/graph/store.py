@@ -1,16 +1,17 @@
 """SQLite implementation of the RepoLens graph store."""
 
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
 import functools
 import logging
-import struct
 import sqlite3
 import threading
 import time
 from typing import Concatenate, ParamSpec, TypeVar
 import uuid
+
+import numpy as np
 
 from repolens.graph.models import (
     AnalyzedFile,
@@ -27,10 +28,13 @@ from repolens.graph.models import (
     ImportRecord,
     InternalImportDetail,
     ModuleGroup,
+    SemanticIndex,
+    SemanticStatus,
     SymbolDetail,
 )
 from repolens.graph.schema import init_schema
 from repolens.search.embedding import (
+    DEFAULT_BATCH_SIZE,
     Embedder,
     document_chunks,
 )
@@ -43,6 +47,11 @@ _LOGGER = logging.getLogger(__name__)
 DEFAULT_TTL_SECONDS = 24 * 60 * 60
 
 _ACTIVE_STATUSES = ("queued", "running")
+
+# The most chunks one analysis embeds unless the server sets another limit.
+DEFAULT_MAX_EMBEDDING_CHUNKS = 10_000
+# Stored vectors are read this many rows at a time when scoring a query.
+_VECTOR_FETCH_ROWS = 512
 
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
@@ -71,6 +80,10 @@ class GraphStoreError(LookupError):
             "message": self.message,
             "hint": self.hint,
         }
+
+
+class IndexingCancelled(Exception):
+    """Raised by `build_semantic_index` when its analysis stops being active."""
 
 
 class AnalysisNotFoundError(GraphStoreError, AnalysisUnavailableError):
@@ -178,6 +191,16 @@ def infer_module_name(path: str, explicit_module: str = "") -> str:
     return infer_module_id(path, explicit_module)
 
 
+def _search_document(file: AnalyzedFile) -> SearchDocument:
+    """The fields of a parsed file that semantic indexing embeds."""
+    return SearchDocument(
+        path=file.path,
+        symbols=tuple(symbol.name for symbol in file.symbols),
+        references=tuple(imported.raw_name for imported in file.imports),
+        members=tuple(member.qualified_name for member in file.members),
+    )
+
+
 def _to_iso8601(timestamp: float) -> str:
     """Format a POSIX timestamp in seconds as an ISO-8601 UTC string."""
     return (
@@ -212,9 +235,14 @@ class SqliteGraphStore:
         self,
         db_path: str = ":memory:",
         embedder: Embedder | None = None,
+        *,
+        max_embedding_chunks: int = DEFAULT_MAX_EMBEDDING_CHUNKS,
     ) -> None:
+        if max_embedding_chunks < 1:
+            raise ValueError("max_embedding_chunks must be at least 1.")
         self._db_path = db_path
         self.embedder = embedder
+        self._max_embedding_chunks = max_embedding_chunks
         self._lock = threading.RLock()
         self._waiters: dict[str, int] = {}
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
@@ -237,63 +265,89 @@ class SqliteGraphStore:
     def build_embeddings(
         self, files: tuple[AnalyzedFile, ...]
     ) -> tuple[FileEmbeddingRecord, ...]:
-        """Create bounded search vectors for parsed files.
+        """Create bounded search vectors for parsed files (see below)."""
+        return self.build_semantic_index(files).records
 
-        Semantic search is an extra: if the embedding model cannot load (no
-        network for its first download, a broken cache) or fails, no vectors
-        are made and search uses keywords only. The map, overview and
-        keyword search still work.
+    def build_semantic_index(
+        self,
+        files: tuple[AnalyzedFile, ...],
+        *,
+        should_continue: Callable[[], bool] | None = None,
+    ) -> SemanticIndex:
+        """Embed parsed files' chunks a batch at a time, within the chunk budget.
+
+        Semantic search is an extra: if there is no embedder, the repository
+        needs more than `max_embedding_chunks` chunks, or the model cannot
+        load (no network for its first download, a broken cache) or fails,
+        no vectors are made and the returned status says why. The map,
+        overview and keyword search still work.
+
+        Runs without the store's lock, so requests are served while the model
+        works. Each batch's vectors are packed to float32 as soon as they are
+        made. Nothing is written here: the caller saves the records with the
+        rest of the analysis in one transaction, so a cancelled or failed
+        analysis leaves no vectors behind.
+
+        Raises:
+          IndexingCancelled: `should_continue` returned False between batches.
         """
         if self.embedder is None:
-            return ()
-        searchable = [file for file in files if file.parsed]
-        documents = {
-            file.path: SearchDocument(
-                path=file.path,
-                symbols=tuple(symbol.name for symbol in file.symbols),
-                references=tuple(imported.raw_name for imported in file.imports),
-                comments=tuple(
-                    comment.text
-                    for comment in file.comments
-                    if comment.kind == "comment"
-                ),
-                members=tuple(member.qualified_name for member in file.members),
-                docstrings=tuple(
-                    comment.text
-                    for comment in file.comments
-                    if comment.kind == "docstring"
-                ),
-            )
-            for file in searchable
-        }
+            return SemanticIndex(status="disabled")
         chunks = [
             (file.path, index, text)
-            for file in searchable
-            for index, text in enumerate(document_chunks(documents[file.path]))
+            for file in files
+            if file.parsed
+            for index, text in enumerate(document_chunks(_search_document(file)))
         ]
         if not chunks:
-            return ()
+            return SemanticIndex(status="empty")
+        if len(chunks) > self._max_embedding_chunks:
+            _LOGGER.warning(
+                "Semantic indexing skipped: %d chunks is over the limit of %d",
+                len(chunks),
+                self._max_embedding_chunks,
+            )
+            return SemanticIndex(status="over_budget", chunk_count=len(chunks))
+
+        batch_size = getattr(self.embedder, "batch_size", DEFAULT_BATCH_SIZE)
+        model_id = self.embedder.model_id
+        # The model pads a batch to its longest text, so batches of similar
+        # lengths do the least padding.
+        order = sorted(range(len(chunks)), key=lambda index: len(chunks[index][2]))
+        packed: list[bytes] = [b""] * len(chunks)
         try:
-            vectors = self.embedder.embed([text for _, _, text in chunks])
-            if len(vectors) != len(chunks):
-                raise ValueError(
-                    "The embedder returned a different number of vectors than chunks."
-                )
+            for start in range(0, len(order), batch_size):
+                if should_continue is not None and not should_continue():
+                    raise IndexingCancelled()
+                batch = order[start : start + batch_size]
+                vectors = self.embedder.embed([chunks[index][2] for index in batch])
+                if len(vectors) != len(batch):
+                    raise ValueError(
+                        "The embedder returned a different number of vectors than chunks."
+                    )
+                for index, vector in zip(batch, vectors, strict=True):
+                    packed[index] = np.asarray(vector, dtype="<f4").tobytes()
+        except IndexingCancelled:
+            raise
         except Exception:
             _LOGGER.warning(
                 "Semantic indexing failed; search will use keywords only",
                 exc_info=True,
             )
-            return ()
-        return tuple(
-            FileEmbeddingRecord(
-                path=path,
-                chunk_index=chunk_index,
-                text=text,
-                model=self.embedder.model_id,
-                vector=vector,
-            )
-            for (path, chunk_index, text), vector in zip(chunks, vectors, strict=True)
+            return SemanticIndex(status="failed", chunk_count=len(chunks))
+        return SemanticIndex(
+            status="complete",
+            chunk_count=len(chunks),
+            records=tuple(
+                FileEmbeddingRecord(
+                    path=path,
+                    chunk_index=chunk_index,
+                    text=text,
+                    model=model_id,
+                    vector=vector,
+                )
+                for (path, chunk_index, text), vector in zip(chunks, packed, strict=True)
+            ),
         )
 
     @_locked
@@ -314,11 +368,21 @@ class SqliteGraphStore:
         excluded_count = analysis.counts.excluded
         repo_url = normalize_repo_url(analysis.repo)
 
-        embedding_records = (
-            analysis.embeddings
-            if analysis.embeddings is not None
-            else self.build_embeddings(analysis.files)
-        )
+        embedding_records = analysis.embeddings
+        semantic_status = analysis.semantic_status
+        semantic_chunks = analysis.semantic_chunks
+        if embedding_records is None:
+            # Convenient for tests and benchmarks; the pipeline builds the
+            # index first, without holding the lock (see `build_semantic_index`).
+            if analysis.status == "completed":
+                index = self.build_semantic_index(analysis.files)
+                embedding_records = index.records
+                semantic_status = index.status
+                semantic_chunks = index.chunk_count
+            else:
+                embedding_records = ()
+        elif semantic_status is None and analysis.status == "completed":
+            semantic_status = "complete" if embedding_records else "empty"
         vectors_by_path: dict[str, list[FileEmbeddingRecord]] = defaultdict(list)
         for embedding in embedding_records:
             vectors_by_path[embedding.path].append(embedding)
@@ -339,8 +403,9 @@ class SqliteGraphStore:
                     id, repo, ref, sha, status, stage, from_cache,
                     created_at, expires_at,
                     analyzed_count, excluded_count, unparsed_count,
-                    error_code, error_message, error_hint
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    error_code, error_message, error_hint,
+                    semantic_status, semantic_chunks
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 (
                     analysis.analysis_id,
@@ -358,6 +423,8 @@ class SqliteGraphStore:
                     error_code,
                     error_message,
                     error_hint,
+                    semantic_status,
+                    semantic_chunks,
                 ),
             )
 
@@ -458,8 +525,8 @@ class SqliteGraphStore:
                                 file_id,
                                 chunk_index,
                                 text,
-                                self.embedder.model_id,
-                                struct.pack(f"<{len(vector)}f", *vector),
+                                embedding.model,
+                                vector,
                             )
                             for embedding in file_vectors
                             for chunk_index, text, vector in (
@@ -680,6 +747,14 @@ class SqliteGraphStore:
             "createdAt": _to_iso8601(float(row["created_at"])),
             "expiresAt": _to_iso8601(float(row["expires_at"])),
             "error": error,
+            "semanticSearch": (
+                {
+                    "status": str(row["semantic_status"]),
+                    "chunks": int(row["semantic_chunks"]),
+                }
+                if status == "completed" and row["semantic_status"] is not None
+                else None
+            ),
         }
 
     @_locked
@@ -998,7 +1073,11 @@ class SqliteGraphStore:
     def get_search_embeddings(
         self, analysis_id: str
     ) -> dict[str, list[tuple[str, tuple[float, ...]]]]:
-        """Return current-model chunk text and vectors for a completed analysis."""
+        """Return current-model chunk text and vectors for a completed analysis.
+
+        Holds every vector as Python floats; search uses `semantic_matches`,
+        which does not.
+        """
         self._get_valid_analysis_row(analysis_id, require_completed=True)
         if self.embedder is None:
             return {}
@@ -1017,11 +1096,71 @@ class SqliteGraphStore:
             data = bytes(row["vector"])
             if len(data) % 4 != 0:
                 continue
-            dimensions = len(data) // 4
             embeddings[str(row["path"])].append(
-                (str(row["chunk_text"]), struct.unpack(f"<{dimensions}f", data))
+                (str(row["chunk_text"]), tuple(np.frombuffer(data, dtype="<f4").tolist()))
             )
         return dict(embeddings)
+
+    @_locked
+    def semantic_matches(
+        self, analysis_id: str, query_vector: Sequence[float]
+    ) -> dict[str, tuple[float, str]]:
+        """Score stored chunks against a query: each file's best (cosine, text).
+
+        Reads vectors a few hundred rows at a time and keeps only each file's
+        best chunk, so a search never holds a whole repository's vectors.
+        Only files with a positive best score are returned.
+        """
+        self._get_valid_analysis_row(analysis_id, require_completed=True)
+        if self.embedder is None:
+            return {}
+        query = np.asarray(query_vector, dtype=np.float32)
+        query_norm = float(np.linalg.norm(query))
+        if query_norm == 0:
+            return {}
+        query = query / query_norm
+        cursor = self._conn.execute(
+            """
+            SELECT f.path, e.chunk_text, e.vector
+            FROM embeddings e
+            JOIN files f ON f.id = e.file_id
+            WHERE f.analysis_id = ? AND e.model = ?;
+            """,
+            (analysis_id, self.embedder.model_id),
+        )
+        best: dict[str, tuple[float, str]] = {}
+        expected_bytes = query.size * 4
+        while rows := cursor.fetchmany(_VECTOR_FETCH_ROWS):
+            usable = [row for row in rows if len(row["vector"]) == expected_bytes]
+            if not usable:
+                continue
+            matrix = np.frombuffer(
+                b"".join(bytes(row["vector"]) for row in usable), dtype="<f4"
+            ).reshape(len(usable), query.size)
+            norms = np.linalg.norm(matrix, axis=1)
+            scores = np.divide(
+                matrix @ query, norms, out=np.zeros(len(usable)), where=norms > 0
+            )
+            for row, score in zip(usable, scores.tolist(), strict=True):
+                path = str(row["path"])
+                if score > 0 and (path not in best or score > best[path][0]):
+                    best[path] = (score, str(row["chunk_text"]))
+        return best
+
+    @_locked
+    def get_semantic_status(self, analysis_id: str) -> SemanticStatus | None:
+        """Return how far semantic search is available for an analysis."""
+        row = self._get_valid_analysis_row(analysis_id, require_completed=True)
+        status = row["semantic_status"]
+        return None if status is None else status
+
+    @_locked
+    def is_active(self, analysis_id: str) -> bool:
+        """Return whether an analysis is still queued or running."""
+        row = self._conn.execute(
+            "SELECT status FROM analyses WHERE id = ?;", (analysis_id,)
+        ).fetchone()
+        return row is not None and str(row["status"]) in _ACTIVE_STATUSES
 
     @_locked
     def get_file_match_lines(

@@ -22,6 +22,8 @@ QUERY_MARKER = "query: "
 _BGE_QUERY_INSTRUCTION = "Represent this sentence for searching relevant passages: "
 _MAX_CHUNK_WORDS = 200
 _MAX_CHUNKS_PER_FILE = 64
+# Texts per model call. See `FastEmbedEmbedder` and docs/system-requirements.md.
+DEFAULT_BATCH_SIZE = 16
 
 
 class Embedder(Protocol):
@@ -34,18 +36,48 @@ class Embedder(Protocol):
 
 
 class FastEmbedEmbedder:
-    """CPU-only local embeddings from FastEmbed's ONNX BGE-small model."""
+    """CPU-only local embeddings from FastEmbed's ONNX BGE-small model.
 
-    def __init__(self, cache_dir: str | None = None) -> None:
+    `threads` caps ONNX Runtime's thread pool; left as None, ONNX starts one
+    thread per core it can see, which inside a container is every host core
+    rather than the container's CPU quota. `batch_size` is how many texts go
+    through the model at once: the model's working memory grows with the
+    batch size times the square of the longest text in the batch, and ONNX
+    keeps the largest allocation it has made for the life of the process.
+    FastEmbed's own default of 256 took a 4 GB machine to its limit (#118).
+
+    One model is shared by every analysis and search in the process, and it
+    runs one call at a time: concurrent calls would each start a full thread
+    pool and their own working memory.
+    """
+
+    def __init__(
+        self,
+        cache_dir: str | None = None,
+        *,
+        threads: int | None = None,
+        batch_size: int = DEFAULT_BATCH_SIZE,
+    ) -> None:
+        if threads is not None and threads < 1:
+            raise ValueError("threads must be at least 1.")
+        if batch_size < 1:
+            raise ValueError("batch_size must be at least 1.")
         self._cache_dir = cache_dir
+        self._threads = threads
+        self._batch_size = batch_size
         self._model = None
         self._lock = threading.Lock()
+        self._inference_lock = threading.Lock()
 
     @property
     def model_id(self) -> str:
         # Names the input format too: vectors stored under an earlier format
         # (with "passage: " prefixes) are not compared with these.
         return f"{MODEL_NAME}+bge-query-instruction"
+
+    @property
+    def batch_size(self) -> int:
+        return self._batch_size
 
     def embed(self, texts: Sequence[str]) -> list[Embedding]:
         if self._model is None:
@@ -56,6 +88,7 @@ class FastEmbedEmbedder:
                     self._model = TextEmbedding(
                         model_name=MODEL_NAME,
                         cache_dir=self._cache_dir,
+                        threads=self._threads,
                     )
         inputs = [
             _BGE_QUERY_INSTRUCTION + text.removeprefix(QUERY_MARKER)
@@ -70,10 +103,15 @@ class FastEmbedEmbedder:
         # vectors are put back in input order.
         order = sorted(range(len(inputs)), key=lambda index: len(inputs[index]))
         vectors: list[Embedding] = [()] * len(inputs)
-        for index, vector in zip(
-            order, self._model.embed([inputs[index] for index in order]), strict=True
-        ):
-            vectors[index] = tuple(float(value) for value in vector)
+        with self._inference_lock:
+            for index, vector in zip(
+                order,
+                self._model.embed(
+                    [inputs[index] for index in order], batch_size=self._batch_size
+                ),
+                strict=True,
+            ):
+                vectors[index] = tuple(float(value) for value in vector)
         return vectors
 
 
