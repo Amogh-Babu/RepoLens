@@ -16,18 +16,19 @@ import {loadKeyOpen, saveKeyOpen} from '../../utils/mapKeyPreference.ts';
 import {neighborhood, subgraph} from '../../utils/subgraph.ts';
 import type {MapActions} from './mapActions.ts';
 import {MapActionsContext} from './mapActions.ts';
+import {budgetExpansion, MAP_BUDGET} from './mapBudget.ts';
 import {MapKey} from './MapKey.tsx';
-import type {MapEdge, MapHighlight, MapNode} from './mapLayout.ts';
+import type {MapEdge, MapHighlight, MapLayout, MapNode} from './mapLayout.ts';
 import {
   fileNodeId,
   groupNodeId,
   highlightAround,
-  layoutMap,
   moduleNodeId,
   moduleIndex,
   unitFor,
 } from './mapLayout.ts';
 import {FileNode, ModuleGroupNode, ModuleNode} from './MapNodes.tsx';
+import {useMapLayout} from './useMapLayout.ts';
 import './DependencyMap.css';
 
 /** The map must draw within this budget or the list view is shown. */
@@ -40,6 +41,12 @@ const NODE_TYPES = {
 };
 
 const FIT_VIEW_OPTIONS = {padding: 0.15, maxZoom: 1.2};
+const EMPTY_LAYOUT: MapLayout = {nodes: [], edges: []};
+/**
+ * From this many boxes the map draws only what is on screen and moves the
+ * view without animating.
+ */
+export const LARGE_MAP_NODES = 150;
 /** The smallest zoom at which file names on the map can still be read. */
 const READABLE_ZOOM = 0.75;
 /** Room left above and beside a folder shown from its top-left corner. */
@@ -68,8 +75,11 @@ interface DependencyMapProps {
   onSelectFile: (path: string) => void;
   onToggleModule: (moduleId: string, expanded?: boolean) => void;
   onCollapseAll: () => void;
-  /** Called if the map has not drawn within RENDER_BUDGET_MS. */
-  onTooSlow: () => void;
+  /**
+   * Called when the map cannot be drawn: too large, too slow to lay out,
+   * or not drawn within RENDER_BUDGET_MS. `message` says why, if known.
+   */
+  onTooSlow: (message?: string) => void;
   /** Extra controls at the end of the toolbar. */
   toolbarEnd?: ReactNode;
 }
@@ -147,11 +157,45 @@ function MapCanvas({
         : new Set(shownGraph.modules.map(module => module.id)),
     [focusKey, expandedModules, shownGraph],
   );
-  const layout = useMemo(
-    () =>
-      layoutMap(shownGraph, shownExpanded, {collapsible: focusKey === null}),
-    [shownGraph, shownExpanded, focusKey],
+  // How much of the map to draw is decided before anything is laid out,
+  // so an oversized map never reaches the layout engine.
+  const budget = useMemo(
+    () => budgetExpansion(shownGraph, shownExpanded),
+    [shownGraph, shownExpanded],
   );
+  const openModules = budget.expanded;
+  const layoutState = useMapLayout(shownGraph, openModules, focusKey === null, {
+    enabled: !budget.tooLarge,
+  });
+  let layout = EMPTY_LAYOUT;
+  if (layoutState.status === 'ready') layout = layoutState.layout;
+  else if (layoutState.status === 'pending' && layoutState.previous !== null) {
+    layout = layoutState.previous;
+  }
+  const laidOut = layoutState.status === 'ready';
+  const large = layout.nodes.length > LARGE_MAP_NODES;
+  // Animated moves of a large map redraw it every frame.
+  const animated = !large;
+
+  // Give up on the map, saying why, when it is too large to draw or its
+  // layout failed or ran too long.
+  let unavailable: string | null = null;
+  if (budget.tooLarge) {
+    unavailable =
+      `This repository's map has ${budget.size.nodes} folders and ` +
+      `${budget.size.edges} import lines even with every folder closed, ` +
+      `more than it can draw smoothly (${MAP_BUDGET.nodes} boxes, ` +
+      `${MAP_BUDGET.edges} lines), so the files are listed instead.`;
+  } else if (layoutState.status === 'failed') {
+    unavailable =
+      layoutState.reason === 'timeout'
+        ? 'The map took too long to lay out, so the files are listed instead.'
+        : 'The map could not be laid out, so the files are listed instead.';
+  }
+  const failed = layoutState.status === 'failed';
+  useEffect(() => {
+    if (budget.tooLarge || failed) onTooSlow(unavailable ?? undefined);
+  }, [budget.tooLarge, failed, unavailable, onTooSlow]);
   // Positions the user dragged nodes to; reset whenever the layout changes.
   const [nodes, setNodes] = useState<MapNode[]>(layout.nodes);
   const [layoutShown, setLayoutShown] = useState(layout);
@@ -183,15 +227,13 @@ function MapCanvas({
   }, [initialized, layout.nodes.length, onTooSlow]);
 
   const selectedUnit =
-    selectedPath === null
-      ? null
-      : unitFor(selectedPath, moduleOf, shownExpanded);
+    selectedPath === null ? null : unitFor(selectedPath, moduleOf, openModules);
   const selectedModuleId =
     selectedPath === null ? undefined : moduleOf.get(selectedPath);
   const selectedModuleIsCollapsed =
     focusKey === null &&
     selectedModuleId !== undefined &&
-    !shownExpanded.has(selectedModuleId);
+    !openModules.has(selectedModuleId);
   const highlight = useMemo(
     () => highlightAround(layout.edges, selectedUnit),
     [layout.edges, selectedUnit],
@@ -201,11 +243,11 @@ function MapCanvas({
     if (matchedPaths === null || selectedUnit !== null) return null;
     const units = new Set<string>();
     for (const path of matchedPaths) {
-      const unit = unitFor(path, moduleOf, shownExpanded);
+      const unit = unitFor(path, moduleOf, openModules);
       if (unit !== null) units.add(unit);
     }
     return units;
-  }, [matchedPaths, selectedUnit, moduleOf, shownExpanded]);
+  }, [matchedPaths, selectedUnit, moduleOf, openModules]);
 
   const displayNodes = useMemo(
     () =>
@@ -271,13 +313,14 @@ function MapCanvas({
     void flow.setCenter(
       x + (node.measured.width ?? 0) / 2,
       y + (node.measured.height ?? 0) / 2,
-      {zoom: Math.max(flow.getZoom(), 0.8), duration: 300},
+      {zoom: Math.max(flow.getZoom(), 0.8), duration: animated ? 300 : 0},
     );
   }, [
     selectedPath,
     selectionRevision,
     initialized,
     layout,
+    animated,
     flow,
     moduleOf,
     hidingUnrelated,
@@ -323,7 +366,7 @@ function MapCanvas({
         y: paneHeight / 2 - (anchor.y + anchor.height / 2) * READABLE_ZOOM,
         zoom: READABLE_ZOOM,
       },
-      {duration: 300},
+      {duration: animated ? 300 : 0},
     );
   }
 
@@ -347,7 +390,7 @@ function MapCanvas({
       zoomToModule.current = null;
     }
     if (selectedPath === null || hidingUnrelated) {
-      void flow.fitView({...FIT_VIEW_OPTIONS, duration: 200});
+      void flow.fitView({...FIT_VIEW_OPTIONS, duration: animated ? 200 : 0});
     }
     // Only on layout changes, not on every selection change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -374,7 +417,8 @@ function MapCanvas({
   function resetView() {
     setNodes(layout.nodes);
     requestAnimationFrame(
-      () => void flow.fitView({...FIT_VIEW_OPTIONS, duration: 300}),
+      () =>
+        void flow.fitView({...FIT_VIEW_OPTIONS, duration: animated ? 300 : 0}),
     );
   }
 
@@ -386,7 +430,7 @@ function MapCanvas({
             <button
               type="button"
               className="button"
-              onClick={() => void flow.zoomOut({duration: 200})}
+              onClick={() => void flow.zoomOut({duration: animated ? 200 : 0})}
               aria-label="Zoom out"
               title="Zoom out"
             >
@@ -395,7 +439,7 @@ function MapCanvas({
             <button
               type="button"
               className="button"
-              onClick={() => void flow.zoomIn({duration: 200})}
+              onClick={() => void flow.zoomIn({duration: animated ? 200 : 0})}
               aria-label="Zoom in"
               title="Zoom in"
             >
@@ -443,6 +487,17 @@ function MapCanvas({
           )}
           {toolbarEnd}
         </div>
+        {budget.keptClosed.length > 0 && !budget.tooLarge && (
+          <p className="map__scope-notice" role="status">
+            Kept {nameFolders(budget.keptClosed)} closed: with{' '}
+            {budget.keptClosed.length === 1 ? 'it' : 'them'} open the map would
+            have {budget.requestedSize.nodes} boxes and{' '}
+            {budget.requestedSize.edges} import lines, more than it can draw
+            smoothly ({MAP_BUDGET.nodes} boxes, {MAP_BUDGET.edges} lines). Close
+            another folder, select a file and hide unrelated files, or use the
+            list.
+          </p>
+        )}
         {selectedModuleIsCollapsed && selectedPath !== null && (
           <p className="map__selection-hint" role="status">
             Inside <code>{selectedModuleId}/</code> (collapsed). Expand to see{' '}
@@ -450,8 +505,13 @@ function MapCanvas({
           </p>
         )}
         <div className="map__canvas">
-          {focused && layout.nodes.length === 0 && (
+          {focused && laidOut && layout.nodes.length === 0 && (
             <p role="status">No matching files to show on the map.</p>
+          )}
+          {layoutState.status === 'pending' && (
+            <p className="map__laying-out" role="status">
+              Laying out the map…
+            </p>
           )}
           {keyOpen && <MapKey id={keyId} onClose={() => showKey(false)} />}
           <button
@@ -473,6 +533,7 @@ function MapCanvas({
             }
             fitView
             fitViewOptions={FIT_VIEW_OPTIONS}
+            onlyRenderVisibleElements={large}
             minZoom={0.1}
             nodesConnectable={false}
             nodesFocusable={false}
@@ -485,6 +546,14 @@ function MapCanvas({
       </div>
     </MapActionsContext>
   );
+}
+
+function nameFolders(moduleIds: string[]): string {
+  const names = moduleIds.map(id =>
+    id === '.' ? 'the root folder' : `${id}/`,
+  );
+  if (names.length <= 2) return names.join(' and ');
+  return `${names[0]}, ${names[1]} and ${names.length - 2} more folders`;
 }
 
 function edgeClass(

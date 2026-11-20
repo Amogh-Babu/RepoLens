@@ -39,6 +39,12 @@
   color: var(--color-muted);
 }
 
+.reading-list__keyword-only {
+  margin: 0 0 8px;
+  font-size: 0.75rem;
+  color: var(--color-muted);
+}
+
 .reading-list__entries {
   list-style: none;
   margin: 0;

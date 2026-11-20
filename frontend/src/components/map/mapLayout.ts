@@ -1,6 +1,5 @@
 import dagre from '@dagrejs/dagre';
-import type {Edge, Node} from '@xyflow/react';
-import {MarkerType} from '@xyflow/react';
+import type {Edge, MarkerType, Node} from '@xyflow/react';
 import type {DependencyGraph} from '../../api/types.ts';
 
 export const MODULE_SIZE = {width: 260, height: 76};
@@ -222,7 +221,9 @@ export function layoutMap(
       source,
       target,
       label: count > 1 ? String(count) : undefined,
-      markerEnd: {type: MarkerType.ArrowClosed, width: 24, height: 24},
+      // MarkerType.ArrowClosed, written out so the layout worker does not
+      // load React Flow.
+      markerEnd: {type: 'arrowclosed' as MarkerType, width: 24, height: 24},
       data: {count},
     }),
   );
