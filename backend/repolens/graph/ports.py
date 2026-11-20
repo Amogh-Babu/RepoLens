@@ -9,6 +9,7 @@ from repolens.graph.models import (
     DependencyGraph,
     FileDetail,
     FileEmbeddingRecord,
+    SemanticIndex,
 )
 from repolens.search.models import SearchDocument
 
@@ -23,6 +24,11 @@ class GraphStore(Protocol):
         self, files: tuple[AnalyzedFile, ...]
     ) -> tuple[FileEmbeddingRecord, ...]:
         """Create bounded search vectors for parsed files."""
+
+    def build_semantic_index(
+        self, files: tuple[AnalyzedFile, ...]
+    ) -> SemanticIndex:
+        """Create search vectors within the chunk budget, with their status."""
 
     def get_graph(self, analysis_id: str) -> DependencyGraph:
         """Return module groups, file nodes, and internal import edges."""

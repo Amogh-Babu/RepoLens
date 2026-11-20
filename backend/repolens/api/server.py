@@ -20,6 +20,10 @@ Configuration comes from the environment:
   from elsewhere. Empty by default.
 - `GITHUB_TOKEN`: optional, raises GitHub's API rate limit (see the
   ingestion docs).
+- `REPOLENS_EMBEDDINGS_ENABLED`, `REPOLENS_EMBEDDING_THREADS`,
+  `REPOLENS_EMBEDDING_BATCH_SIZE`, `REPOLENS_MAX_EMBEDDING_CHUNKS`,
+  `REPOLENS_MAX_CONCURRENT_ANALYSES`: resource limits; see
+  `repolens.resources`.
 """
 
 from collections.abc import Mapping
@@ -33,7 +37,7 @@ from fastapi.staticfiles import StaticFiles
 from repolens.api.app import AnalysisRunner, create_app
 from repolens.graph.store import SqliteGraphStore
 from repolens.pipeline import PipelineAnalysisRunner
-from repolens.search.embedding import FastEmbedEmbedder
+from repolens.resources import ResourceLimits, create_embedder
 
 
 API_PREFIX = "/api"
@@ -100,6 +104,7 @@ def create_server_from_environment(
     runner: AnalysisRunner | None = None,
 ) -> FastAPI:
     """Build the production server from `REPOLENS_*` environment variables."""
+    limits = ResourceLimits.from_environment(environ)
     db_path = environ.get("REPOLENS_DB_PATH", "").strip() or ":memory:"
     if db_path != ":memory:":
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
@@ -113,12 +118,16 @@ def create_server_from_environment(
     return create_server(
         store=SqliteGraphStore(
             db_path,
-            embedder=FastEmbedEmbedder(
-                cache_dir=environ.get("REPOLENS_EMBEDDING_CACHE", "").strip()
-                or None
-            ),
+            embedder=create_embedder(limits, environ),
+            max_embedding_chunks=limits.max_embedding_chunks,
         ),
-        runner=runner if runner is not None else PipelineAnalysisRunner(),
+        runner=(
+            runner
+            if runner is not None
+            else PipelineAnalysisRunner(
+                max_concurrent_analyses=limits.max_concurrent_analyses
+            )
+        ),
         frontend_dir=Path(frontend) if frontend else None,
         cors_origins=origins,
     )

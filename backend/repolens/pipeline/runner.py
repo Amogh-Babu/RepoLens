@@ -27,7 +27,7 @@ from repolens.analysis import (
     to_analyzed_files,
 )
 from repolens.graph.models import AnalysisErrorRecord, AnalysisRecord
-from repolens.graph.store import SqliteGraphStore
+from repolens.graph.store import IndexingCancelled, SqliteGraphStore
 from repolens.ingestion import (
     GitHubRefResolver,
     GitHubSource,
@@ -39,7 +39,9 @@ from repolens.ingestion import (
 
 _LOGGER = logging.getLogger(__name__)
 
-DEFAULT_MAX_CONCURRENT_ANALYSES = 2
+# One at a time: semantic indexing already uses the machine's cores, and two
+# at once took about four times as long as one after the other (#118).
+DEFAULT_MAX_CONCURRENT_ANALYSES = 1
 
 _UNEXPECTED_FAILURE = AnalysisErrorRecord(
     code="ANALYSIS_FAILED",
@@ -58,6 +60,7 @@ class PipelineAnalysisRunner:
         analysis_service: AnalysisService | None = None,
         executor: Executor | None = None,
         work_root: Path | None = None,
+        max_concurrent_analyses: int = DEFAULT_MAX_CONCURRENT_ANALYSES,
     ) -> None:
         """Initialize the runner.
 
@@ -65,11 +68,16 @@ class PipelineAnalysisRunner:
           resolver: Resolves refs to commit SHAs; defaults to the GitHub API.
           source: Downloads snapshots; defaults to `GitHubSource`.
           analysis_service: Parses snapshots; defaults to Python only.
-          executor: Runs analyses in the background; defaults to a small
-            thread pool. Tests pass one that runs work inline.
+          executor: Runs analyses in the background; defaults to a pool of
+            `max_concurrent_analyses` threads, so later analyses wait in a
+            queue. Tests pass one that runs work inline.
           work_root: Parent directory for temporary snapshots; defaults to
             the system temporary directory.
+          max_concurrent_analyses: Analyses that run at once when no
+            `executor` is given.
         """
+        if max_concurrent_analyses < 1:
+            raise ValueError("max_concurrent_analyses must be at least 1.")
         self._resolver = resolver if resolver is not None else GitHubRefResolver()
         self._source = source if source is not None else GitHubSource()
         self._analysis_service = (
@@ -79,7 +87,7 @@ class PipelineAnalysisRunner:
             executor
             if executor is not None
             else ThreadPoolExecutor(
-                max_workers=DEFAULT_MAX_CONCURRENT_ANALYSES,
+                max_workers=max_concurrent_analyses,
                 thread_name_prefix="repolens-analysis",
             )
         )
@@ -183,8 +191,15 @@ class PipelineAnalysisRunner:
 
         if not store.update_stage(analysis_id, "indexing"):
             return
-        # Falls back to no vectors (keyword search only) if the model fails.
-        embeddings = store.build_embeddings(files)
+        # Falls back to no vectors (keyword search only) if the model fails
+        # or the repository is over the chunk budget; the status says which.
+        # Stops between batches if the analysis is cancelled meanwhile.
+        try:
+            semantic = store.build_semantic_index(
+                files, should_continue=lambda: store.is_active(analysis_id)
+            )
+        except IndexingCancelled:
+            return
 
         if not store.update_stage(analysis_id, "storing"):
             return
@@ -197,7 +212,9 @@ class PipelineAnalysisRunner:
                 status="completed",
                 counts=to_analysis_counts(analysis),
                 files=files,
-                embeddings=embeddings,
+                embeddings=semantic.records,
+                semantic_status=semantic.status,
+                semantic_chunks=semantic.chunk_count,
             )
         )
 

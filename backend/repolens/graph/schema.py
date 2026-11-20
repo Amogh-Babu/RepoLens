@@ -19,6 +19,7 @@ from repolens.graph.models import (
     AnalysisStage,
     AnalysisStatus,
     CommentKind,
+    SemanticStatus,
     ImportKind,
     MemberKind,
     SymbolKind,
@@ -27,7 +28,7 @@ from repolens.search.embedding import MODEL_NAME
 
 
 # Bump whenever a table, column, or constraint below changes.
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 # STRICT tables need SQLite 3.37 (2021). Older libraries still get every CHECK
 # constraint, just without SQLite's own column type enforcement.
@@ -82,7 +83,9 @@ CREATE TABLE IF NOT EXISTS analyses (
     unparsed_count INTEGER NOT NULL DEFAULT 0 {_non_negative("unparsed_count")},
     error_code TEXT,
     error_message TEXT,
-    error_hint TEXT
+    error_hint TEXT,
+    semantic_status TEXT {_one_of("semantic_status", SemanticStatus, nullable=True)},
+    semantic_chunks INTEGER NOT NULL DEFAULT 0 {_non_negative("semantic_chunks")}
 ){table_options};
 
 CREATE TABLE IF NOT EXISTS files (

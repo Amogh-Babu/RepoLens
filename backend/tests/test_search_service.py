@@ -50,9 +50,11 @@ class SearchServiceTest(unittest.TestCase):
     def test_fastembed_uses_the_bge_query_instruction_and_bare_passages(self) -> None:
         class FakeModel:
             texts = []
+            batch_size = None
 
-            def embed(self, texts):
+            def embed(self, texts, batch_size):
                 self.texts = list(texts)
+                self.batch_size = batch_size
                 # A vector that says which text it came from.
                 return [(float(len(text)),) for text in texts]
 
@@ -75,6 +77,8 @@ class SearchServiceTest(unittest.TestCase):
             [(float(len(query)),), (23.0,), (3.0,)],
             vectors,
         )
+        # FastEmbed's default batch of 256 is never used (#118).
+        self.assertEqual(16, model.batch_size)
         # Vectors stored with the earlier "passage: " format are not reused.
         self.assertNotEqual("BAAI/bge-small-en-v1.5", embedder.model_id)
 

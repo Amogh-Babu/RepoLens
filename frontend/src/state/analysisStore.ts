@@ -12,6 +12,7 @@ import type {
   FileDetail,
   RankedFile,
   SearchIntent,
+  SemanticStatus,
 } from '../api/types.ts';
 import {ancestorDirs} from '../utils/fileTree.ts';
 import {
@@ -42,6 +43,7 @@ export interface SearchState {
   /** Results loaded so far, in reading order. */
   results: RankedFile[];
   matchedPaths?: string[];
+  semanticStatus?: SemanticStatus | null;
   intent?: SearchIntent;
   /** Total number of matching files, including ones not loaded yet. */
   total: number;
@@ -356,6 +358,7 @@ export function createAnalysisStore(
             query,
             results: response.results,
             matchedPaths: response.matchedPaths,
+            semanticStatus: response.semanticStatus,
             intent,
             total: response.total,
             pendingQuery: null,
@@ -615,6 +618,7 @@ export function createAnalysisStore(
             query: current?.query ?? '',
             results: current?.results ?? [],
             matchedPaths: current?.matchedPaths,
+            semanticStatus: current?.semanticStatus,
             intent: current?.intent,
             total: current?.total ?? 0,
             pendingQuery: query,

@@ -1,4 +1,4 @@
-import type {RankedFile, SearchIntent} from '../api/types.ts';
+import type {RankedFile, SearchIntent, SemanticStatus} from '../api/types.ts';
 import type {SearchState} from '../state/analysisStore.ts';
 import {ErrorBanner} from './ErrorBanner.tsx';
 import './ReadingList.css';
@@ -93,6 +93,7 @@ export function ReadingList({
               Showing {results.length} of {total}.
             </p>
           </div>
+          <KeywordOnlyNote status={search.semanticStatus} />
           <ol className="reading-list__entries">
             {results.map(entry => (
               <ReadingListEntry
@@ -165,4 +166,20 @@ function NoResults({query}: {query: string}) {
       </ul>
     </div>
   );
+}
+
+const KEYWORD_ONLY_REASONS: Partial<Record<SemanticStatus, string>> = {
+  over_budget:
+    'This repository is larger than the server indexes for search by meaning, so results match keywords only.',
+  disabled:
+    'Search by meaning is turned off on this server, so results match keywords only.',
+  failed:
+    'Search by meaning was unavailable for this analysis, so results match keywords only.',
+};
+
+/** Says when results could not use search by meaning, and why. */
+function KeywordOnlyNote({status}: {status?: SemanticStatus | null}) {
+  const reason = status == null ? undefined : KEYWORD_ONLY_REASONS[status];
+  if (reason === undefined) return null;
+  return <p className="reading-list__keyword-only">{reason}</p>;
 }

@@ -104,6 +104,20 @@ describe('ReadingList', () => {
     expect(onLoadMore).toHaveBeenCalled();
   });
 
+  it('says when results match keywords only, and why', () => {
+    renderList(searchState({semanticStatus: 'over_budget'}));
+
+    expect(
+      screen.getByText(/larger than the server indexes for search by meaning/),
+    ).toBeVisible();
+  });
+
+  it('says nothing extra when search by meaning was used', () => {
+    renderList(searchState({semanticStatus: 'complete'}));
+
+    expect(screen.queryByText(/keywords only/)).toBeNull();
+  });
+
   it('announces how many files matched', () => {
     renderList(searchState({total: 34}));
 

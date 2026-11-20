@@ -34,6 +34,11 @@ restarts until they expire after 24 hours. Press `Ctrl+C` to stop.
 * The API and its health check live under `/api` (for example
   `http://localhost:8000/api/health`).
 
+* RepoLens needs 2 CPU cores and 2 GB of memory at minimum, and runs
+  comfortably on 4 cores and 4 GB. Resource limits are set with
+  `REPOLENS_*` environment variables; see
+  [docs/system-requirements.md](docs/system-requirements.md).
+
 The Docker image includes the 67 MB local search model. A development server
 downloads it the first time an analysis is indexed; set
 `REPOLENS_EMBEDDING_CACHE` to choose where those model files are stored.
