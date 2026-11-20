@@ -260,6 +260,36 @@ def test_repository_without_python_fails_with_no_python_files(
     assert error["code"] == "NO_PYTHON_FILES"
 
 
+def test_repository_with_only_vendored_python_fails_with_no_python_files(
+    tmp_path: Path,
+) -> None:
+    vendored_only = tmp_path / "vendored-only"
+    vendor = vendored_only / "vendor"
+    vendor.mkdir(parents=True)
+
+    (vendor / "dependency.py").write_text(
+        "def dependency():\n    return 1\n",
+        encoding="utf-8",
+    )
+
+    (tmp_path / "work").mkdir()
+    client = _client(
+        tmp_path / "work",
+        source=FakeSource(root=vendored_only),
+    )
+
+    analysis_id = client.post(
+        "/analyses",
+        json={"url": REPO_URL},
+    ).json()["analysisId"]
+
+    analysis = client.get(f"/analyses/{analysis_id}").json()
+
+    assert analysis["status"] == "failed"
+    assert analysis["stage"] is None
+    assert analysis["error"]["code"] == "NO_PYTHON_FILES"
+
+
 def test_unexpected_errors_fail_with_analysis_failed(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
