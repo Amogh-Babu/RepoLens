@@ -178,6 +178,8 @@ class PipelineAnalysisRunner:
         if not clock.enter(store, "parsing"):
             return
         analysis = self._analysis_service.analyze_repository(snapshot.root)
+        if not analysis.files:
+            raise NoPythonFilesError()
         # Everything later stages need is in memory now. Removing the source
         # before the analysis is marked completed means a completed analysis
         # never has a snapshot left on disk (#73), and source is never kept
