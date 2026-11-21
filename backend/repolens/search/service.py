@@ -91,7 +91,11 @@ class SearchService:
     ) -> SearchPage:
         terms = self._topic_terms(self._parse_query(query))
         self._validate_pagination(offset, limit)
-        documents = list(self._index.get_search_documents(analysis_id))
+        documents = [
+            document
+            for document in self._index.get_search_documents(analysis_id)
+            if intent == "tests" or not self._is_test_path(document.path)
+        ]
         documents_by_path = {document.path: document for document in documents}
         keyword_matches: dict[str, tuple[MatchEvidence, ...]] = {}
         keyword_scores: dict[str, float] = {}
@@ -201,6 +205,12 @@ class SearchService:
         )
 
     @staticmethod
+    def _is_test_path(path: str) -> bool:
+        parts = re.split(r"[/_.-]+", path.casefold())
+        filename = path.rsplit("/", 1)[-1].casefold()
+        return any(part in _TEST_PARTS for part in parts) or filename == "conftest.py"
+
+    @staticmethod
     def _reading_goal(
         path: str, intent: SearchIntent | None
     ) -> tuple[float, str | None]:
@@ -213,7 +223,7 @@ class SearchService:
         if intent is None:
             return 1.0, None
         parts = re.split(r"[/_.-]+", path.casefold())
-        is_test = any(part in _TEST_PARTS for part in parts)
+        is_test = SearchService._is_test_path(path)
         is_config = not is_test and any(part in _CONFIG_PARTS for part in parts)
         if intent == "tests" and is_test:
             return _GOAL_BOOST, "Ranked higher: a test or example file."

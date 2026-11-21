@@ -176,7 +176,7 @@ def test_completed_analysis_end_to_end_contract() -> None:
         "/analyses/flask-1/search", params={"q": "login", "limit": 5}
     ).json()
     assert search["query"] == "login"
-    assert search["total"] >= 3
+    assert search["total"] >= 2
     assert search["results"][0]["position"] == 1
     assert all(result["orderReason"] for result in search["results"])
     assert len(search["matchedPaths"]) == search["total"]

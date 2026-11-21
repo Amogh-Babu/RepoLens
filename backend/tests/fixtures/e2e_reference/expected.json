@@ -499,16 +499,14 @@
       "readingOrder": [
         "bookshop/auth/tokens.py",
         "bookshop/auth/login.py",
-        "bookshop/orders/checkout.py",
         "bookshop/auth/__init__.py",
-        "tests/test_checkout.py"
+        "bookshop/orders/checkout.py"
       ],
       "orderReasons": [
-        "Comes before bookshop/auth/login.py, bookshop/orders/checkout.py and 2 more, which import it.",
+        "Comes before bookshop/auth/login.py, bookshop/auth/__init__.py and 1 more, which import it.",
         "Comes after bookshop/auth/tokens.py, which it imports; comes before bookshop/auth/__init__.py, which imports it.",
-        "Comes after bookshop/auth/tokens.py, which it imports; comes before tests/test_checkout.py, which imports it.",
         "Comes after bookshop/auth/tokens.py and bookshop/auth/login.py, which it imports.",
-        "Comes after bookshop/auth/tokens.py and bookshop/orders/checkout.py, which it imports."
+        "Comes after bookshop/auth/tokens.py, which it imports."
       ]
     },
     {
@@ -530,13 +528,11 @@
       "query": "cart total",
       "readingOrder": [
         "bookshop/catalog/models.py",
-        "bookshop/orders/checkout.py",
-        "tests/test_checkout.py"
+        "bookshop/orders/checkout.py"
       ],
       "orderReasons": [
-        "Comes before bookshop/orders/checkout.py and tests/test_checkout.py, which import it.",
-        "Comes after bookshop/catalog/models.py, which it imports; comes before tests/test_checkout.py, which imports it.",
-        "Comes after bookshop/catalog/models.py and bookshop/orders/checkout.py, which it imports."
+        "Comes before bookshop/orders/checkout.py, which imports it.",
+        "Comes after bookshop/catalog/models.py, which it imports."
       ]
     },
     {
