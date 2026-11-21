@@ -53,9 +53,6 @@ EXPECTED_LAYOUTS = (
     "src_layout",
 )
 
-# The one reference the classifier gets wrong, as (layout, path, raw name).
-KNOWN_MISS = ("module_directory_collision", "main.py", "app.config.defaults")
-
 VALID_KINDS = frozenset({"internal", "external", "unresolved"})
 
 
@@ -134,14 +131,14 @@ def test_the_measurement_reproduces_the_recorded_numbers(
     assert to_record(measurement) == load_record()
 
 
-def test_overall_accuracy_is_84_of_85_references(measurement: Measurement) -> None:
+def test_overall_accuracy_is_85_of_85_references(measurement: Measurement) -> None:
     """Spelled out, so a change to the recorded file alone cannot hide drift."""
     total = measurement.total
 
-    assert (total.correct, total.labeled) == (84, 85)
-    assert round(total.percent_correct, 1) == 98.8
-    assert (total.classified_unresolved, total.classified) == (3, 85)
-    assert round(total.percent_unresolved, 1) == 3.5
+    assert (total.correct, total.labeled) == (85, 85)
+    assert round(total.percent_correct, 1) == 100.0
+    assert (total.classified_unresolved, total.classified) == (4, 85)
+    assert round(total.percent_unresolved, 1) == 4.7
     assert total.labeled_unresolved == 4
 
 
@@ -152,25 +149,19 @@ def test_every_layout_but_the_collision_classifies_perfectly(
         score.layout for score in measurement.scores if score.correct == score.labeled
     }
 
-    assert perfect == set(EXPECTED_LAYOUTS) - {"module_directory_collision"}
+    assert perfect == set(EXPECTED_LAYOUTS)
 
 
-def test_the_only_miss_is_the_known_classifier_error(
+def test_module_file_blocks_descendant_directory() -> None:
+    actual = actual_classifications("module_directory_collision")
+
+    assert actual[("main.py", "app.config.defaults")] == ("unresolved", None)
+
+
+def test_no_classification_misses_remain(
     measurement: Measurement,
 ) -> None:
-    """`import app.config.defaults` is a ModuleNotFoundError, not an edge.
-
-    `app/config.py` wins the `app.config` name over the `app/config/`
-    directory, so nothing can be imported beneath it. The classifier resolves
-    the name to `app/config/defaults.py` anyway. Fix the classifier rather
-    than this label.
-    """
-    assert len(measurement.misses) == 1
-    miss = measurement.misses[0]
-
-    assert (miss.layout, miss.path, miss.raw_name) == KNOWN_MISS
-    assert miss.expected == ("unresolved", None)
-    assert miss.actual == ("internal", "app/config/defaults.py")
+    assert not measurement.misses
 
 
 def test_the_report_states_the_percentages_per_layout_and_overall(
@@ -181,9 +172,10 @@ def test_the_report_states_the_percentages_per_layout_and_overall(
     for score in measurement.scores:
         assert score.title in report
     assert "overall" in report
-    assert "84 (98.8%)" in report
-    assert "3 (3.5%)" in report
-    assert "app.config.defaults" in report
+    assert "85 (100.0%)" in report
+    assert "4 (4.7%)" in report
+    assert "Misses (0):" in report
+    assert "none" in report
 
 
 def test_measuring_the_fixtures_does_not_import_them() -> None:
