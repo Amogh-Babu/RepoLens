@@ -127,9 +127,9 @@ class SearchServiceTest(unittest.TestCase):
             SearchDocument(
                 path="auth/routes.py",
                 symbols=("authenticate_request",),
-                depended_on_by=("auth/tests.py",),
+                depended_on_by=("auth/views.py",),
             ),
-            SearchDocument(path="auth/tests.py", symbols=("authenticate_test",)),
+            SearchDocument(path="auth/views.py", symbols=("authenticate_view",)),
         ]
         service = SearchService(InMemorySearchIndex({"analysis-1": documents}))
 

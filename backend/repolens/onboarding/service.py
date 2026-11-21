@@ -173,6 +173,7 @@ def build_overview(
         dependencies,
         documents_by_path,
         dependents,
+        categories,
     )
 
     return {
@@ -387,6 +388,7 @@ def _reading_tour(
     dependencies: dict[str, set[str]],
     documents: dict[str, SearchDocument],
     dependents: dict[str, set[str]],
+    categories: dict[str, str],
 ) -> list[dict[str, str]]:
     ordered: list[str] = []
     visited: set[str] = set()
@@ -410,6 +412,8 @@ def _reading_tour(
     for file in sorted(graph.files, key=lambda item: item.path.casefold()):
         if len(ordered) >= target_count:
             break
+        if categories.get(file.path) == "test":
+            continue
         visit(file.path)
 
     entry_set = set(entry_paths)
