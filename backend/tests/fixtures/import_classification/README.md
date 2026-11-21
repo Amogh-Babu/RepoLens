@@ -29,41 +29,20 @@ can yield several (`from library.core import Engine, engine` reaches the
 package and one of its submodules) and references to one target are merged per
 file, so this is not the statement count.
 
-| layout                        | refs | correctly classified | unresolved | labeled unresolved |
-| ----------------------------- | ---: | -------------------: | ---------: | -----------------: |
-| src layout                    |    9 |         9 (100.0%)   |  0 (0.0%)  |                  0 |
-| namespace packages            |   11 |        11 (100.0%)   |  2 (18.2%) |                  2 |
-| re-exports from `__init__.py` |   11 |        11 (100.0%)   |  0 (0.0%)  |                  0 |
-| relative imports              |   15 |        15 (100.0%)   |  1 (6.7%)  |                  1 |
-| module/directory collision    |   11 |        10 (90.9%)    |  0 (0.0%)  |                  1 |
-| monorepo source roots         |   11 |        11 (100.0%)   |  0 (0.0%)  |                  0 |
-| external packages             |   17 |        17 (100.0%)   |  0 (0.0%)  |                  0 |
-| **overall**                   | **85** |    **84 (98.8%)**  | **3 (3.5%)** |              **4** |
+| layout                        |   refs | correctly classified |    unresolved | labeled unresolved |
+| ----------------------------- | -----: | -------------------: | ------------: | -----------------: |
+| src layout                    |    9   |         9 (100.0%)   |   0  (0.0%)   |                  0 |
+| namespace packages            |   11   |        11 (100.0%)   |   2 (18.2%)   |                  2 |
+| re-exports from `__init__.py` |   11   |        11 (100.0%)   |   0  (0.0%)   |                  0 |
+| relative imports              |   15   |        15 (100.0%)   |   1  (6.7%)   |                  1 |
+| module/directory collision    |   11   |        11 (100.0%)   |   1  (9.1%)   |                  1 |
+| monorepo source roots         |   11   |        11 (100.0%)   |   0  (0.0%)   |                  0 |
+| external packages             |   17   |        17 (100.0%)   |   0  (0.0%)   |                  0 |
+| **overall**                   | **85** |      **85 (100.0%)** | **4  (4.7%)** |              **4** |
 
 `unresolved` is the share of what the classifier emitted that it could not
 resolve; `labeled unresolved` is how many references *should* be unresolved,
-so the two columns separate a deliberate quiet edge from a failure. They
-differ by one, and that one is the only miss.
-
-### The one miss
-
-```
-module_directory_collision  main.py: app.config.defaults
-    want unresolved, got internal app/config/defaults.py
-```
-
-`app/config.py` and `app/config/` both exist. Python resolves `app.config` to
-the module, because a regular module beats a namespace-package portion, and a
-module cannot hold submodules, so `import app.config.defaults` raises
-`ModuleNotFoundError: No module named 'app.config.defaults'; 'app.config' is
-not a package`. The file `app/config/defaults.py` is unreachable by any import
-statement. The classifier resolves the dotted name by path arithmetic and
-reports an internal edge to it.
-
-The label stays `unresolved`.
-`tests/test_import_classification.py::test_the_only_miss_is_the_known_classifier_error`
-asserts the classifier still gets it wrong, so fixing `classifier.py` fails
-that test and the fixture needs no change.
+so the two columns separate a deliberate quiet edge from a failure.
 
 ## Labeling rules
 
