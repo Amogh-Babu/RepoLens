@@ -2,7 +2,7 @@ from collections.abc import Iterable
 from typing import Protocol
 
 from repolens.search.models import SearchDocument
-from repolens.search.embedding import Embedding
+from repolens.search.embedding import ChunkVectors, Embedding
 
 
 class AnalysisUnavailableError(LookupError):
@@ -18,6 +18,10 @@ class SearchIndex(Protocol):
 
     def get_search_embeddings(
         self, analysis_id: str
-    ) -> dict[str, list[tuple[str, Embedding]]]:
-        """Return stored (chunk text, vector) pairs for each document path."""
+    ) -> ChunkVectors | dict[str, list[tuple[str, Embedding]]]:
+        """Return the stored chunk vectors of an analysis.
+
+        `ChunkVectors` is what the graph store returns; a mapping of
+        `{path: [(chunk text, vector), ...]}` is accepted too.
+        """
         ...

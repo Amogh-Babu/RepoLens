@@ -139,3 +139,20 @@ expectation: regenerate it with `--write` when ranking or indexing changes on
 purpose, and say in the pull request which numbers moved and why. Adding
 queries or repositories means editing `labeled_queries.json`; label the files
 before looking at what any system returns, and keep the rationale.
+
+# Memory and time of a real analysis
+
+`memory_profile.py` measures what issue #118 reported: peak memory and stage
+times of one analysis of a real GitHub repository, followed by a few searches.
+It runs the production pipeline and model inline and prints JSON.
+
+```bash
+cd backend
+python -m benchmarks.memory_profile https://github.com/numpy/numpy
+python -m benchmarks.memory_profile https://github.com/numpy/numpy --abort-above-mib 3000
+```
+
+`peakRssMiB` is the process's peak resident memory, which is what an
+out-of-memory killer acts on; `stagePeakRssMiB` attributes it to pipeline
+stages. `--abort-above-mib` stops the run before a machine starts swapping.
+The recorded numbers are in the top-level README under *System requirements*.
