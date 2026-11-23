@@ -1,9 +1,11 @@
-import {act, fireEvent, render, screen, within} from '@testing-library/react';
+import {act, fireEvent, render, screen, waitFor, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import {useState} from 'react';
+import {useRef, useState} from 'react';
+import {useReactFlow} from '@xyflow/react';
 import type {DependencyGraph} from '../../api/types.ts';
 import {DependencyMap, RENDER_BUDGET_MS} from './DependencyMap.tsx';
 import {ListFallback} from './ListFallback.tsx';
+import {fileNodeId, moduleNodeId} from './mapLayout.ts';
 
 const GRAPH: DependencyGraph = {
   modules: [
@@ -69,6 +71,42 @@ function renderMap(props: Partial<Parameters<typeof DependencyMap>[0]> = {}) {
     </div>,
   );
   return handlers;
+}
+
+type FlowApi = ReturnType<typeof useReactFlow>;
+
+type InternalNode = NonNullable<ReturnType<FlowApi['getInternalNode']>>;
+
+let capturedFlow: FlowApi | null = null;
+
+/**
+ * Exposes React Flow's API to tests so they can verify that
+ * selecting a file actually moves the dependency map.
+ */
+function FlowApiProbe({
+  nodes,
+}: {
+  nodes: Readonly<Record<string, InternalNode | undefined>>;
+}) {
+  const flow = useReactFlow();
+
+  const spiesInstalled = useRef(false);
+
+  capturedFlow = flow;
+
+  if (!spiesInstalled.current) {
+    vi.spyOn(flow, 'getInternalNode').mockImplementation(
+      id => nodes[id],
+    );
+
+    vi.spyOn(flow, 'getZoom').mockReturnValue(1.1);
+
+    vi.spyOn(flow, 'setCenter');
+
+    spiesInstalled.current = true;
+  }
+
+  return null;
 }
 
 /** The React Flow node element that contains `name`. */
@@ -523,6 +561,63 @@ describe('DependencyMap', () => {
     expect(
       screen.getByRole('button', {name: /Module big,/}),
     ).toBeInTheDocument();
+  });
+
+  it('centers on a collapsed module when the selected file has no node', async () => {
+    const selectedPath = 'big/f0.py';
+    const moduleId = 'big';
+
+    // Fake React Flow node representing the collapsed module
+    const collapsedModuleNode = {
+      internals: {
+        positionAbsolute: {
+          x: 100,
+          y: 200,
+        },
+      },
+      measured: {
+        width: 260,
+        height: 76,
+      },
+    } as unknown as InternalNode;
+
+    capturedFlow = null;
+
+    renderMap({
+      graph: bigGraph(81),
+      selectedPath,
+
+      toolbarEnd: (
+        <FlowApiProbe
+          nodes={{
+            [fileNodeId(selectedPath)]: undefined,
+            [moduleNodeId(moduleId)]: collapsedModuleNode,
+          }}
+        />
+      ),
+    });
+
+    // Wait until React Flow has initialized and the centering effect runs
+    await waitFor(() => {
+      expect(capturedFlow?.setCenter).toHaveBeenCalledWith(
+        230,
+        238,
+        {
+          zoom: 1.1,
+          duration: 300,
+        },
+      );
+    });
+
+    // Component should first try to locate the individual file
+    expect(capturedFlow?.getInternalNode).toHaveBeenCalledWith(
+      fileNodeId(selectedPath),
+    );
+
+    // Since that node doesn't exist, it should look up the module
+    expect(capturedFlow?.getInternalNode).toHaveBeenCalledWith(
+      moduleNodeId(moduleId),
+    );
   });
 });
 
