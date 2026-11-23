@@ -2,7 +2,8 @@ import {useEffect, useRef, useState} from 'react';
 import {createPortal} from 'react-dom';
 import './HelpMenu.css';
 
-const GUIDE_URL = 'https://github.com/Amogh-Babu/RepoLens/blob/main/REPOLENS_USER_GUIDE.md';
+const GUIDE_URL =
+  'https://github.com/Amogh-Babu/RepoLens/blob/main/REPOLENS_USER_GUIDE.md';
 const BUG_URL = 'https://github.com/Amogh-Babu/RepoLens/issues/new';
 
 export function HelpMenu() {
