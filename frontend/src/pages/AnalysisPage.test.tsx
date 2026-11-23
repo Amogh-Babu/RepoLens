@@ -156,6 +156,15 @@ describe('AnalysisPage workspace', () => {
     await user.click(await screen.findByRole('treeitem', {name: 'auth/'}));
     await user.click(screen.getByRole('treeitem', {name: 'service.py'}));
 
+    // Selected file should also appear as the selected node on the map
+    const mapFile = await screen.findByRole('button', {
+      name: 'File app/auth/service.py',
+    });
+
+    expect(mapFile.closest('.react-flow__node')).toHaveClass(
+      'map-node--selected',
+    );
+
     const panel = await screen.findByRole('complementary', {
       name: 'service.py',
     });
