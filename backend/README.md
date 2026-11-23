@@ -595,13 +595,11 @@ python -m benchmarks.import_classification            # print the table
 python -m benchmarks.import_classification --write    # refresh the record
 ```
 
-Measured overall: **84 of 85 correct (98.8%), 3 unresolved (3.5%)**, against 4
-references that should be unresolved. The one miss is real and left failing:
-`import app.config.defaults` is a `ModuleNotFoundError` where `app/config.py`
-shadows `app/config/`, and the classifier reports an internal edge instead.
-`tests/test_import_classification.py` reproduces the run against
-`benchmarks/measured_classification.json`, and the fixture README has the
-per-layout table, the labeling rules, and what each layout covers.
+Measured overall: **85 of 85 correct (100%), 4 unresolved (4.7%)**, against 4
+references that should be unresolved. `tests/test_import_classification.py`
+reproduces the run against `benchmarks/measured_classification.json`, and the
+fixture README has the per-layout table, the labeling rules, and what each
+layout covers.
 
 ## Tests
 

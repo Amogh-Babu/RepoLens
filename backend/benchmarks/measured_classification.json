@@ -2,11 +2,11 @@
   "overall": {
     "title": "overall",
     "labeledReferences": 85,
-    "correct": 84,
-    "percentCorrect": 98.8235,
+    "correct": 85,
+    "percentCorrect": 100.0,
     "classifiedReferences": 85,
-    "unresolved": 3,
-    "percentUnresolved": 3.5294,
+    "unresolved": 4,
+    "percentUnresolved": 4.7059,
     "labeledUnresolved": 4
   },
   "layouts": [
@@ -25,11 +25,11 @@
       "layout": "module_directory_collision",
       "title": "module/directory collision",
       "labeledReferences": 11,
-      "correct": 10,
-      "percentCorrect": 90.9091,
+      "correct": 11,
+      "percentCorrect": 100.0,
       "classifiedReferences": 11,
-      "unresolved": 0,
-      "percentUnresolved": 0.0,
+      "unresolved": 1,
+      "percentUnresolved": 9.0909,
       "labeledUnresolved": 1
     },
     {
@@ -88,19 +88,5 @@
       "labeledUnresolved": 0
     }
   ],
-  "misses": [
-    {
-      "layout": "module_directory_collision",
-      "path": "main.py",
-      "rawName": "app.config.defaults",
-      "expected": {
-        "kind": "unresolved",
-        "target": null
-      },
-      "actual": {
-        "kind": "internal",
-        "target": "app/config/defaults.py"
-      }
-    }
-  ]
+  "misses": []
 }
