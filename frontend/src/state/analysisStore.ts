@@ -84,7 +84,6 @@ export interface AnalysisState {
   fileDetails: Readonly<Record<string, FileDetail>>;
   /** Set when fetching the selected file's details failed. */
   fileFailure: RequestFailure | null;
-
   /** Directories expanded in the file explorer. */
   expandedDirs: ReadonlySet<string>;
   /** Modules expanded on the dependency map; the rest are collapsed. */

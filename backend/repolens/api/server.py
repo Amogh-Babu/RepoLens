@@ -20,6 +20,10 @@ Configuration comes from the environment:
   from elsewhere. Empty by default.
 - `GITHUB_TOKEN`: optional, raises GitHub's API rate limit (see the
   ingestion docs).
+- `REPOLENS_MAX_CONCURRENT_ANALYSES`: analyses run at once (default 1). Each
+  one adds its own indexing memory peak.
+- `REPOLENS_EMBED_BATCH_SIZE` and `REPOLENS_EMBED_THREADS`: see
+  `FastEmbedEmbedder`.
 - `REPOLENS_AI_ENABLED`, `OPENAI_API_KEY`, and the other `REPOLENS_AI_*`
   variables: optional AI file summaries, off by default (see
   `repolens.ai.config`).
@@ -36,7 +40,7 @@ from fastapi.staticfiles import StaticFiles
 from repolens.ai import CodeSummaryService, load_ai_config
 from repolens.api.app import AnalysisRunner, create_app
 from repolens.graph.store import SqliteGraphStore
-from repolens.pipeline import PipelineAnalysisRunner
+from repolens.pipeline import DEFAULT_MAX_CONCURRENT_ANALYSES, PipelineAnalysisRunner
 from repolens.search.embedding import FastEmbedEmbedder
 
 
@@ -118,16 +122,39 @@ def create_server_from_environment(
     store = SqliteGraphStore(
         db_path,
         embedder=FastEmbedEmbedder(
-            cache_dir=environ.get("REPOLENS_EMBEDDING_CACHE", "").strip() or None
+            cache_dir=environ.get("REPOLENS_EMBEDDING_CACHE", "").strip() or None,
+            batch_size=_positive_int(environ, "REPOLENS_EMBED_BATCH_SIZE"),
+            threads=_positive_int(environ, "REPOLENS_EMBED_THREADS"),
         ),
     )
     return create_server(
         store=store,
-        runner=runner if runner is not None else PipelineAnalysisRunner(),
+        runner=(
+            runner
+            if runner is not None
+            else PipelineAnalysisRunner(
+                max_concurrent_analyses=_positive_int(
+                    environ, "REPOLENS_MAX_CONCURRENT_ANALYSES"
+                )
+                or DEFAULT_MAX_CONCURRENT_ANALYSES
+            )
+        ),
         frontend_dir=Path(frontend) if frontend else None,
         cors_origins=origins,
         summaries=CodeSummaryService(store, load_ai_config(environ)),
     )
+
+
+def _positive_int(environ: Mapping[str, str], name: str) -> int | None:
+    """Read a positive integer setting, or None when it is unset or invalid."""
+    raw = environ.get(name, "").strip()
+    if not raw:
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        return None
+    return value if value > 0 else None
 
 
 app = create_server_from_environment()

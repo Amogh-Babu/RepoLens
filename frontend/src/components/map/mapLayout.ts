@@ -1,6 +1,5 @@
 import dagre from '@dagrejs/dagre';
-import type {Edge, Node} from '@xyflow/react';
-import {MarkerType} from '@xyflow/react';
+import type {Edge, MarkerType, Node} from '@xyflow/react';
 import type {DependencyGraph} from '../../api/types.ts';
 
 export const MODULE_SIZE = {width: 260, height: 76};
@@ -79,6 +78,73 @@ export function moduleIndex(graph: DependencyGraph): Map<string, string> {
 }
 
 /**
+ * The most files the map draws as separate boxes. Past a few hundred,
+ * browsers (Safari above all) slow down on every pan and zoom and can run out
+ * of memory (#118); the list view shows any number of files.
+ */
+export const MAX_DRAWN_FILES = 300;
+
+/**
+ * Picks which of `expandedModules` to draw open so that at most `maxFiles`
+ * file boxes are drawn. The most recently opened folders win (a Set keeps
+ * insertion order); the rest stay collapsed and are reported in `skipped`.
+ */
+export function limitExpanded(
+  graph: DependencyGraph,
+  expandedModules: ReadonlySet<string>,
+  maxFiles: number = MAX_DRAWN_FILES,
+): {expanded: ReadonlySet<string>; skipped: string[]} {
+  const sizes = new Map(
+    graph.modules.map(module => [module.id, module.filePaths.length]),
+  );
+  let total = 0;
+  for (const id of expandedModules) total += sizes.get(id) ?? 0;
+  if (total <= maxFiles) return {expanded: expandedModules, skipped: []};
+
+  const kept = new Set<string>();
+  const skipped: string[] = [];
+  let drawn = 0;
+  for (const id of [...expandedModules].reverse()) {
+    const size = sizes.get(id) ?? 0;
+    if (drawn + size <= maxFiles) {
+      kept.add(id);
+      drawn += size;
+    } else {
+      skipped.push(id);
+    }
+  }
+  return {
+    expanded: new Set([...expandedModules].filter(id => kept.has(id))),
+    skipped: skipped.reverse(),
+  };
+}
+
+/**
+ * Rankers to try in turn. On some mixes of open and closed folders dagre's
+ * default ranker ends with "Not possible to find intersection inside of the
+ * rectangle" while placing edge end points, which the map does not even use
+ * (React Flow draws its own edges). dagre lays out a copy of the graph and
+ * only writes positions back once it succeeds, so retrying is safe.
+ */
+const RANKERS = ['network-simplex', 'tight-tree', 'longest-path'] as const;
+
+type LayoutGraph = InstanceType<typeof dagre.graphlib.Graph>;
+
+function runLayout(layout: LayoutGraph): void {
+  let lastError: unknown;
+  for (const ranker of RANKERS) {
+    layout.setGraph({...(layout.graph() as object), ranker});
+    try {
+      dagre.layout(layout);
+      return;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
+}
+
+/**
  * Lays out the dependency map: collapsed modules as single nodes, expanded
  * modules as a box of file nodes, and import edges between whatever is
  * visible (several file imports between two units become one edge with a
@@ -136,7 +202,7 @@ export function layoutMap(
     }
   }
 
-  dagre.layout(layout);
+  runLayout(layout);
 
   const groups: MapNode[] = [];
   const leaves: MapNode[] = [];
@@ -222,7 +288,11 @@ export function layoutMap(
       source,
       target,
       label: count > 1 ? String(count) : undefined,
-      markerEnd: {type: MarkerType.ArrowClosed, width: 24, height: 24},
+      markerEnd: {
+        type: 'arrowclosed' as MarkerType,
+        width: 24,
+        height: 24,
+      },
       data: {count},
     }),
   );

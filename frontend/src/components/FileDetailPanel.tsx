@@ -9,10 +9,7 @@ import './FileDetailPanel.css';
 
 interface FileDetailPanelProps {
   path: string;
-  /**
-   * The analysis the file belongs to. When set, the panel shows the AI File
-   * Summary section, which loads on its own without blocking the rest.
-   */
+  /** The analysis the file belongs to; enables the optional AI overview. */
   analysisId?: string;
   /** Repository URL and commit, to link the source before details load. */
   repoUrl: string;
@@ -35,6 +32,8 @@ export interface ReadingOrderInfo {
   reason: string;
   /** Why the file sits at this position in the order. */
   orderReason: string;
+  /** Selects the previous file in the reading order; null at the start. */
+  onPrev: (() => void) | null;
   /** Selects the next file in the reading order; null at the end. */
   onNext: (() => void) | null;
 }
@@ -104,29 +103,76 @@ export function FileDetailPanel({
         </button>
       </div>
 
-      {readingOrder !== null && (
-        <section className="detail__reading" aria-label="Reading order">
-          <p className="detail__reading-position">
-            #{readingOrder.position} of {readingOrder.total} for “
-            {readingOrder.query}”
-          </p>
-          <p className="detail__muted">{readingOrder.reason}</p>
-          {readingOrder.orderReason !== '' && (
-            <p className="detail__muted">
-              <strong>Why #{readingOrder.position}:</strong>{' '}
-              {readingOrder.orderReason}
-            </p>
-          )}
-          <button
-            type="button"
-            className="button"
-            onClick={readingOrder.onNext ?? undefined}
-            disabled={readingOrder.onNext === null}
+      {(() => {
+        const aiBlock =
+          analysisId === undefined ? null : (
+            <AiSummarySection analysisId={analysisId} path={path} />
+          );
+
+        if (readingOrder !== null) {
+          return (
+            <section className="detail__reading" aria-label="Reading order">
+              <div className="detail__reading-nav">
+                <button
+                  type="button"
+                  className="detail__reading-arrow"
+                  aria-label="Previous in reading order"
+                  onClick={readingOrder.onPrev ?? undefined}
+                  disabled={readingOrder.onPrev === null}
+                >
+                  <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <path
+                      d="M10 3L5 8L10 13"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
+                <p className="detail__reading-position">
+                  <span className="detail__reading-step">
+                    #{readingOrder.position} of {readingOrder.total}
+                  </span>{' '}
+                  <span className="detail__reading-query">
+                    for “{readingOrder.query}”
+                  </span>
+                </p>
+                <button
+                  type="button"
+                  className="detail__reading-arrow"
+                  aria-label="Next in reading order"
+                  onClick={readingOrder.onNext ?? undefined}
+                  disabled={readingOrder.onNext === null}
+                >
+                  <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <path
+                      d="M6 3L11 8L6 13"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
+              </div>
+              {aiBlock !== null && (
+                <div className="detail__reading-summary">{aiBlock}</div>
+              )}
+            </section>
+          );
+        }
+
+        return aiBlock !== null ? (
+          <div
+            className="detail__ai-summary"
+            role="region"
+            aria-label="AI overview"
           >
-            Next in reading order →
-          </button>
-        </section>
-      )}
+            {aiBlock}
+          </div>
+        ) : null;
+      })()}
 
       {/* Single accordion combining Path, Commit, and Module info */}
       <CollapseSection title="File info">
@@ -155,14 +201,6 @@ export function FileDetailPanel({
           )}
         </dl>
       </CollapseSection>
-
-      {analysisId !== undefined && (
-        <AiSummarySection
-          analysisId={analysisId}
-          path={path}
-          onSelectFile={onSelectFile}
-        />
-      )}
 
       {failure !== null ? (
         <ErrorBanner error={failure.error} onRetry={onRetry} />

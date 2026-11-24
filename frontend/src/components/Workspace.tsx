@@ -8,7 +8,6 @@ import {
   useMemo,
   useState,
 } from 'react';
-import {encodeFilePath} from '../api/client.ts';
 import type {Analysis, DependencyGraph, OverviewFile} from '../api/types.ts';
 import type {SearchState} from '../state/analysisStore.ts';
 import {useAnalysisStore} from '../state/analysisStoreContext.ts';
@@ -76,6 +75,7 @@ export function Workspace({
   const [tourSteps, setTourSteps] = useState<readonly OverviewFile[] | null>(
     null,
   );
+  const [inTour, setInTour] = useState(false);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
 
@@ -97,6 +97,7 @@ export function Workspace({
   );
   const selectWorkspaceFile = useCallback(
     (path: string | null) => {
+      setInTour(false);
       if (path !== null) {
         setRightCollapsed(false);
       }
@@ -106,6 +107,13 @@ export function Workspace({
       selectFile(path);
     },
     [scopePaths, changeScopePaths, selectFile],
+  );
+  const selectTourFile = useCallback(
+    (path: string) => {
+      selectWorkspaceFile(path);
+      setInTour(true);
+    },
+    [selectWorkspaceFile],
   );
   // The tour opens by itself the first time a viewer reaches a workspace.
   const [firstRunTouring, setFirstRunTouring] = useState(
@@ -119,11 +127,6 @@ export function Workspace({
     onCloseHelpTour?.();
   }, [onCloseHelpTour]);
 
-  const sourceUrlFor = useCallback(
-    (path: string) =>
-      `${analysis.repoUrl}/blob/${analysis.sha}/${encodeFilePath(path)}`,
-    [analysis.repoUrl, analysis.sha],
-  );
   const matchedPaths = useMemo(
     () =>
       search === null || search.query === ''
@@ -131,12 +134,9 @@ export function Workspace({
         : new Set(search.matchedPaths ?? search.results.map(r => r.path)),
     [search],
   );
-  const readingOrder = readingOrderFor(
-    search,
-    tourSteps,
-    selectedPath,
-    selectWorkspaceFile,
-  );
+  const readingOrder = inTour
+    ? readingOrderFor(search, tourSteps, selectedPath, selectTourFile)
+    : null;
 
   const expiredBanner = expired && <ExpiredBanner analysis={analysis} />;
 
@@ -194,8 +194,8 @@ export function Workspace({
           onTabChange={changeTab}
           readingAvailable={search !== null}
           readingCount={search?.query === '' ? null : (search?.total ?? null)}
-          sourceUrlFor={sourceUrlFor}
           onSelectFile={selectWorkspaceFile}
+          onStartTour={() => setInTour(true)}
           onSelectArea={files => {
             changeScopePaths(new Set(files));
             const firstPath = files[0];
@@ -336,8 +336,8 @@ const TOUR_STEPS: readonly TourStep[] = [
       <p>
         Select a file, in the list or on the map, to see what it defines, what
         it imports and what imports it, with links to its source on GitHub. From
-        a reading list, <strong>Next in reading order</strong> takes you to the
-        next file.
+        a reading list, the <strong>next arrow</strong> takes you to the next
+        file.
       </p>
     ),
   },
@@ -376,12 +376,14 @@ function readingOrderFor(
     const entry = search.results[index];
     if (entry === undefined) return null;
     const next = search.results[index + 1];
+    const prev = index > 0 ? search.results[index - 1] : undefined;
     return {
       query: search.query,
       position: entry.position,
       total: search.total,
       reason: entry.reason,
       orderReason: entry.orderReason,
+      onPrev: prev === undefined ? null : () => selectFile(prev.path),
       onNext: next === undefined ? null : () => selectFile(next.path),
     };
   }
@@ -390,12 +392,14 @@ function readingOrderFor(
     const step = tourSteps[index];
     if (step === undefined) return null;
     const next = tourSteps[index + 1];
+    const prev = tourSteps[index - 1];
     return {
       query: 'reading tour',
       position: index + 1,
       total: tourSteps.length,
-      reason: step.summary,
+      reason: '',
       orderReason: step.reason,
+      onPrev: prev === undefined ? null : () => selectFile(prev.path),
       onNext: next === undefined ? null : () => selectFile(next.path),
     };
   }
@@ -410,8 +414,8 @@ function Sidebar({
   onTabChange,
   readingAvailable,
   readingCount,
-  sourceUrlFor,
   onSelectFile,
+  onStartTour,
   onSelectArea,
   onTourLoaded,
   collapsed,
@@ -423,8 +427,8 @@ function Sidebar({
   onTabChange: (tab: SidebarTab) => void;
   readingAvailable: boolean;
   readingCount: number | null;
-  sourceUrlFor: (path: string) => string;
   onSelectFile: (path: string) => void;
+  onStartTour: () => void;
   onSelectArea: (paths: string[]) => void;
   onTourLoaded: (tour: OverviewFile[]) => void;
   collapsed: boolean;
@@ -523,14 +527,12 @@ function Sidebar({
             analysisId={analysisId}
             selectedPath={selectedPath}
             onSelectFile={onSelectFile}
+            onStartTour={onStartTour}
             onSelectArea={onSelectArea}
             onTourLoaded={onTourLoaded}
           />
         ) : tab === 'reading' ? (
-          <ReadingPanel
-            sourceUrlFor={sourceUrlFor}
-            onSelectFile={onSelectFile}
-          />
+          <ReadingPanel onSelectFile={onSelectFile} onStartTour={onStartTour} />
         ) : (
           <ExplorerPanel onSelectFile={onSelectFile} />
         )}
@@ -540,11 +542,11 @@ function Sidebar({
 }
 
 function ReadingPanel({
-  sourceUrlFor,
   onSelectFile,
+  onStartTour,
 }: {
-  sourceUrlFor: (path: string) => string;
   onSelectFile: (path: string) => void;
+  onStartTour: () => void;
 }) {
   const search = useAnalysisStore(state => state.search);
   const selectedPath = useAnalysisStore(state => state.selectedPath);
@@ -557,8 +559,8 @@ function ReadingPanel({
     <ReadingList
       search={search}
       selectedPath={selectedPath}
-      sourceUrlFor={sourceUrlFor}
       onSelectFile={onSelectFile}
+      onStartTour={onStartTour}
       onLoadMore={loadMoreResults}
       onRefine={intent => runSearch(search.query, intent)}
       refinementDisabled={expired}

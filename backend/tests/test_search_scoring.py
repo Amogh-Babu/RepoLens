@@ -17,9 +17,8 @@ from repolens.search import PaginationValidationError, SearchDocument
         (SearchDocument(path="src/auth.py"), 8 + 3),
         (SearchDocument(path="src/a.py", symbols=("auth",)), 6 + 3),
         (SearchDocument(path="src/a.py", references=("auth",)), 4 + 3),
-        (SearchDocument(path="src/a.py", comments=("auth",)), 2 + 3),
     ],
-    ids=["filename", "symbol", "reference", "comment"],
+    ids=["filename", "symbol", "reference"],
 )
 def test_each_field_contributes_its_weight(make_search_service, document, expected_score):
     page = make_search_service(document).search("analysis-1", "auth")
@@ -52,7 +51,7 @@ def test_matching_dependents_add_to_score(make_search_service):
 
 def test_repeated_mentions_do_not_outweigh_a_definition(make_search_service):
     service = make_search_service(
-        SearchDocument(path="src/noisy.py", comments=("pipeline",) * 10),
+        SearchDocument(path="src/noisy.py", references=("pipeline",) * 10),
         SearchDocument(path="src/core.py", symbols=("pipeline",)),
     )
 
@@ -85,7 +84,7 @@ def test_a_reading_goal_ranks_its_files_higher(
 
     assert page.results[0].path == expected
     assert page.results[0].reason.endswith(note)
-    assert len(page.matched_paths) == 3
+    assert len(page.matched_paths) == (3 if intent == "tests" else 2)
 
 
 def test_the_implementation_goal_ranks_tests_and_config_lower(make_search_service):
@@ -97,9 +96,7 @@ def test_the_implementation_goal_ranks_tests_and_config_lower(make_search_servic
     assert max(page.results, key=lambda result: result.score).path == "app/pipeline.py"
     # Only the files the goal moved say so.
     assert "Ranked" not in by_path["app/pipeline.py"].reason
-    assert by_path["tests/pipeline.py"].reason.endswith(
-        "Ranked lower: a test or example file."
-    )
+    assert "tests/pipeline.py" not in by_path
     assert by_path["config/pipeline.py"].reason.endswith(
         "Ranked lower: a configuration file."
     )

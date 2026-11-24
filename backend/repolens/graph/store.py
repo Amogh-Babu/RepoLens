@@ -1,17 +1,18 @@
 """SQLite implementation of the RepoLens graph store."""
 
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from collections.abc import Callable
 from datetime import datetime, timezone
 import functools
 import json
 import logging
-import struct
 import sqlite3
 import threading
 import time
 from typing import Concatenate, ParamSpec, TypeVar
 import uuid
+
+import numpy as np
 
 from repolens.graph.models import (
     AnalyzedFile,
@@ -32,7 +33,9 @@ from repolens.graph.models import (
 )
 from repolens.graph.schema import init_schema
 from repolens.search.embedding import (
+    ChunkVectors,
     Embedder,
+    as_unit_vector,
     document_chunks,
 )
 from repolens.search.models import SearchDocument
@@ -42,6 +45,15 @@ from repolens.search.ports import AnalysisUnavailableError
 _LOGGER = logging.getLogger(__name__)
 
 DEFAULT_TTL_SECONDS = 24 * 60 * 60
+
+# Chunks per embedder call while indexing. Cancellation is checked between
+# calls, so a cancelled analysis stops within one group. The embedder batches
+# further inside a group.
+EMBEDDING_GROUP_SIZE = 512
+
+# Completed analyses whose search documents and vectors stay loaded. Searching
+# one analysis repeatedly is the common case; a few entries bound the memory.
+SEARCH_CACHE_SIZE = 2
 
 _ACTIVE_STATUSES = ("queued", "running")
 
@@ -218,6 +230,8 @@ class SqliteGraphStore:
         self.embedder = embedder
         self._lock = threading.RLock()
         self._waiters: dict[str, int] = {}
+        # analysis id -> {"documents": [...], "vectors": ChunkVectors}
+        self._search_cache: OrderedDict[str, dict[str, object]] = OrderedDict()
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         if db_path != ":memory:":
@@ -236,7 +250,9 @@ class SqliteGraphStore:
         self._conn.close()
 
     def build_embeddings(
-        self, files: tuple[AnalyzedFile, ...]
+        self,
+        files: tuple[AnalyzedFile, ...],
+        should_continue: Callable[[], bool] | None = None,
     ) -> tuple[FileEmbeddingRecord, ...]:
         """Create bounded search vectors for parsed files.
 
@@ -244,42 +260,39 @@ class SqliteGraphStore:
         network for its first download, a broken cache) or fails, no vectors
         are made and search uses keywords only. The map, overview and
         keyword search still work.
+
+        Chunks go to the embedder in groups of `EMBEDDING_GROUP_SIZE`,
+        shortest first so each group pads to similar lengths, and each vector
+        is packed to float32 bytes as soon as it is made. `should_continue`
+        is called between groups; once it returns False (the analysis was
+        cancelled) indexing stops and returns no vectors.
         """
         if self.embedder is None:
             return ()
-        searchable = [file for file in files if file.parsed]
-        documents = {
-            file.path: SearchDocument(
-                path=file.path,
-                symbols=tuple(symbol.name for symbol in file.symbols),
-                references=tuple(imported.raw_name for imported in file.imports),
-                comments=tuple(
-                    comment.text
-                    for comment in file.comments
-                    if comment.kind == "comment"
-                ),
-                members=tuple(member.qualified_name for member in file.members),
-                docstrings=tuple(
-                    comment.text
-                    for comment in file.comments
-                    if comment.kind == "docstring"
-                ),
-            )
-            for file in searchable
-        }
         chunks = [
             (file.path, index, text)
-            for file in searchable
-            for index, text in enumerate(document_chunks(documents[file.path]))
+            for file in files
+            if file.parsed
+            for index, text in enumerate(document_chunks(_search_document(file)))
         ]
         if not chunks:
             return ()
+        order = sorted(range(len(chunks)), key=lambda index: len(chunks[index][2]))
+        packed: list[bytes] = [b""] * len(chunks)
         try:
-            vectors = self.embedder.embed([text for _, _, text in chunks])
-            if len(vectors) != len(chunks):
-                raise ValueError(
-                    "The embedder returned a different number of vectors than chunks."
-                )
+            for start in range(0, len(order), EMBEDDING_GROUP_SIZE):
+                if should_continue is not None and not should_continue():
+                    _LOGGER.info("Indexing stopped: the analysis is no longer active")
+                    return ()
+                group = order[start : start + EMBEDDING_GROUP_SIZE]
+                vectors = self.embedder.embed([chunks[index][2] for index in group])
+                if len(vectors) != len(group):
+                    raise ValueError(
+                        "The embedder returned a different number of vectors"
+                        " than chunks."
+                    )
+                for index, vector in zip(group, vectors, strict=True):
+                    packed[index] = _pack_vector(vector)
         except Exception:
             _LOGGER.warning(
                 "Semantic indexing failed; search will use keywords only",
@@ -294,7 +307,7 @@ class SqliteGraphStore:
                 model=self.embedder.model_id,
                 vector=vector,
             )
-            for (path, chunk_index, text), vector in zip(chunks, vectors, strict=True)
+            for (path, chunk_index, text), vector in zip(chunks, packed, strict=True)
         )
 
     @_locked
@@ -460,7 +473,7 @@ class SqliteGraphStore:
                                 chunk_index,
                                 text,
                                 self.embedder.model_id,
-                                struct.pack(f"<{len(vector)}f", *vector),
+                                _pack_vector(vector),
                             )
                             for embedding in file_vectors
                             for chunk_index, text, vector in (
@@ -469,6 +482,7 @@ class SqliteGraphStore:
                         ],
                     )
 
+        self._search_cache.pop(analysis.analysis_id, None)
         if analysis.status in _ACTIVE_STATUSES:
             self._waiters[analysis.analysis_id] = 1
         else:
@@ -609,6 +623,15 @@ class SqliteGraphStore:
                 (stage, analysis_id),
             )
         return cursor.rowcount == 1
+
+    @_locked
+    def is_active(self, analysis_id: str) -> bool:
+        """Return whether the analysis is still queued or running."""
+        row = self._conn.execute(
+            "SELECT status FROM analyses WHERE id = ?;",
+            (analysis_id,),
+        ).fetchone()
+        return row is not None and str(row["status"]) in _ACTIVE_STATUSES
 
     @_locked
     def fail_analysis(self, analysis_id: str, error: AnalysisErrorRecord) -> bool:
@@ -914,12 +937,23 @@ class SqliteGraphStore:
     def get_search_documents(self, analysis_id: str) -> list[SearchDocument]:
         """Return SearchDocument records for SearchService.
 
+        Six queries cover the whole analysis, and the result is cached along
+        with the analysis's vectors (see `SEARCH_CACHE_SIZE`): search and the
+        overview both read every document on every request.
+
         Raises AnalysisUnavailableError (via AnalysisNotFoundError,
         AnalysisExpiredError, or AnalysisNotReadyError) if the analysis is
         unavailable.
         """
         self._get_valid_analysis_row(analysis_id, require_completed=True)
+        entry = self._search_cache_entry(analysis_id)
+        documents = entry.get("documents")
+        if documents is None:
+            documents = self._load_search_documents(analysis_id)
+            entry["documents"] = documents
+        return list(documents)  # type: ignore[call-overload]
 
+    def _load_search_documents(self, analysis_id: str) -> list[SearchDocument]:
         file_rows = self._conn.execute(
             """
             SELECT id, path, entry_markers
@@ -930,99 +964,153 @@ class SqliteGraphStore:
             (analysis_id,),
         ).fetchall()
 
+        def grouped(query: str) -> dict[int, list[str]]:
+            """Run `query` and group its second column by its first (file id)."""
+            values: dict[int, list[str]] = defaultdict(list)
+            for row in self._conn.execute(query, (analysis_id,)):
+                values[int(row[0])].append(str(row[1]))
+            return values
+
+        symbols = grouped(
+            """
+            SELECT s.file_id, s.name FROM symbols s
+            JOIN files f ON f.id = s.file_id
+            WHERE f.analysis_id = ? ORDER BY s.id ASC;
+            """
+        )
+        references = grouped(
+            """
+            SELECT i.file_id, i.raw_name FROM imports i
+            JOIN files f ON f.id = i.file_id
+            WHERE f.analysis_id = ? ORDER BY i.id ASC;
+            """
+        )
+        members = grouped(
+            """
+            SELECT m.file_id, m.owner || '.' || m.name FROM members m
+            JOIN files f ON f.id = m.file_id
+            WHERE f.analysis_id = ? ORDER BY m.id ASC;
+            """
+        )
+        comments: dict[int, list[str]] = defaultdict(list)
+        docstrings: dict[int, list[str]] = defaultdict(list)
+        for row in self._conn.execute(
+            """
+            SELECT c.file_id, c.text, c.kind FROM comments c
+            JOIN files f ON f.id = c.file_id
+            WHERE f.analysis_id = ?
+            ORDER BY c.file_id ASC, c.line ASC, c.id ASC;
+            """,
+            (analysis_id,),
+        ):
+            target = docstrings if row["kind"] == "docstring" else comments
+            target[int(row["file_id"])].append(str(row["text"]))
+        depended_on_by = grouped(
+            """
+            SELECT DISTINCT i.target_file_id, f.path FROM imports i
+            JOIN files f ON i.file_id = f.id
+            WHERE f.analysis_id = ? AND i.kind = 'internal' AND f.parsed = 1
+              AND i.target_file_id IS NOT NULL
+            ORDER BY i.target_file_id ASC, f.path ASC;
+            """
+        )
+
         documents: list[SearchDocument] = []
         for file_row in file_rows:
             file_id = int(file_row["id"])
-            path = str(file_row["path"])
             raw_markers = str(file_row["entry_markers"] or "")
-            entry_markers = tuple(m for m in raw_markers.split(",") if m)
-
-            symbols = tuple(
-                str(r["name"])
-                for r in self._conn.execute(
-                    "SELECT name FROM symbols WHERE file_id = ? ORDER BY id ASC;",
-                    (file_id,),
-                ).fetchall()
-            )
-            references = tuple(
-                str(r["raw_name"])
-                for r in self._conn.execute(
-                    "SELECT raw_name FROM imports WHERE file_id = ? ORDER BY id ASC;",
-                    (file_id,),
-                ).fetchall()
-            )
-            prose = self._conn.execute(
-                "SELECT text, kind FROM comments WHERE file_id = ? ORDER BY line ASC;",
-                (file_id,),
-            ).fetchall()
-            comments = tuple(str(r["text"]) for r in prose if r["kind"] == "comment")
-            docstrings = tuple(
-                str(r["text"]) for r in prose if r["kind"] == "docstring"
-            )
-            members = tuple(
-                f"{r['owner']}.{r['name']}"
-                for r in self._conn.execute(
-                    "SELECT owner, name FROM members WHERE file_id = ? ORDER BY id ASC;",
-                    (file_id,),
-                ).fetchall()
-            )
-            depended_on_by = tuple(
-                str(r["importer_path"])
-                for r in self._conn.execute(
-                    """
-                    SELECT DISTINCT f.path AS importer_path
-                    FROM imports i
-                    JOIN files f ON i.file_id = f.id
-                    WHERE i.target_file_id = ? AND i.kind = 'internal' AND f.parsed = 1
-                    ORDER BY f.path ASC;
-                    """,
-                    (file_id,),
-                ).fetchall()
-            )
-
             documents.append(
                 SearchDocument(
-                    path=path,
-                    symbols=symbols,
-                    references=references,
-                    comments=comments,
-                    members=members,
-                    docstrings=docstrings,
-                    depended_on_by=depended_on_by,
-                    entry_markers=entry_markers,
+                    path=str(file_row["path"]),
+                    symbols=tuple(symbols.get(file_id, ())),
+                    references=tuple(references.get(file_id, ())),
+                    comments=tuple(comments.get(file_id, ())),
+                    members=tuple(members.get(file_id, ())),
+                    docstrings=tuple(docstrings.get(file_id, ())),
+                    depended_on_by=tuple(depended_on_by.get(file_id, ())),
+                    entry_markers=tuple(m for m in raw_markers.split(",") if m),
                 )
             )
-
         return documents
 
     @_locked
-    def get_search_embeddings(
-        self, analysis_id: str
-    ) -> dict[str, list[tuple[str, tuple[float, ...]]]]:
-        """Return current-model chunk text and vectors for a completed analysis."""
+    def get_search_embeddings(self, analysis_id: str) -> ChunkVectors:
+        """Return every current-model chunk vector of a completed analysis.
+
+        The vectors come back as one float32 matrix and stay cached for the
+        next search of the same analysis (see `SEARCH_CACHE_SIZE`).
+        """
         self._get_valid_analysis_row(analysis_id, require_completed=True)
         if self.embedder is None:
-            return {}
+            return ChunkVectors.empty()
+        entry = self._search_cache_entry(analysis_id)
+        vectors = entry.get("vectors")
+        if vectors is None:
+            vectors = self._load_chunk_vectors(analysis_id, self.embedder.model_id)
+            entry["vectors"] = vectors
+        return vectors  # type: ignore[return-value]
+
+    def _load_chunk_vectors(self, analysis_id: str, model: str) -> ChunkVectors:
         rows = self._conn.execute(
             """
             SELECT f.path, e.chunk_text, e.vector
             FROM embeddings e
             JOIN files f ON f.id = e.file_id
             WHERE f.analysis_id = ? AND e.model = ?
-            ORDER BY f.path ASC;
+            ORDER BY f.path ASC, e.chunk_index ASC;
             """,
-            (analysis_id, self.embedder.model_id),
-        ).fetchall()
-        embeddings: dict[str, list[tuple[str, tuple[float, ...]]]] = defaultdict(list)
+            (analysis_id, model),
+        )
+        path_index: dict[str, int] = {}
+        path_ids: list[int] = []
+        texts: list[str] = []
+        blobs: list[bytes] = []
+        row_bytes: int | None = None
         for row in rows:
             data = bytes(row["vector"])
-            if len(data) % 4 != 0:
+            if not data or len(data) % 4 != 0:
                 continue
-            dimensions = len(data) // 4
-            embeddings[str(row["path"])].append(
-                (str(row["chunk_text"]), struct.unpack(f"<{dimensions}f", data))
-            )
-        return dict(embeddings)
+            if row_bytes is None:
+                row_bytes = len(data)
+            if len(data) != row_bytes:
+                continue
+            path = str(row["path"])
+            path_ids.append(path_index.setdefault(path, len(path_index)))
+            texts.append(str(row["chunk_text"]))
+            blobs.append(data)
+        if not blobs or row_bytes is None:
+            return ChunkVectors.empty()
+        matrix = np.frombuffer(b"".join(blobs), dtype="<f4").reshape(
+            len(blobs), row_bytes // 4
+        )
+        del blobs
+        # Stored vectors are unit length already; this keeps rows written by
+        # older versions comparable too.
+        norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+        matrix = np.divide(
+            matrix,
+            norms,
+            out=np.zeros(matrix.shape, dtype=np.float32),
+            where=norms > 0,
+        )
+        return ChunkVectors(
+            paths=tuple(path_index),
+            path_ids=np.asarray(path_ids, dtype=np.int32),
+            texts=tuple(texts),
+            matrix=matrix,
+        )
+
+    def _search_cache_entry(self, analysis_id: str) -> dict[str, object]:
+        """Return the cache entry for a completed analysis, evicting the oldest."""
+        entry = self._search_cache.get(analysis_id)
+        if entry is None:
+            entry = {}
+            self._search_cache[analysis_id] = entry
+            while len(self._search_cache) > SEARCH_CACHE_SIZE:
+                self._search_cache.popitem(last=False)
+        else:
+            self._search_cache.move_to_end(analysis_id)
+        return entry
 
     @_locked
     def get_file_match_lines(
@@ -1293,7 +1381,10 @@ class SqliteGraphStore:
                 "DELETE FROM analyses WHERE expires_at <= ?;",
                 (cutoff,),
             )
-            return int(cursor.rowcount)
+            removed = int(cursor.rowcount)
+        if removed:
+            self._search_cache.clear()
+        return removed
 
     def _get_valid_analysis_row(
         self,
@@ -1312,3 +1403,27 @@ class SqliteGraphStore:
         if require_completed and str(row["status"]) != "completed":
             raise AnalysisNotReadyError(analysis_id)
         return row
+
+
+def _search_document(file: AnalyzedFile) -> SearchDocument:
+    """Return the searchable record of one analyzed file."""
+    return SearchDocument(
+        path=file.path,
+        symbols=tuple(symbol.name for symbol in file.symbols),
+        references=tuple(imported.raw_name for imported in file.imports),
+        comments=tuple(
+            comment.text for comment in file.comments if comment.kind == "comment"
+        ),
+        members=tuple(member.qualified_name for member in file.members),
+        docstrings=tuple(
+            comment.text for comment in file.comments if comment.kind == "docstring"
+        ),
+    )
+
+
+def _pack_vector(vector: object) -> bytes:
+    """Pack a vector as unit-length little-endian float32 bytes."""
+    if isinstance(vector, (bytes, bytearray, memoryview)):
+        return bytes(vector)
+    unit = as_unit_vector(vector)  # type: ignore[arg-type]
+    return unit.astype("<f4", copy=False).tobytes()

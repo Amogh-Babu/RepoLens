@@ -1,9 +1,18 @@
 {
   "repoUrl": "https://github.com/repolens-e2e/bookshop",
   "ref": "main",
-  "summary": {"filesAnalyzed": 14, "filesExcluded": 2, "filesUnparsed": 1},
+  "summary": {
+    "filesAnalyzed": 14,
+    "filesExcluded": 2,
+    "filesUnparsed": 1
+  },
   "modules": {
-    ".": {"name": "(root)", "filePaths": ["manage.py"]},
+    ".": {
+      "name": "(root)",
+      "filePaths": [
+        "manage.py"
+      ]
+    },
     "bookshop": {
       "name": "bookshop",
       "filePaths": [
@@ -30,72 +39,200 @@
     },
     "bookshop/legacy": {
       "name": "legacy",
-      "filePaths": ["bookshop/legacy/payments.py"]
+      "filePaths": [
+        "bookshop/legacy/payments.py"
+      ]
     },
     "bookshop/orders": {
       "name": "orders",
-      "filePaths": ["bookshop/orders/__init__.py", "bookshop/orders/checkout.py"]
+      "filePaths": [
+        "bookshop/orders/__init__.py",
+        "bookshop/orders/checkout.py"
+      ]
     },
-    "tests": {"name": "tests", "filePaths": ["tests/test_checkout.py"]}
+    "tests": {
+      "name": "tests",
+      "filePaths": [
+        "tests/test_checkout.py"
+      ]
+    }
   },
   "edges": [
-    ["bookshop/app.py", "bookshop/auth/__init__.py"],
-    ["bookshop/app.py", "bookshop/catalog/search.py"],
-    ["bookshop/app.py", "bookshop/config.py"],
-    ["bookshop/app.py", "bookshop/orders/checkout.py"],
-    ["bookshop/auth/__init__.py", "bookshop/auth/login.py"],
-    ["bookshop/auth/__init__.py", "bookshop/auth/tokens.py"],
-    ["bookshop/auth/login.py", "bookshop/auth/tokens.py"],
-    ["bookshop/auth/login.py", "bookshop/catalog/models.py"],
-    ["bookshop/auth/tokens.py", "bookshop/config.py"],
-    ["bookshop/catalog/search.py", "bookshop/catalog/models.py"],
-    ["bookshop/catalog/search.py", "bookshop/config.py"],
-    ["bookshop/orders/checkout.py", "bookshop/auth/tokens.py"],
-    ["bookshop/orders/checkout.py", "bookshop/catalog/models.py"],
-    ["manage.py", "bookshop/app.py"],
-    ["tests/test_checkout.py", "bookshop/auth/tokens.py"],
-    ["tests/test_checkout.py", "bookshop/catalog/models.py"],
-    ["tests/test_checkout.py", "bookshop/orders/checkout.py"]
+    [
+      "bookshop/app.py",
+      "bookshop/auth/__init__.py"
+    ],
+    [
+      "bookshop/app.py",
+      "bookshop/catalog/search.py"
+    ],
+    [
+      "bookshop/app.py",
+      "bookshop/config.py"
+    ],
+    [
+      "bookshop/app.py",
+      "bookshop/orders/checkout.py"
+    ],
+    [
+      "bookshop/auth/__init__.py",
+      "bookshop/auth/login.py"
+    ],
+    [
+      "bookshop/auth/__init__.py",
+      "bookshop/auth/tokens.py"
+    ],
+    [
+      "bookshop/auth/login.py",
+      "bookshop/auth/tokens.py"
+    ],
+    [
+      "bookshop/auth/login.py",
+      "bookshop/catalog/models.py"
+    ],
+    [
+      "bookshop/auth/tokens.py",
+      "bookshop/config.py"
+    ],
+    [
+      "bookshop/catalog/search.py",
+      "bookshop/catalog/models.py"
+    ],
+    [
+      "bookshop/catalog/search.py",
+      "bookshop/config.py"
+    ],
+    [
+      "bookshop/orders/checkout.py",
+      "bookshop/auth/tokens.py"
+    ],
+    [
+      "bookshop/orders/checkout.py",
+      "bookshop/catalog/models.py"
+    ],
+    [
+      "manage.py",
+      "bookshop/app.py"
+    ],
+    [
+      "tests/test_checkout.py",
+      "bookshop/auth/tokens.py"
+    ],
+    [
+      "tests/test_checkout.py",
+      "bookshop/catalog/models.py"
+    ],
+    [
+      "tests/test_checkout.py",
+      "bookshop/orders/checkout.py"
+    ]
   ],
   "files": {
     "manage.py": {
       "parsed": true,
       "lineCount": 14,
-      "symbols": [["main", "function", 8]],
+      "symbols": [
+        [
+          "main",
+          "function",
+          8
+        ]
+      ],
       "imports": [
-        ["sys", "external", "sys"],
-        ["bookshop.app", "internal", "bookshop/app.py"]
+        [
+          "sys",
+          "external",
+          "sys"
+        ],
+        [
+          "bookshop.app",
+          "internal",
+          "bookshop/app.py"
+        ]
       ],
       "importedBy": []
     },
     "bookshop/__init__.py": {
       "parsed": true,
       "lineCount": 3,
-      "symbols": [["__version__", "variable", 3]],
+      "symbols": [
+        [
+          "__version__",
+          "variable",
+          3
+        ]
+      ],
       "imports": [],
       "importedBy": []
     },
     "bookshop/app.py": {
       "parsed": true,
       "lineCount": 21,
-      "symbols": [["App", "class", 9], ["create_app", "function", 20]],
-      "imports": [
-        [".config", "internal", "bookshop/config.py"],
-        [".auth", "internal", "bookshop/auth/__init__.py"],
-        [".catalog.search", "internal", "bookshop/catalog/search.py"],
-        [".orders.checkout", "internal", "bookshop/orders/checkout.py"]
+      "symbols": [
+        [
+          "App",
+          "class",
+          9
+        ],
+        [
+          "create_app",
+          "function",
+          20
+        ]
       ],
-      "importedBy": ["manage.py"]
+      "imports": [
+        [
+          ".config",
+          "internal",
+          "bookshop/config.py"
+        ],
+        [
+          ".auth",
+          "internal",
+          "bookshop/auth/__init__.py"
+        ],
+        [
+          ".catalog.search",
+          "internal",
+          "bookshop/catalog/search.py"
+        ],
+        [
+          ".orders.checkout",
+          "internal",
+          "bookshop/orders/checkout.py"
+        ]
+      ],
+      "importedBy": [
+        "manage.py"
+      ]
     },
     "bookshop/config.py": {
       "parsed": true,
       "lineCount": 7,
       "symbols": [
-        ["DEBUG", "variable", 5],
-        ["SECRET_KEY", "variable", 6],
-        ["PAGE_SIZE", "variable", 7]
+        [
+          "DEBUG",
+          "variable",
+          5
+        ],
+        [
+          "SECRET_KEY",
+          "variable",
+          6
+        ],
+        [
+          "PAGE_SIZE",
+          "variable",
+          7
+        ]
       ],
-      "imports": [["os", "external", "os"]],
+      "imports": [
+        [
+          "os",
+          "external",
+          "os"
+        ]
+      ],
       "importedBy": [
         "bookshop/app.py",
         "bookshop/auth/tokens.py",
@@ -105,35 +242,96 @@
     "bookshop/auth/__init__.py": {
       "parsed": true,
       "lineCount": 6,
-      "symbols": [["__all__", "variable", 6]],
-      "imports": [
-        [".login", "internal", "bookshop/auth/login.py"],
-        [".tokens", "internal", "bookshop/auth/tokens.py"]
+      "symbols": [
+        [
+          "__all__",
+          "variable",
+          6
+        ]
       ],
-      "importedBy": ["bookshop/app.py"]
+      "imports": [
+        [
+          ".login",
+          "internal",
+          "bookshop/auth/login.py"
+        ],
+        [
+          ".tokens",
+          "internal",
+          "bookshop/auth/tokens.py"
+        ]
+      ],
+      "importedBy": [
+        "bookshop/app.py"
+      ]
     },
     "bookshop/auth/login.py": {
       "parsed": true,
       "lineCount": 22,
-      "symbols": [["login", "function", 9], ["login_required", "function", 15]],
-      "imports": [
-        ["functools", "external", "functools"],
-        ["..catalog.models", "internal", "bookshop/catalog/models.py"],
-        [".tokens", "internal", "bookshop/auth/tokens.py"]
+      "symbols": [
+        [
+          "login",
+          "function",
+          9
+        ],
+        [
+          "login_required",
+          "function",
+          15
+        ]
       ],
-      "importedBy": ["bookshop/auth/__init__.py"]
+      "imports": [
+        [
+          "functools",
+          "external",
+          "functools"
+        ],
+        [
+          "..catalog.models",
+          "internal",
+          "bookshop/catalog/models.py"
+        ],
+        [
+          ".tokens",
+          "internal",
+          "bookshop/auth/tokens.py"
+        ]
+      ],
+      "importedBy": [
+        "bookshop/auth/__init__.py"
+      ]
     },
     "bookshop/auth/tokens.py": {
       "parsed": true,
       "lineCount": 16,
       "symbols": [
-        ["issue_token", "function", 9],
-        ["verify_token", "function", 14]
+        [
+          "issue_token",
+          "function",
+          9
+        ],
+        [
+          "verify_token",
+          "function",
+          14
+        ]
       ],
       "imports": [
-        ["hashlib", "external", "hashlib"],
-        ["hmac", "external", "hmac"],
-        ["bookshop.config", "internal", "bookshop/config.py"]
+        [
+          "hashlib",
+          "external",
+          "hashlib"
+        ],
+        [
+          "hmac",
+          "external",
+          "hmac"
+        ],
+        [
+          "bookshop.config",
+          "internal",
+          "bookshop/config.py"
+        ]
       ],
       "importedBy": [
         "bookshop/auth/__init__.py",
@@ -152,8 +350,25 @@
     "bookshop/catalog/models.py": {
       "parsed": true,
       "lineCount": 21,
-      "symbols": [["Book", "class", 7], ["User", "class", 15]],
-      "imports": [["dataclasses", "external", "dataclasses"]],
+      "symbols": [
+        [
+          "Book",
+          "class",
+          7
+        ],
+        [
+          "User",
+          "class",
+          15
+        ]
+      ],
+      "imports": [
+        [
+          "dataclasses",
+          "external",
+          "dataclasses"
+        ]
+      ],
       "importedBy": [
         "bookshop/auth/login.py",
         "bookshop/catalog/search.py",
@@ -165,15 +380,37 @@
       "parsed": true,
       "lineCount": 15,
       "symbols": [
-        ["CATALOG_URL", "variable", 8],
-        ["search_books", "function", 11]
+        [
+          "CATALOG_URL",
+          "variable",
+          8
+        ],
+        [
+          "search_books",
+          "function",
+          11
+        ]
       ],
       "imports": [
-        ["requests", "external", "requests"],
-        ["bookshop.catalog.models", "internal", "bookshop/catalog/models.py"],
-        ["bookshop.config", "internal", "bookshop/config.py"]
+        [
+          "requests",
+          "external",
+          "requests"
+        ],
+        [
+          "bookshop.catalog.models",
+          "internal",
+          "bookshop/catalog/models.py"
+        ],
+        [
+          "bookshop.config",
+          "internal",
+          "bookshop/config.py"
+        ]
       ],
-      "importedBy": ["bookshop/app.py"]
+      "importedBy": [
+        "bookshop/app.py"
+      ]
     },
     "bookshop/legacy/payments.py": {
       "parsed": false,
@@ -192,22 +429,66 @@
     "bookshop/orders/checkout.py": {
       "parsed": true,
       "lineCount": 19,
-      "symbols": [["cart_total", "function", 9], ["place_order", "function", 13]],
-      "imports": [
-        ["bookshop.auth.tokens", "internal", "bookshop/auth/tokens.py"],
-        ["bookshop.catalog.models", "internal", "bookshop/catalog/models.py"],
-        [".receipts", "unresolved", null]
+      "symbols": [
+        [
+          "cart_total",
+          "function",
+          9
+        ],
+        [
+          "place_order",
+          "function",
+          13
+        ]
       ],
-      "importedBy": ["bookshop/app.py", "tests/test_checkout.py"]
+      "imports": [
+        [
+          "bookshop.auth.tokens",
+          "internal",
+          "bookshop/auth/tokens.py"
+        ],
+        [
+          "bookshop.catalog.models",
+          "internal",
+          "bookshop/catalog/models.py"
+        ],
+        [
+          ".receipts",
+          "unresolved",
+          null
+        ]
+      ],
+      "importedBy": [
+        "bookshop/app.py",
+        "tests/test_checkout.py"
+      ]
     },
     "tests/test_checkout.py": {
       "parsed": true,
       "lineCount": 11,
-      "symbols": [["test_place_order_empties_the_cart", "function", 8]],
+      "symbols": [
+        [
+          "test_place_order_empties_the_cart",
+          "function",
+          8
+        ]
+      ],
       "imports": [
-        ["bookshop.auth.tokens", "internal", "bookshop/auth/tokens.py"],
-        ["bookshop.catalog.models", "internal", "bookshop/catalog/models.py"],
-        ["bookshop.orders.checkout", "internal", "bookshop/orders/checkout.py"]
+        [
+          "bookshop.auth.tokens",
+          "internal",
+          "bookshop/auth/tokens.py"
+        ],
+        [
+          "bookshop.catalog.models",
+          "internal",
+          "bookshop/catalog/models.py"
+        ],
+        [
+          "bookshop.orders.checkout",
+          "internal",
+          "bookshop/orders/checkout.py"
+        ]
       ],
       "importedBy": []
     }
@@ -219,15 +500,13 @@
         "bookshop/auth/tokens.py",
         "bookshop/auth/login.py",
         "bookshop/auth/__init__.py",
-        "bookshop/orders/checkout.py",
-        "tests/test_checkout.py"
+        "bookshop/orders/checkout.py"
       ],
       "orderReasons": [
-        "Comes before bookshop/auth/login.py, bookshop/auth/__init__.py and 2 more, which import it.",
+        "Comes before bookshop/auth/login.py, bookshop/auth/__init__.py and 1 more, which import it.",
         "Comes after bookshop/auth/tokens.py, which it imports; comes before bookshop/auth/__init__.py, which imports it.",
         "Comes after bookshop/auth/tokens.py and bookshop/auth/login.py, which it imports.",
-        "Comes after bookshop/auth/tokens.py, which it imports; comes before tests/test_checkout.py, which imports it.",
-        "Comes after bookshop/auth/tokens.py and bookshop/orders/checkout.py, which it imports."
+        "Comes after bookshop/auth/tokens.py, which it imports."
       ]
     },
     {
@@ -249,18 +528,19 @@
       "query": "cart total",
       "readingOrder": [
         "bookshop/catalog/models.py",
-        "bookshop/orders/checkout.py",
-        "tests/test_checkout.py"
+        "bookshop/orders/checkout.py"
       ],
       "orderReasons": [
-        "Comes before bookshop/orders/checkout.py and tests/test_checkout.py, which import it.",
-        "Comes after bookshop/catalog/models.py, which it imports; comes before tests/test_checkout.py, which imports it.",
-        "Comes after bookshop/catalog/models.py and bookshop/orders/checkout.py, which it imports."
+        "Comes before bookshop/orders/checkout.py, which imports it.",
+        "Comes after bookshop/catalog/models.py, which it imports."
       ]
     },
     {
       "query": "login",
-      "readingOrder": ["bookshop/auth/login.py", "bookshop/auth/__init__.py"],
+      "readingOrder": [
+        "bookshop/auth/login.py",
+        "bookshop/auth/__init__.py"
+      ],
       "orderReasons": [
         "Comes before bookshop/auth/__init__.py, which imports it.",
         "Comes after bookshop/auth/login.py, which it imports."
@@ -268,7 +548,10 @@
     }
   ],
   "overview": {
-    "entryPoints": ["bookshop/app.py", "manage.py"],
+    "entryPoints": [
+      "bookshop/app.py",
+      "manage.py"
+    ],
     "categories": {
       "bookshop/__init__.py": "source",
       "bookshop/app.py": "source",

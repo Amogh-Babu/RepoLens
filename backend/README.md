@@ -82,7 +82,7 @@ no file is opened, imported, executed, or evaluated.
 - **Oversized repositories**: `require_repository_within_limits(count, bytes)`
   raises `RepositoryTooLargeError` (`REPOSITORY_TOO_LARGE`) once the files
   being kept pass `max_analyzable_bytes` (128 MiB) or
-  `max_analyzable_file_count` (20,000). It is the single enforcement point:
+  `max_analyzable_file_count` (5,000). It is the single enforcement point:
   `filter_files` and `filter_snapshot` call it while filtering a snapshot's
   file list, and `AnalysisService.analyze_repository` calls it with its running
   totals as it walks a checkout, so both paths reject an oversized repository
@@ -595,13 +595,11 @@ python -m benchmarks.import_classification            # print the table
 python -m benchmarks.import_classification --write    # refresh the record
 ```
 
-Measured overall: **84 of 85 correct (98.8%), 3 unresolved (3.5%)**, against 4
-references that should be unresolved. The one miss is real and left failing:
-`import app.config.defaults` is a `ModuleNotFoundError` where `app/config.py`
-shadows `app/config/`, and the classifier reports an internal edge instead.
-`tests/test_import_classification.py` reproduces the run against
-`benchmarks/measured_classification.json`, and the fixture README has the
-per-layout table, the labeling rules, and what each layout covers.
+Measured overall: **85 of 85 correct (100%), 4 unresolved (4.7%)**, against 4
+references that should be unresolved. `tests/test_import_classification.py`
+reproduces the run against `benchmarks/measured_classification.json`, and the
+fixture README has the per-layout table, the labeling rules, and what each
+layout covers.
 
 ## AI File Summaries (`repolens.ai`)
 
@@ -644,9 +642,8 @@ A summary has `summary`, `purpose`, `responsibilities`, `keySymbols`,
 `dependencies`, `sideEffects`, `uncertainties`, `evidence` and `coverage`; the
 response's `metadata` (model, prompt and schema version, source hash,
 timestamps, cache status, inspected line ranges) is filled in by RepoLens,
-not the model. The overview uses a cached, verified summary as a file's
-description when there is one and marks it `summarySource: "ai"`; it never
-changes which files are listed or their order.
+not the model. Cached summaries appear in the existing AI File Overview;
+repository onboarding descriptions remain deterministic and unchanged.
 
 ### Configuration
 

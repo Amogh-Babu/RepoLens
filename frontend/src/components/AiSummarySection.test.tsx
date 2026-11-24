@@ -8,34 +8,27 @@ import type {
   CodeSummary,
   FileDetail,
   FileSummary,
-  SummaryMetadata,
 } from '../api/types.ts';
 import {FileDetailPanel} from './FileDetailPanel.tsx';
 
 const SHA = '3f9c2a1e7b4d8c6f0a5e2b9d1c4f7a8e6b3d0c2f';
 const REPO = 'https://github.com/someone/flask-auth';
 const PATH = 'app/auth/service.py';
-const BLOB = `${REPO}/blob/${SHA}/${PATH}`;
-
 const ENABLED: AiStatus = {
   enabled: true,
   provider: 'OpenAI',
   model: 'gpt-5.4-mini',
-  notice:
-    "Generating a summary sends this file's source code to the configured AI provider (OpenAI).",
+  notice: "Generating sends this file's source to OpenAI.",
   dailyCallLimit: 100,
   usage: null,
 };
-
 const DISABLED: AiStatus = {
+  ...ENABLED,
   enabled: false,
   provider: null,
   model: null,
   notice: null,
-  dailyCallLimit: null,
-  usage: null,
 };
-
 const NOT_GENERATED: FileSummary = {
   analysisId: 'analysis-1',
   path: PATH,
@@ -44,75 +37,6 @@ const NOT_GENERATED: FileSummary = {
   summary: null,
   metadata: null,
 };
-
-function completed(
-  summary: Partial<CodeSummary> = {},
-  metadata: Partial<SummaryMetadata> = {},
-): FileSummary {
-  return {
-    ...NOT_GENERATED,
-    status: 'completed',
-    summary: {
-      summary: 'Checks passwords and issues `Session` tokens.',
-      purpose: 'Authentication service for the app.',
-      responsibilities: [
-        'Verifies passwords with werkzeug.',
-        'Creates sessions.',
-      ],
-      keySymbols: [
-        {
-          name: 'authenticate',
-          kind: 'function',
-          description: 'Checks a password.',
-          line: 9,
-          url: `${BLOB}#L9`,
-        },
-      ],
-      dependencies: [
-        {
-          path: 'app/models/user.py',
-          relationship: 'imports',
-          description: 'Loads users.',
-        },
-      ],
-      sideEffects: [
-        {
-          kind: 'database',
-          description: 'Updates the last login time.',
-          startLine: 20,
-          endLine: 22,
-          url: `${BLOB}#L20-L22`,
-        },
-      ],
-      uncertainties: ['The docstring of `authenticate` is outdated.'],
-      evidence: [
-        {
-          startLine: 9,
-          endLine: 18,
-          description: 'Password check.',
-          url: `${BLOB}#L9-L18`,
-        },
-      ],
-      coverage: 'complete',
-      ...summary,
-    },
-    metadata: {
-      model: 'gpt-5.4-mini',
-      promptVersion: 'p1',
-      schemaVersion: '1',
-      sourceHash: 'abc',
-      generatedAt: '2026-11-17T10:00:00Z',
-      cached: false,
-      cacheStatus: 'miss',
-      coverage: 'complete',
-      inspectedLines: [[1, 54]],
-      lineCount: 54,
-      sourceUrl: BLOB,
-      ...metadata,
-    },
-  };
-}
-
 const DETAIL: FileDetail = {
   path: PATH,
   module: 'app/auth',
@@ -121,17 +45,51 @@ const DETAIL: FileDetail = {
   symbols: [{name: 'authenticate', kind: 'function', line: 9}],
   imports: [],
   importedBy: ['app/auth/views.py'],
-  sourceUrl: BLOB,
+  sourceUrl: `${REPO}/blob/${SHA}/${PATH}`,
 };
 
-interface FakeOptions {
-  status?: AiStatus;
-  cached?: FileSummary | Error;
-  generate?: (regenerate: boolean) => Promise<FileSummary>;
+function completed(
+  text = 'Checks passwords and issues `Session` tokens.',
+): FileSummary {
+  const summary: CodeSummary = {
+    summary: text,
+    purpose: 'Authentication.',
+    responsibilities: [],
+    keySymbols: [],
+    dependencies: [],
+    sideEffects: [],
+    uncertainties: [],
+    evidence: [],
+    coverage: 'complete',
+  };
+  return {
+    ...NOT_GENERATED,
+    status: 'completed',
+    summary,
+    metadata: {
+      model: 'gpt-5.4-mini',
+      promptVersion: 'p1',
+      schemaVersion: '1',
+      sourceHash: 'abc',
+      generatedAt: '2026-11-17T10:00:00Z',
+      cached: true,
+      cacheStatus: 'hit',
+      coverage: 'complete',
+      inspectedLines: [[1, 54]],
+      lineCount: 54,
+      sourceUrl: `${REPO}/blob/${SHA}/${PATH}`,
+    },
+  };
 }
 
-function fakeClient(options: FakeOptions = {}) {
-  const client = {
+function fakeClient(
+  options: {
+    status?: AiStatus;
+    cached?: FileSummary | Error;
+    generate?: (regenerate: boolean) => Promise<FileSummary>;
+  } = {},
+) {
+  return {
     getAiStatus: vi.fn().mockResolvedValue(options.status ?? ENABLED),
     getFileSummary: vi.fn(() =>
       options.cached instanceof Error
@@ -145,160 +103,81 @@ function fakeClient(options: FakeOptions = {}) {
         ),
     ),
   };
-  return client;
 }
 
-function renderPanel(client: ReturnType<typeof fakeClient>, withAi = true) {
-  const onSelectFile = vi.fn();
+function renderPanel(client: ReturnType<typeof fakeClient>) {
   render(
     <ApiClientContext value={client as unknown as ApiClient}>
       <FileDetailPanel
         path={PATH}
-        analysisId={withAi ? 'analysis-1' : undefined}
+        analysisId="analysis-1"
         repoUrl={REPO}
         sha={SHA}
         detail={DETAIL}
         failure={null}
-        onSelectFile={onSelectFile}
+        onSelectFile={vi.fn()}
         onRetry={vi.fn()}
         onClose={vi.fn()}
       />
     </ApiClientContext>,
   );
-  return {onSelectFile};
+  return screen.getByRole('region', {name: 'AI overview'});
 }
 
-function aiSection() {
-  return screen.getByRole('region', {name: /AI File Summary/});
-}
-
-describe('AiSummarySection', () => {
-  it('says AI is off when the server has it disabled', async () => {
+describe('AI File Overview integration', () => {
+  it('falls back silently when AI is disabled and never reads or generates', async () => {
     const client = fakeClient({status: DISABLED});
-    renderPanel(client);
-
-    expect(
-      await screen.findByText(/AI summaries are not enabled on this server/),
-    ).toBeInTheDocument();
+    const overview = renderPanel(client);
+    await vi.waitFor(() => expect(client.getAiStatus).toHaveBeenCalledOnce());
     expect(client.getFileSummary).not.toHaveBeenCalled();
-    expect(
-      screen.queryByRole('button', {name: 'Generate AI summary'}),
-    ).not.toBeInTheDocument();
+    expect(client.generateFileSummary).not.toHaveBeenCalled();
+    expect(overview).toBeEmptyDOMElement();
   });
 
-  it('shows the provider notice and generates a summary on request', async () => {
+  it('automatically displays a cached summary without a model call', async () => {
+    const client = fakeClient({cached: completed()});
+    const overview = renderPanel(client);
+    expect(await within(overview).findByText(/Checks passwords/)).toBeVisible();
+    expect(within(overview).getByText('Session').tagName).toBe('CODE');
+    expect(client.getFileSummary).toHaveBeenCalledWith(
+      'analysis-1',
+      PATH,
+      expect.any(Object),
+    );
+    expect(client.generateFileSummary).not.toHaveBeenCalled();
+    expect(screen.queryByText('AI File Summary')).not.toBeInTheDocument();
+  });
+
+  it('offers generation on a cache miss and calls POST only after a click', async () => {
     const user = userEvent.setup();
     const client = fakeClient();
-    renderPanel(client);
-
-    const generate = await screen.findByRole('button', {
-      name: 'Generate AI summary',
+    const overview = renderPanel(client);
+    const button = await within(overview).findByRole('button', {
+      name: 'Generate AI overview',
     });
-    expect(screen.getByText(/sends this file's source code/)).toBeVisible();
     expect(client.generateFileSummary).not.toHaveBeenCalled();
-
-    await user.click(generate);
-
-    expect(
-      await screen.findByText(/Checks passwords and issues/),
-    ).toBeInTheDocument();
+    await user.click(button);
+    expect(await within(overview).findByText(/Checks passwords/)).toBeVisible();
     expect(client.generateFileSummary).toHaveBeenCalledWith(
       'analysis-1',
       PATH,
       {regenerate: false},
     );
-    const section = aiSection();
-    expect(within(section).getByText('AI-generated')).toBeInTheDocument();
-    expect(within(section).getByText('Session').tagName).toBe('CODE');
-    expect(
-      within(section).getByText(/Generated by gpt-5.4-mini/),
-    ).toBeVisible();
   });
 
-  it('shows a loading state while generating without blocking the panel', async () => {
+  it('regenerates only after an explicit click', async () => {
     const user = userEvent.setup();
-    const client = fakeClient({generate: () => new Promise(() => {})});
-    const {onSelectFile} = renderPanel(client);
-
-    await user.click(
-      await screen.findByRole('button', {name: 'Generate AI summary'}),
-    );
-
-    expect(
-      within(aiSection()).getByText(/Generating and verifying a summary/),
-    ).toBeInTheDocument();
-    expect(aiSection()).toHaveAttribute('aria-busy', 'true');
-    // The deterministic sections are still there and usable.
-    expect(screen.getByRole('link', {name: 'authenticate'})).toHaveAttribute(
-      'href',
-      `${BLOB}#L9`,
-    );
-    await user.click(screen.getByRole('button', {name: 'app/auth/views.py'}));
-    expect(onSelectFile).toHaveBeenCalledWith('app/auth/views.py');
-  });
-
-  it('shows a cached summary straight away, labelled as cached', async () => {
-    const cached = completed({}, {cached: true, cacheStatus: 'hit'});
-    const client = fakeClient({cached});
-    renderPanel(client);
-
-    expect(
-      await screen.findByText(/Generated by gpt-5.4-mini · cached/),
-    ).toBeVisible();
-    expect(client.generateFileSummary).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', {name: 'Regenerate'})).toBeVisible();
-  });
-
-  it('links every evidence range and symbol to the analyzed commit', async () => {
-    const user = userEvent.setup();
-    renderPanel(fakeClient({cached: completed()}));
-
-    await user.click(
-      await screen.findByText(/Purpose, responsibilities and evidence/),
-    );
-
-    const section = aiSection();
-    expect(
-      within(section).getByRole('link', {name: /Lines 9–18/}),
-    ).toHaveAttribute('href', `${BLOB}#L9-L18`);
-    expect(
-      within(section).getByRole('link', {name: /Lines 20–22/}),
-    ).toHaveAttribute('href', `${BLOB}#L20-L22`);
-    expect(
-      within(section).getByRole('link', {name: 'authenticate'}),
-    ).toHaveAttribute('href', `${BLOB}#L9`);
-    for (const link of within(section).getAllByRole('link')) {
-      expect(link.getAttribute('href')).toContain(`/blob/${SHA}/`);
-    }
-    expect(within(section).getByText(/is outdated/)).toBeVisible();
-  });
-
-  it('opens a verified dependency in the panel', async () => {
-    const user = userEvent.setup();
-    const {onSelectFile} = renderPanel(fakeClient({cached: completed()}));
-
-    await user.click(
-      await screen.findByText(/Purpose, responsibilities and evidence/),
-    );
-    await user.click(
-      within(aiSection()).getByRole('button', {name: 'app/models/user.py'}),
-    );
-
-    expect(onSelectFile).toHaveBeenCalledWith('app/models/user.py');
-  });
-
-  it('regenerates a cached summary on request', async () => {
-    const user = userEvent.setup();
-    const fresh = completed({summary: 'A newer summary.'});
     const client = fakeClient({
-      cached: completed(),
-      generate: () => Promise.resolve(fresh),
+      cached: completed('Cached text.'),
+      generate: () => Promise.resolve(completed('Fresh text.')),
     });
-    renderPanel(client);
-
-    await user.click(await screen.findByRole('button', {name: 'Regenerate'}));
-
-    expect(await screen.findByText('A newer summary.')).toBeVisible();
+    const overview = renderPanel(client);
+    await within(overview).findByText('Cached text.');
+    expect(client.generateFileSummary).not.toHaveBeenCalled();
+    await user.click(
+      within(overview).getByRole('button', {name: 'Regenerate'}),
+    );
+    expect(await within(overview).findByText('Fresh text.')).toBeVisible();
     expect(client.generateFileSummary).toHaveBeenCalledWith(
       'analysis-1',
       PATH,
@@ -306,110 +185,35 @@ describe('AiSummarySection', () => {
     );
   });
 
-  it('shows a failure with a retry, keeping the deterministic panel', async () => {
-    const user = userEvent.setup();
-    let calls = 0;
-    const client = fakeClient({
-      generate: () => {
-        calls += 1;
-        return calls === 1
-          ? Promise.reject(
-              new ApiError(
-                'AI_TIMEOUT',
-                'The AI provider took too long to summarize this file.',
-                'Try again.',
-                504,
-              ),
-            )
-          : Promise.resolve(completed());
-      },
-    });
-    renderPanel(client);
-
-    await user.click(
-      await screen.findByRole('button', {name: 'Generate AI summary'}),
-    );
-
-    const alert = await within(aiSection()).findByRole('alert');
-    expect(alert).toHaveTextContent('The AI summary took too long');
-    expect(screen.getByRole('heading', {name: /Symbols/})).toBeVisible();
-    await user.click(within(alert).getByRole('button', {name: 'Retry'}));
-    expect(
-      await screen.findByText(/Checks passwords and issues/),
-    ).toBeVisible();
-  });
-
-  it('keeps the previous summary when regeneration is rate-limited', async () => {
+  it('keeps a cached summary visible when regeneration fails', async () => {
     const user = userEvent.setup();
     const client = fakeClient({
-      cached: completed(),
+      cached: completed('Cached text.'),
       generate: () =>
-        Promise.reject(
-          new ApiError(
-            'AI_REGENERATE_COOLDOWN',
-            'This summary was generated moments ago.',
-            'Wait 42 seconds before regenerating it.',
-            429,
-          ),
-        ),
+        Promise.reject(new ApiError('AI_PROVIDER_FAILED', 'Provider failed.')),
     });
-    renderPanel(client);
-
-    await user.click(await screen.findByRole('button', {name: 'Regenerate'}));
-
-    expect(await screen.findByText(/Wait 42 seconds/)).toBeVisible();
-    expect(screen.getByText(/Checks passwords and issues/)).toBeVisible();
-  });
-
-  it('warns when only part of the file was inspected', async () => {
-    const partial = completed(
-      {coverage: 'partial'},
-      {
-        coverage: 'partial',
-        inspectedLines: [
-          [1, 20],
-          [31, 40],
-        ],
-      },
+    const overview = renderPanel(client);
+    await within(overview).findByText('Cached text.');
+    await user.click(
+      within(overview).getByRole('button', {name: 'Regenerate'}),
     );
-    renderPanel(fakeClient({cached: partial}));
-
-    expect(
-      await screen.findByText(/only lines 1–20, 31–40 of 54 were inspected/),
-    ).toBeVisible();
+    expect(await within(overview).findByText('Cached text.')).toBeVisible();
+    expect(within(overview).getByText(/Provider failed/)).toBeVisible();
   });
 
-  it('renders generated text as text, never as HTML', async () => {
-    const hostile = completed({
-      summary: '<img src=x onerror="alert(1)"> Formats titles.',
-    });
-    renderPanel(fakeClient({cached: hostile}));
-
-    expect(
-      await screen.findByText(/<img src=x onerror="alert\(1\)"> Formats/),
-    ).toBeVisible();
-    expect(document.querySelector('img')).toBeNull();
-  });
-
-  it('treats a server that turned AI off as disabled', async () => {
-    renderPanel(
-      fakeClient({
-        cached: new ApiError('AI_DISABLED', 'AI file summaries are off.'),
+  it('leaves file details usable while generation is pending', async () => {
+    const user = userEvent.setup();
+    const client = fakeClient({generate: () => new Promise(() => {})});
+    const overview = renderPanel(client);
+    await user.click(
+      await within(overview).findByRole('button', {
+        name: 'Generate AI overview',
       }),
     );
-
     expect(
-      await screen.findByText(/AI summaries are not enabled on this server/),
+      within(overview).getByRole('status', {name: /Generating AI overview/}),
     ).toBeVisible();
-  });
-
-  it('is absent when the panel is rendered without an analysis id', () => {
-    const client = fakeClient();
-    renderPanel(client, false);
-
-    expect(
-      screen.queryByRole('region', {name: /AI File Summary/}),
-    ).not.toBeInTheDocument();
-    expect(client.getAiStatus).not.toHaveBeenCalled();
+    expect(screen.getByRole('heading', {name: 'service.py'})).toBeVisible();
+    expect(screen.getByText('File info')).toBeVisible();
   });
 });

@@ -8,6 +8,7 @@ interface OverviewPanelProps {
   analysisId: string;
   selectedPath?: string | null;
   onSelectFile: (path: string) => void;
+  onStartTour?: () => void;
   onSelectArea: (paths: string[]) => void;
   onTourLoaded?: (tour: OverviewFile[]) => void;
 }
@@ -19,6 +20,7 @@ type OverviewResult =
 export function OverviewPanel({
   analysisId,
   onSelectFile,
+  onStartTour,
   onSelectArea,
   onTourLoaded,
 }: OverviewPanelProps) {
@@ -80,20 +82,21 @@ export function OverviewPanel({
 
   return (
     <div className="overview" aria-label="Repository overview">
-      <header className="overview__header">
-        <div className="overview__header-row">
-          <h2>Start here</h2>
-          {firstTourStep !== undefined && (
-            <button
-              type="button"
-              className="button overview__tour-btn"
-              onClick={() => openFile(firstTourStep)}
-            >
-              Start
-            </button>
-          )}
-        </div>
-      </header>
+      {firstTourStep !== undefined && (
+        <button
+          type="button"
+          className="overview__start"
+          onClick={() => {
+            openFile(firstTourStep);
+            onStartTour?.();
+          }}
+        >
+          <span>Start reading tour</span>
+          <span className="overview__start-arrow" aria-hidden="true">
+            →
+          </span>
+        </button>
+      )}
 
       <OverviewCollapse
         title="Entry points"
@@ -231,21 +234,9 @@ function OverviewFileButton({
       {index !== undefined && <span className="overview__step">{index}</span>}
       <span className="overview__file-copy">
         <span className="overview__path">{file.path}</span>
-        {file.summary && (
-          <span className="overview__meta">
-            {file.summarySource === 'ai' && (
-              <span
-                className="overview__ai-label"
-                title="AI-generated summary, checked against static analysis"
-              >
-                AI
-                <span className="visually-hidden"> summary:</span>
-              </span>
-            )}
-            {file.summary}
-          </span>
+        {index !== undefined && (
+          <span className="overview__reason">{file.reason}</span>
         )}
-        <span className="overview__reason">{file.reason}</span>
       </span>
     </button>
   );

@@ -50,9 +50,11 @@ class SearchServiceTest(unittest.TestCase):
     def test_fastembed_uses_the_bge_query_instruction_and_bare_passages(self) -> None:
         class FakeModel:
             texts = []
+            batch_size = None
 
-            def embed(self, texts):
+            def embed(self, texts, batch_size=256):
                 self.texts = list(texts)
+                self.batch_size = batch_size
                 # A vector that says which text it came from.
                 return [(float(len(text)),) for text in texts]
 
@@ -72,9 +74,11 @@ class SearchServiceTest(unittest.TestCase):
         self.assertEqual(["app", "pipeline implementation", query], model.texts)
         # ...but the vectors come back in input order.
         self.assertEqual(
-            [(float(len(query)),), (23.0,), (3.0,)],
-            vectors,
+            [[float(len(query))], [23.0], [3.0]],
+            [vector.tolist() for vector in vectors],
         )
+        # Batches stay small instead of fastembed's 256 (#118).
+        self.assertEqual(32, model.batch_size)
         # Vectors stored with the earlier "passage: " format are not reused.
         self.assertNotEqual("BAAI/bge-small-en-v1.5", embedder.model_id)
 
@@ -83,25 +87,39 @@ class SearchServiceTest(unittest.TestCase):
 
         self.assertEqual(["src/authentication.py"], [result.path for result in page.results])
         self.assertEqual(
-            {"filename", "symbol", "reference", "comment"},
+            {"filename", "symbol", "reference"},
             {match.kind for match in page.results[0].matches},
         )
         self.assertIn("authentication.py", page.results[0].reason)
 
-    def test_large_files_keep_symbols_in_separate_search_chunks(self) -> None:
+    def test_large_files_pack_names_into_small_bounded_chunks(self) -> None:
         document = SearchDocument(
             path="app/runtime.py",
-            symbols=("start_server", "load_config"),
-            docstrings=("Runtime details " + "context " * 200,),
+            symbols=("start_server", "load_config")
+            + tuple(f"helper_function_name_extra_{i}" for i in range(60)),
         )
 
         chunks = document_chunks(document)
 
         self.assertGreater(len(chunks), 2)
-        self.assertIn("app runtime py", chunks[0])
-        self.assertIn("start server", chunks[0])
-        self.assertIn("load config", chunks[1])
-        self.assertTrue(all(len(chunk.split()) <= 160 for chunk in chunks))
+        self.assertLessEqual(len(chunks), 16)
+        self.assertTrue(all(chunk.startswith("app runtime py\n") for chunk in chunks))
+        # Several short names share a chunk, in source order...
+        self.assertIn("start server load config", chunks[0])
+        # ...and every chunk stays small enough to match one topic sharply.
+        self.assertTrue(all(len(chunk.split()) <= 32 for chunk in chunks))
+
+    def test_one_name_longer_than_a_chunk_is_split(self) -> None:
+        document = SearchDocument(
+            path="a.py",
+            symbols=("_".join(f"w{i}" for i in range(80)),)
+            + tuple(f"name_{i}" for i in range(60)),
+        )
+
+        chunks = document_chunks(document)
+
+        self.assertTrue(all(len(chunk.split()) <= 32 for chunk in chunks))
+        self.assertIn("w0 w1", chunks[0])
 
     def test_ranks_shared_dependencies_earlier_and_explains_them(self) -> None:
         documents = [
@@ -109,9 +127,9 @@ class SearchServiceTest(unittest.TestCase):
             SearchDocument(
                 path="auth/routes.py",
                 symbols=("authenticate_request",),
-                depended_on_by=("auth/tests.py",),
+                depended_on_by=("auth/views.py",),
             ),
-            SearchDocument(path="auth/tests.py", comments=("authenticate user",)),
+            SearchDocument(path="auth/views.py", symbols=("authenticate_view",)),
         ]
         service = SearchService(InMemorySearchIndex({"analysis-1": documents}))
 
@@ -197,12 +215,12 @@ class SearchServiceTest(unittest.TestCase):
             SearchDocument(path="pkg/entry_cycle.py", symbols=("cycle_entry",)),
             SearchDocument(
                 path="pkg/loop_a.py",
-                comments=("cycle",),
+                symbols=("cycle_a",),
                 depended_on_by=("pkg/entry_cycle.py", "pkg/loop_b.py"),
             ),
             SearchDocument(
                 path="pkg/loop_b.py",
-                comments=("cycle",),
+                symbols=("cycle_b",),
                 depended_on_by=("pkg/loop_a.py",),
             ),
         ]
@@ -329,10 +347,10 @@ class SearchServiceTest(unittest.TestCase):
                     self.service.search("analysis-1", "auth", offset=offset, limit=limit)
 
     def test_reasons_are_single_line_and_bound_evidence_length(self) -> None:
-        long_comment = "authentication " + "context " * 30
+        long_symbol = "authentication_" + "context_" * 15
         service = SearchService(
             InMemorySearchIndex(
-                {"analysis-1": [SearchDocument(path="src/auth.py", comments=(long_comment,))]}
+                {"analysis-1": [SearchDocument(path="src/auth.py", symbols=(long_symbol,))]}
             )
         )
 

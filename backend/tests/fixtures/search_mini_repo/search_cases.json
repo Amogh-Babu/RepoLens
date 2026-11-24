@@ -2,10 +2,9 @@
   {
     "query": "authentication",
     "expected_paths": [
-      "app/authentication/__init__.py",
-      "app/users/repository.py",
       "app/authentication/service.py",
-      "app/authentication/routes.py"
+      "app/authentication/routes.py",
+      "app/authentication/__init__.py"
     ]
   },
   {
@@ -26,8 +25,8 @@
   {
     "query": "billing",
     "expected_paths": [
-      "app/billing/service.py",
-      "app/billing/__init__.py"
+      "app/billing/__init__.py",
+      "app/billing/service.py"
     ]
   },
   {

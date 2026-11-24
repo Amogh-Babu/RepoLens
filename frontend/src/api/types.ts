@@ -123,11 +123,6 @@ export interface OverviewFile {
   path: string;
   reason: string;
   summary: string;
-  /**
-   * Where `summary` came from: "ai" for a verified AI summary, "static"
-   * for the deterministic description. Missing means "static".
-   */
-  summarySource?: 'static' | 'ai';
   score?: number;
 }
 

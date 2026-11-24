@@ -57,7 +57,7 @@ def test_with_ai_disabled_every_existing_feature_still_works(store: SqliteGraphS
     assert client.get(f"/analyses/{ANALYSIS_ID}/graph").status_code == 200
     assert client.get(f"/analyses/{ANALYSIS_ID}/search", params={"q": "sign"}).status_code == 200
     overview = client.get(f"/analyses/{ANALYSIS_ID}/overview").json()
-    assert {item["summarySource"] for item in overview["tour"]} == {"static"}
+    assert overview["tour"]
 
 
 def test_enabled_without_a_key_counts_as_disabled(store: SqliteGraphStore) -> None:
@@ -408,40 +408,19 @@ def test_unfinished_analyses_cannot_be_summarized() -> None:
     assert response.json()["code"] == "ANALYSIS_NOT_READY"
 
 
-def test_the_overview_prefers_verified_ai_summaries_and_labels_them(
-    store: SqliteGraphStore,
-) -> None:
-    client = _client(make_service(store), store)
-    before = client.get(f"/analyses/{ANALYSIS_ID}/overview").json()
-
-    client.post(SUMMARY_URL)
-    after = client.get(f"/analyses/{ANALYSIS_ID}/overview").json()
-
-    for section in ("entryPoints", "coreFiles", "tour"):
-        assert [item["path"] for item in after[section]] == [
-            item["path"] for item in before[section]
-        ]
-    by_path = {item["path"]: item for item in after["tour"]}
-    assert by_path["app/auth.py"]["summarySource"] == "ai"
-    assert by_path["app/auth.py"]["summary"] == good_auth_answer()["summary"]
-    assert by_path["app/config.py"]["summarySource"] == "static"
-    assert after["areas"] == before["areas"]
-
-
-def test_the_overview_is_revalidated_while_ai_summaries_can_change_it(
+def test_generating_a_file_summary_does_not_create_a_duplicate_overview_surface(
     store: SqliteGraphStore,
 ) -> None:
     client = _client(make_service(store), store)
     first = client.get(f"/analyses/{ANALYSIS_ID}/overview")
-    assert first.headers["cache-control"] == "private, no-cache"
 
     client.post(SUMMARY_URL)
     second = client.get(
         f"/analyses/{ANALYSIS_ID}/overview", headers={"If-None-Match": first.headers["etag"]}
     )
 
-    assert second.status_code == 200
-    assert second.headers["etag"] != first.headers["etag"]
+    assert first.headers["cache-control"] == "private, immutable"
+    assert second.status_code == 304
 
 
 def test_status_reports_usage_and_estimated_cost_without_secrets(

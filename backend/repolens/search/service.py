@@ -9,7 +9,7 @@ from repolens.search.embedding import (
     QUERY_MARKER,
     Embedder,
     HashEmbedder,
-    cosine_similarity,
+    ChunkVectors,
 )
 from repolens.search.models import (
     MatchEvidence,
@@ -37,8 +37,9 @@ _TOKEN_PATTERN = re.compile(r"[\w]+", re.UNICODE)
 _LOGGER = logging.getLogger(__name__)
 _RRF_K = 60
 _KEYWORD_RRF_WEIGHT = 8
-_SEMANTIC_RRF_WEIGHT = 1
+_SEMANTIC_RRF_WEIGHT = 4
 _SEMANTIC_RESULT_LIMIT = 100
+_MAX_READING_LIST_RESULTS = 20
 SearchIntent = Literal["implementation", "configuration", "tests"]
 # How much a reading goal moves the files it is about, up or down.
 _GOAL_BOOST = 2.0
@@ -90,7 +91,11 @@ class SearchService:
     ) -> SearchPage:
         terms = self._topic_terms(self._parse_query(query))
         self._validate_pagination(offset, limit)
-        documents = list(self._index.get_search_documents(analysis_id))
+        documents = [
+            document
+            for document in self._index.get_search_documents(analysis_id)
+            if intent == "tests" or not self._is_test_path(document.path)
+        ]
         documents_by_path = {document.path: document for document in documents}
         keyword_matches: dict[str, tuple[MatchEvidence, ...]] = {}
         keyword_scores: dict[str, float] = {}
@@ -178,6 +183,14 @@ class SearchService:
                 )
             )
 
+        if len(ranked) > _MAX_READING_LIST_RESULTS:
+            ranked = sorted(
+                ranked,
+                key=lambda item: (-item.score, item.path.casefold()),
+            )[:_MAX_READING_LIST_RESULTS]
+            top_paths = {item.path for item in ranked}
+            candidates = [c for c in candidates if c[0].path in top_paths]
+
         ordered = self._reading_order(
             ranked, candidates, prioritize_relevance=bool(semantic_scores or intent)
         )
@@ -192,6 +205,12 @@ class SearchService:
         )
 
     @staticmethod
+    def _is_test_path(path: str) -> bool:
+        parts = re.split(r"[/_.-]+", path.casefold())
+        filename = path.rsplit("/", 1)[-1].casefold()
+        return any(part in _TEST_PARTS for part in parts) or filename == "conftest.py"
+
+    @staticmethod
     def _reading_goal(
         path: str, intent: SearchIntent | None
     ) -> tuple[float, str | None]:
@@ -204,7 +223,7 @@ class SearchService:
         if intent is None:
             return 1.0, None
         parts = re.split(r"[/_.-]+", path.casefold())
-        is_test = any(part in _TEST_PARTS for part in parts)
+        is_test = SearchService._is_test_path(path)
         is_config = not is_test and any(part in _CONFIG_PARTS for part in parts)
         if intent == "tests" and is_test:
             return _GOAL_BOOST, "Ranked higher: a test or example file."
@@ -227,27 +246,23 @@ class SearchService:
             return {}
         try:
             embeddings = get_embeddings(analysis_id)
+            if not isinstance(embeddings, ChunkVectors):
+                embeddings = ChunkVectors.from_pairs(embeddings)
+            if not len(embeddings):
+                return {}
             query_vector = self._embedder.embed([f"{QUERY_MARKER}{query}"])[0]
         except Exception:
             _LOGGER.warning(
                 "Semantic search unavailable for analysis %s", analysis_id, exc_info=True
             )
             return {}
-        scores: dict[str, tuple[float, str]] = {}
-        for document in documents:
-            chunks = embeddings.get(document.path)
-            if not chunks:
-                continue
-            best_score, best_text = max(
-                (
-                    (cosine_similarity(query_vector, vector), text)
-                    for text, vector in chunks
-                ),
-                key=lambda item: item[0],
-            )
-            if best_score > 0:
-                scores[document.path] = (best_score, best_text)
-        return scores
+        # One matrix product scores the query against every chunk.
+        best = embeddings.best_by_path(query_vector)
+        return {
+            document.path: best[document.path]
+            for document in documents
+            if document.path in best
+        }
 
     @staticmethod
     def _reading_order(
@@ -279,7 +294,7 @@ class SearchService:
                 if (
                     prioritize_relevance
                     and results_by_path[dependency_path].score
-                    < results_by_path[dependent_path].score * 0.5
+                    < results_by_path[dependent_path].score * 0.55
                 ):
                     deferred[dependent_path].add(dependency_path)
                     deferred_by[dependency_path].add(dependent_path)
@@ -501,8 +516,6 @@ class SearchService:
             ("symbol", document.symbols),
             ("member", document.members),
             ("reference", document.references),
-            ("docstring", document.docstrings),
-            ("comment", document.comments),
         )
         prose_patterns = {
             term: re.compile(rf"(?<![^\W_]){re.escape(term)}")

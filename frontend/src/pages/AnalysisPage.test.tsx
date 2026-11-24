@@ -325,24 +325,20 @@ describe('AnalysisPage search', () => {
     });
 
     await user.click(
-      await within(panel).findByRole('button', {name: 'Generate AI summary'}),
+      await within(panel).findByRole('button', {name: 'Generate AI overview'}),
     );
 
     expect(
       await within(panel).findByText(/Mock summary of app\/auth\/service\.py/),
     ).toBeInTheDocument();
-    expect(within(panel).getByText('AI-generated')).toBeInTheDocument();
-    // The summary's verified dependency links to the same file as the
-    // static Imports section; follow the summary's link.
-    const aiSection = within(panel).getByRole('region', {
-      name: /AI File Summary/,
-    });
+    // The compact overview remains alongside the ordinary static file details.
+    await user.click(within(panel).getByRole('button', {name: 'Imports 2'}));
     await user.click(
-      within(aiSection).getByRole('button', {name: 'app/models/user.py'}),
+      within(panel).getByRole('button', {name: 'app/models/user.py'}),
     );
     const next = await screen.findByRole('complementary', {name: 'user.py'});
     expect(
-      await within(next).findByRole('button', {name: 'Generate AI summary'}),
+      await within(next).findByRole('button', {name: 'Generate AI overview'}),
     ).toBeInTheDocument();
   });
 
@@ -366,7 +362,7 @@ describe('AnalysisPage search', () => {
     const panel = await screen.findByRole('complementary', {
       name: 'service.py',
     });
-    expect(within(panel).getByText(/#1 of \d+ for/)).toBeInTheDocument();
+    expect(within(panel).getByText(/#1 of \d+/)).toBeInTheDocument();
 
     await user.click(
       within(panel).getByRole('button', {name: /Next in reading order/}),
@@ -375,7 +371,7 @@ describe('AnalysisPage search', () => {
     const next = await screen.findByRole('complementary', {
       name: /^(?!service\.py)/,
     });
-    expect(within(next).getByText(/#2 of \d+ for/)).toBeInTheDocument();
+    expect(within(next).getByText(/#2 of \d+/)).toBeInTheDocument();
   });
 
   it('says when nothing matches', async () => {
@@ -406,12 +402,7 @@ describe('AnalysisPage search', () => {
       'tests',
     );
     expect(
-      await screen.findByText('Ranked higher: a test or example file.', {
-        exact: false,
-      }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('heading', {name: 'Reading order for “login”'}),
+      await screen.findByRole('heading', {name: 'Reading order for “login”'}),
     ).toBeInTheDocument();
   });
 

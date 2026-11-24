@@ -109,10 +109,9 @@ def test_search_endpoint_backed_by_sqlite_graph_store() -> None:
     )
     assert res.status_code == 200
     assert [r["path"] for r in res.json()["results"]] == [
-        "app/authentication/__init__.py",
-        "app/users/repository.py",
         "app/authentication/service.py",
         "app/authentication/routes.py",
+        "app/authentication/__init__.py",
     ]
 
     # 2. Unified FastAPI app via create_app

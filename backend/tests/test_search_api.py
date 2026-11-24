@@ -25,7 +25,7 @@ class SearchApiTest(unittest.TestCase):
 
         self.assertEqual(200, response.status_code)
         result = response.json()
-        self.assertEqual(4, result["total"])
+        self.assertEqual(3, result["total"])
         self.assertTrue(result["has_more"])
         self.assertEqual(2, len(result["results"]))
         self.assertTrue(result["results"][0]["reason"])

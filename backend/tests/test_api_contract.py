@@ -4,7 +4,13 @@ import time
 from fastapi.testclient import TestClient
 
 from repolens.api.app import create_app
-from repolens.graph import AnalysisRecord, AnalyzedFile, CommentRecord, SqliteGraphStore
+from repolens.graph import (
+    AnalysisRecord,
+    AnalyzedFile,
+    CommentRecord,
+    SqliteGraphStore,
+    SymbolRecord,
+)
 from test_graph_validation import (
     FLASK_AUTH_REPO_URL,
     FLASK_AUTH_SHA,
@@ -170,7 +176,7 @@ def test_completed_analysis_end_to_end_contract() -> None:
         "/analyses/flask-1/search", params={"q": "login", "limit": 5}
     ).json()
     assert search["query"] == "login"
-    assert search["total"] >= 4
+    assert search["total"] >= 2
     assert search["results"][0]["position"] == 1
     assert all(result["orderReason"] for result in search["results"])
     assert len(search["matchedPaths"]) == search["total"]
@@ -232,6 +238,7 @@ def test_vague_query_returns_semantic_evidence_over_the_api() -> None:
                 AnalyzedFile(
                     path="app/runtime.py",
                     module="app",
+                    symbols=(SymbolRecord("boot_web_application", "function", 1),),
                     comments=(
                         CommentRecord(1, "Boots the live web application.", "docstring"),
                     ),

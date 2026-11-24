@@ -13,7 +13,7 @@ An analysis request resolves a GitHub reference to a commit SHA. It reuses a val
 1. `POST /analyses` validates a repository URL and resolves the requested branch, tag, or default branch to a full commit SHA.
 2. The API looks for a completed, unexpired analysis keyed by `(repository, SHA)`. A cache hit is reused. Otherwise, the runner starts the work in a background thread.
 3. `GitHubSource` downloads the archive for the resolved SHA. Archive extraction validates paths and refuses unsafe archive entries.
-4. `SourceFileFilter` excludes vendored, generated, metadata, unsupported, and oversized files. The current repository limit is 20,000 analyzable files or 128 MiB of analyzable source. The default per-file limit is 2 MiB.
+4. `SourceFileFilter` excludes vendored, generated, metadata, unsupported, and oversized files. The current repository limit is 5,000 analyzable files or 128 MiB of analyzable source. The default per-file limit is 2 MiB.
 5. `AnalysisService` selects a registered `LanguageAnalyzer` by file extension. The current implementation registers `PythonAnalyzer` for `.py` and `.pyi` files.
 6. The import classifier resolves against the repository file index. It labels imports `internal`, `external`, or `unresolved`.
 7. The graph adapter converts the analysis to plain graph-store records. `SqliteGraphStore` writes the result to SQLite.
@@ -256,7 +256,7 @@ A pull request should have passing checks applicable to its changed paths and a 
 - The current source adapter only supports public repositories on github.com.
 - The current language analyzer supports Python `.py` and `.pyi` files; other languages are not yet advertised as supported.
 - Repository analysis is static. Runtime imports, dynamic loading, and execution-dependent behavior cannot be reconstructed reliably.
-- The default filter caps each file at 2 MiB, and the analyzable repository at 20,000 files and 128 MiB.
+- The default filter caps each file at 2 MiB, and the analyzable repository at 5,000 files and 128 MiB.
 - Results are keyed by repository and resolved commit SHA and expire after 24 hours. Reusing a cache entry does not extend its expiry.
 - The current graph store is SQLite and assumes a single application instance. It is not a distributed multi-writer database service.
 

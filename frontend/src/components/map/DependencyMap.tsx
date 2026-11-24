@@ -17,21 +17,29 @@ import {neighborhood, subgraph} from '../../utils/subgraph.ts';
 import type {MapActions} from './mapActions.ts';
 import {MapActionsContext} from './mapActions.ts';
 import {MapKey} from './MapKey.tsx';
-import type {MapEdge, MapHighlight, MapNode} from './mapLayout.ts';
+import type {MapEdge, MapHighlight, MapLayout, MapNode} from './mapLayout.ts';
 import {
   fileNodeId,
   groupNodeId,
   highlightAround,
-  layoutMap,
+  limitExpanded,
+  MAX_DRAWN_FILES,
   moduleNodeId,
   moduleIndex,
   unitFor,
 } from './mapLayout.ts';
 import {FileNode, ModuleGroupNode, ModuleNode} from './MapNodes.tsx';
+import {useMapLayout} from './useMapLayout.ts';
 import './DependencyMap.css';
 
 /** The map must draw within this budget or the list view is shown. */
 export const RENDER_BUDGET_MS = 2_000;
+
+/**
+ * Past this many nodes, only nodes and edges in view are drawn. Small maps
+ * draw everything: culling costs a visibility check on every pan and zoom.
+ */
+export const CULL_ABOVE_NODES = 100;
 
 const NODE_TYPES = {
   module: ModuleNode,
@@ -40,6 +48,7 @@ const NODE_TYPES = {
 };
 
 const FIT_VIEW_OPTIONS = {padding: 0.15, maxZoom: 1.2};
+const EMPTY_LAYOUT: MapLayout = {nodes: [], edges: []};
 /** The smallest zoom at which file names on the map can still be read. */
 const READABLE_ZOOM = 0.75;
 /** Room left above and beside a folder shown from its top-left corner. */
@@ -140,18 +149,32 @@ function MapCanvas({
     [graph, focusKey, center],
   );
   // Every module stays open when focused, so each match is its own node.
-  const shownExpanded = useMemo(
+  // Either way, folders past MAX_DRAWN_FILES files in total stay collapsed.
+  const {expanded: shownExpanded, skipped: tooBigToDraw} = useMemo(
     () =>
-      focusKey === null
-        ? expandedModules
-        : new Set(shownGraph.modules.map(module => module.id)),
+      limitExpanded(
+        shownGraph,
+        focusKey === null
+          ? expandedModules
+          : new Set(shownGraph.modules.map(module => module.id)),
+      ),
     [focusKey, expandedModules, shownGraph],
   );
-  const layout = useMemo(
-    () =>
-      layoutMap(shownGraph, shownExpanded, {collapsible: focusKey === null}),
-    [shownGraph, shownExpanded, focusKey],
+  const layoutState = useMapLayout(
+    shownGraph,
+    shownExpanded,
+    focusKey === null,
   );
+  const layout =
+    layoutState.status === 'ready'
+      ? layoutState.layout
+      : layoutState.status === 'pending' && layoutState.previous !== null
+        ? layoutState.previous
+        : EMPTY_LAYOUT;
+  const layoutFailed = layoutState.status === 'failed';
+  useEffect(() => {
+    if (layoutFailed) onTooSlow();
+  }, [layoutFailed, onTooSlow]);
   // Positions the user dragged nodes to; reset whenever the layout changes.
   const [nodes, setNodes] = useState<MapNode[]>(layout.nodes);
   const [layoutShown, setLayoutShown] = useState(layout);
@@ -224,7 +247,7 @@ function MapCanvas({
             ? ' map-node--match'
             : ' map-node--dimmed';
         }
-        return {...node, className};
+        return withClassName(node, className);
       }),
     [nodes, highlight, matchedUnits],
   );
@@ -238,7 +261,7 @@ function MapCanvas({
           type: MarkerType.ArrowClosed,
           width: 24,
           height: 24,
-          color: edgeColor(edge, highlight),
+          color: edgeColor(edge, highlight, matchedUnits),
         },
       })),
     [layout.edges, highlight, matchedUnits],
@@ -443,6 +466,13 @@ function MapCanvas({
           )}
           {toolbarEnd}
         </div>
+        {tooBigToDraw.length > 0 && (
+          <p className="map__selection-hint" role="status">
+            {tooBigToDraw.length === 1 ? 'A folder stays' : 'Some folders stay'}{' '}
+            collapsed: the map draws at most {MAX_DRAWN_FILES} files at once.
+            Switch to the list view to see every file.
+          </p>
+        )}
         {selectedModuleIsCollapsed && selectedPath !== null && (
           <p className="map__selection-hint" role="status">
             Inside <code>{selectedModuleId}/</code> (collapsed). Expand to see{' '}
@@ -450,9 +480,15 @@ function MapCanvas({
           </p>
         )}
         <div className="map__canvas">
-          {focused && layout.nodes.length === 0 && (
-            <p role="status">No matching files to show on the map.</p>
-          )}
+          {focused &&
+            layoutState.status === 'ready' &&
+            layout.nodes.length === 0 && (
+              <p role="status">No matching files to show on the map.</p>
+            )}
+          {layoutState.status === 'pending' &&
+            layoutState.previous === null && (
+              <p role="status">Laying out the map…</p>
+            )}
           {keyOpen && <MapKey id={keyId} onClose={() => showKey(false)} />}
           <button
             type="button"
@@ -473,6 +509,7 @@ function MapCanvas({
             }
             fitView
             fitViewOptions={FIT_VIEW_OPTIONS}
+            onlyRenderVisibleElements={layout.nodes.length > CULL_ABOVE_NODES}
             minZoom={0.1}
             nodesConnectable={false}
             nodesFocusable={false}
@@ -485,6 +522,20 @@ function MapCanvas({
       </div>
     </MapActionsContext>
   );
+}
+
+/**
+ * `node` with `className`, as the same object as last time when neither
+ * changed. Dragging one node then re-renders only that node instead of every
+ * node on the map. Keyed weakly, so nodes of old layouts are freed.
+ */
+const styledNodes = new WeakMap<MapNode, MapNode>();
+function withClassName(node: MapNode, className: string): MapNode {
+  const previous = styledNodes.get(node);
+  if (previous?.className === className) return previous;
+  const styled = {...node, className};
+  styledNodes.set(node, styled);
+  return styled;
 }
 
 function edgeClass(
@@ -506,7 +557,14 @@ function edgeClass(
   return 'map-edge';
 }
 
-function edgeColor(edge: MapEdge, highlight: MapHighlight): string {
+function edgeColor(
+  edge: MapEdge,
+  highlight: MapHighlight,
+  matchedUnits: ReadonlySet<string> | null,
+): string {
+  if (edgeClass(edge, highlight, matchedUnits).endsWith('--dimmed')) {
+    return 'var(--map-dimmed-edge)';
+  }
   if (highlight.selected === null || !highlight.edges.has(edge.id)) {
     return 'var(--color-muted)';
   }

@@ -26,6 +26,9 @@ export const DEFAULT_TIMEOUT_MS = 10_000;
 /** Search must answer within 5 seconds (Use Case 2). */
 export const SEARCH_TIMEOUT_MS = 5_000;
 
+/** AI file summary generation may take longer on the first request. */
+export const AI_SUMMARY_TIMEOUT_MS = 60_000;
+
 /**
  * Generating an AI summary waits for the model, possibly twice (one repair
  * attempt), so it gets far longer than an ordinary request.
