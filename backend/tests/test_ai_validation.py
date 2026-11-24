@@ -217,3 +217,53 @@ def test_multi_method_side_effect_citation_must_cover_each_claimed_method() -> N
         {"kind":"other", "description":"Output by `Second.show`.", "startLine":6, "endLine":7},
     ]
     assert validate_summary(answer, context).ok
+
+
+@pytest.mark.parametrize(
+    "kind, description",
+    [
+        ("network", "None observed in the inspected lines."),
+        ("network", "No network calls were observed."),
+        ("filesystem", "No file writes occur."),
+        ("other", "No side effects observed."),
+        ("network", "Does not make network requests."),
+    ],
+)
+def test_absence_of_activity_is_not_a_side_effect(kind, description) -> None:
+    answer = good_auth_answer(sideEffects=[{
+        "kind": kind, "description": description,
+        "startLine": 1, "endLine": 11,
+    }])
+    problems = _problems(answer)
+    assert any("absence of activity" in p for p in problems)
+
+
+def test_overly_broad_side_effect_range_is_rejected() -> None:
+    source = "\n".join(["print('hello')"] + ["pass"] * 150)
+    path = "app/broad.py"
+    store = seed_store({path: source})
+    context = build_context(
+        detail=store.get_file(ANALYSIS_ID, path),
+        parsed=AnalysisService().analyze_source(path, source),
+        source=source,
+        max_input_chars=40000,
+    )
+    answer = good_auth_answer(
+        keySymbols=[], dependencies=[], evidence=[{
+            "startLine": 1, "endLine": 1, "description": "Prints a greeting."
+        }],
+        sideEffects=[{
+            "kind": "other", "description": "Prints a greeting.",
+            "startLine": 1, "endLine": 151,
+        }],
+    )
+    problems = validate_summary(answer, context).problems
+    assert any("too broad" in p for p in problems)
+
+
+def test_real_short_side_effect_is_accepted() -> None:
+    answer = good_auth_answer(sideEffects=[{
+        "kind": "other", "description": "Writes a short log message.",
+        "startLine": 7, "endLine": 11,
+    }])
+    assert _problems(answer) == ()

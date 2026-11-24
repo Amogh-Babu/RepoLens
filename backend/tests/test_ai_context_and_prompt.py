@@ -334,3 +334,9 @@ def test_partial_context_metadata_excludes_uninspected_symbols() -> None:
         any(a <= symbol["line"] <= b for a, b in context.inspected_lines)
         for symbol in metadata["symbols"]
     )
+
+
+def test_prompt_requires_observed_concrete_side_effects() -> None:
+    assert "no network calls" in SYSTEM_INSTRUCTIONS
+    assert "none observed" in SYSTEM_INSTRUCTIONS
+    assert "100 lines per side effect" in SYSTEM_INSTRUCTIONS
