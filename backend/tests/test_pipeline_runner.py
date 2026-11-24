@@ -14,8 +14,9 @@ from fastapi.testclient import TestClient
 import pytest
 
 from repolens.api.app import create_app
+from repolens.analysis import AnalysisService
 from repolens.graph import SqliteGraphStore
-from repolens.ingestion import ArchiveDownloadError, RefNotFoundError, Snapshot
+from repolens.ingestion import ArchiveDownloadError, ArchiveLimits, RateLimitedError, RefNotFoundError, RepoNotFoundError, Snapshot, SourceFileFilter
 from repolens.pipeline import PipelineAnalysisRunner
 
 from analysis_fixture import FIXTURE_ROOT
@@ -96,12 +97,14 @@ def _client(
     resolver: FakeResolver | None = None,
     source: FakeSource | None = None,
     executor: ManualExecutor | None = None,
+    analysis_service: AnalysisService | None = None,
 ) -> TestClient:
     runner = PipelineAnalysisRunner(
         resolver=resolver or FakeResolver(),
         source=source or FakeSource(),
         executor=executor or ManualExecutor(),
         work_root=tmp_path,
+        analysis_service=analysis_service,
     )
     return TestClient(create_app(SqliteGraphStore(), runner=runner))
 
@@ -414,3 +417,72 @@ def test_shared_in_flight_analysis_completes_when_one_of_two_waiters_cancels(
 
     assert len(source.destinations) == 1
     assert client.get(f"/analyses/{analysis_id}").json()["status"] == "completed"
+
+
+def test_private_repository_is_reported_as_not_found(
+    tmp_path: Path,
+) -> None:
+    client = _client(
+        tmp_path,
+        resolver=FakeResolver(
+            error=RepoNotFoundError("octocat/private-repo")
+        ),
+    )
+
+    response = client.post("/analyses", json={"url": REPO_URL})
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "REPO_NOT_FOUND"
+    assert "Private repositories are not supported" in response.json()["hint"]
+
+
+def test_rate_limit_is_returned_by_post_analyses(
+    tmp_path: Path,
+) -> None:
+    client = _client(
+        tmp_path,
+        resolver=FakeResolver(error=RateLimitedError()),
+    )
+
+    response = client.post("/analyses", json={"url": REPO_URL})
+
+    assert response.status_code == 429
+    assert response.json()["code"] == "RATE_LIMITED"
+
+
+def test_oversized_repository_fails_analysis(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "large-repo"
+    repo.mkdir()
+
+    # Create three analyzable Python files
+    for index in range(3):
+        (repo / f"module_{index}.py").write_text(
+            f"VALUE = {index}\n",
+            encoding="utf-8",
+        )
+
+    analysis_service = AnalysisService(
+        file_filter=SourceFileFilter(
+            ArchiveLimits(max_analyzable_file_count=2)
+        )
+    )
+
+    client = _client(
+        tmp_path,
+        source=FakeSource(root=repo),
+        analysis_service=analysis_service,
+    )
+
+    analysis_id = client.post(
+        "/analyses",
+        json={"url": REPO_URL},
+    ).json()["analysisId"]
+
+    analysis = client.get(
+        f"/analyses/{analysis_id}"
+    ).json()
+
+    assert analysis["status"] == "failed"
+    assert analysis["error"]["code"] == "REPOSITORY_TOO_LARGE"
