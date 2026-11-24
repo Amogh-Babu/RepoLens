@@ -89,7 +89,7 @@ def test_fastembed_defaults_are_small() -> None:
     embedder = FastEmbedEmbedder()
 
     assert embedder.batch_size == 32
-    assert embedder.threads is None
+    assert embedder.threads in (1, 2)
 
 
 def test_indexing_embeds_in_groups_and_packs_float32(monkeypatch) -> None:

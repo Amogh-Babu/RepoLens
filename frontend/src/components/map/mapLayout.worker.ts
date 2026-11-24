@@ -1,0 +1,27 @@
+/// <reference lib="webworker" />
+
+import type {DependencyGraph} from '../../api/types.ts';
+import {layoutMap} from './mapLayout.ts';
+
+export interface LayoutRequest {
+  id: number;
+  graph: DependencyGraph;
+  expanded: string[];
+  collapsible: boolean;
+}
+
+export type LayoutResponse =
+  | {id: number; layout: ReturnType<typeof layoutMap>}
+  | {id: number; error: string};
+
+self.onmessage = (event: MessageEvent<LayoutRequest>) => {
+  const {id, graph, expanded, collapsible} = event.data;
+  try {
+    self.postMessage({
+      id,
+      layout: layoutMap(graph, new Set(expanded), {collapsible}),
+    } satisfies LayoutResponse);
+  } catch (error) {
+    self.postMessage({id, error: String(error)} satisfies LayoutResponse);
+  }
+};
