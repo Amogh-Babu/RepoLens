@@ -151,6 +151,30 @@ def _claims_text(summary: Mapping[str, Any]) -> str:
     return " ".join(parts).casefold()
 
 
+def _quoted_contradiction(text: str, phrase: str) -> bool:
+    """Recognize a forbidden claim *quoted and refuted* in the same sentence.
+
+    An inaccurate docstring can be discussed as evidence without endorsing its
+    statement. Keep this deliberately conservative: the sentence must attribute
+    the claim to a docstring/comment and explicitly contrast it with the code.
+    """
+    import re
+
+    for sentence in re.split(r"(?<=[.!?])\s+", text):
+        low = sentence.casefold()
+        if phrase.casefold() not in low:
+            continue
+        attributed = any(word in low for word in ("docstring", "comment", "documentation"))
+        refuted = any(word in low for word in (
+            "contradict", "misleading", "incorrect", "inaccurate", "false",
+            "actually", "however", "but the code", "but the implementation",
+            "does not", "not true", "rather than",
+        ))
+        if not (attributed and refuted):
+            return False
+    return True
+
+
 def _score_text(result: CaseResult, text: str, case: Mapping[str, Any]) -> None:
     folded = text.casefold()
     groups = case["behaviors"]
@@ -160,7 +184,32 @@ def _score_text(result: CaseResult, text: str, case: Mapping[str, Any]) -> None:
             result.behaviors_hit += 1
         else:
             result.missing_behaviors.append(group)
-    result.forbidden_hits = [phrase for phrase in case["forbidden"] if phrase.casefold() in folded]
+    result.forbidden_hits = [
+        phrase for phrase in case["forbidden"]
+        if phrase.casefold() in folded and not _quoted_contradiction(text, phrase)
+    ]
+
+
+def _delegated_side_effect_is_supported(
+    path: str, effect: Mapping[str, Any], case: Mapping[str, Any]
+) -> bool:
+    """Permit explicitly listed call-site effects, not arbitrary guesses.
+
+    The reference fixture specifies the exact call expressions a service layer
+    delegates to another module. An unlisted kind, or a citation that does not
+    contain that call, remains an unexpected side effect.
+    """
+    allowed = case.get("delegatedSideEffectCalls", {}).get(effect.get("kind"), [])
+    if not allowed:
+        return False
+    source_lines = (REPO_DIR / path).read_text(encoding="utf-8").splitlines()
+    start, end = effect.get("startLine"), effect.get("endLine")
+    if not isinstance(start, int) or not isinstance(end, int):
+        return False
+    if start < 1 or end < start or end > len(source_lines):
+        return False
+    cited = "\n".join(source_lines[start - 1:end])
+    return any(call in cited for call in allowed)
 
 
 def evaluate_summary(path: str, summary: Mapping[str, Any], case: Mapping[str, Any]) -> CaseResult:
@@ -176,11 +225,19 @@ def evaluate_summary(path: str, summary: Mapping[str, Any], case: Mapping[str, A
     reported = {item["kind"] for item in summary.get("sideEffects", [])}
     expected = set(case["sideEffectKinds"])
     result.missing_side_effects = sorted(expected - reported)
-    result.unexpected_side_effects = sorted(reported - expected)
+    result.unexpected_side_effects = sorted({
+        item["kind"] for item in summary.get("sideEffects", [])
+        if item["kind"] not in expected
+        and not _delegated_side_effect_is_supported(path, item, case)
+    })
     if case["mustFlagContradiction"]:
         uncertainties = " ".join(summary.get("uncertainties", [])).casefold()
         result.contradiction_flagged = "docstring" in uncertainties and any(
-            word in uncertainties for word in ("contradict", "but the code", "does not match")
+            word in uncertainties for word in (
+                "contradict", "but the code", "but the implementation",
+                "does not match", "misleading", "incorrect", "inaccurate",
+                "actually", "rather than",
+            )
         )
     wanted = case.get("coverageUnderTestBudget", "complete")
     result.coverage_ok = summary.get("coverage") == wanted
