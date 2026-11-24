@@ -1,7 +1,6 @@
 """Build a deterministic starting guide from a stored dependency graph."""
 
 from collections import Counter, defaultdict
-from collections.abc import Callable, Mapping
 from pathlib import PurePosixPath
 from typing import Any
 
@@ -69,43 +68,23 @@ _CONFIG_SUFFIXES = frozenset(
 
 
 class OverviewService:
-    """Create a repo-specific onboarding guide without retaining source files.
+    """Create a repo-specific onboarding guide without retaining source files."""
 
-    `ai_summaries`, when given, returns `{path: summary}` for files that
-    already have a verified AI summary. Those replace the deterministic
-    descriptions (and are labelled `summarySource: "ai"`); they never change
-    which files are listed or in what order.
-    """
-
-    def __init__(
-        self,
-        store: GraphStore,
-        ai_summaries: Callable[[str], Mapping[str, str]] | None = None,
-    ) -> None:
+    def __init__(self, store: GraphStore) -> None:
         self._store = store
-        self._ai_summaries = ai_summaries
 
     def get_overview(self, analysis_id: str) -> dict[str, Any]:
         graph = self._store.get_graph(analysis_id)
         documents = self._store.get_search_documents(analysis_id)
-        ai_summaries = (
-            self._ai_summaries(analysis_id) if self._ai_summaries is not None else {}
-        )
-        return build_overview(graph, documents, ai_summaries)
+        return build_overview(graph, documents)
 
 
 def build_overview(
     graph: DependencyGraph,
     documents: tuple[SearchDocument, ...] | list[SearchDocument],
-    ai_summaries: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
-    """Summarize entry points, central files, packages and a dependency-first tour.
-
-    Descriptions come from `ai_summaries` where a verified one exists, else
-    from the deterministic `_summary`. Ranking and order never depend on them.
-    """
+    """Summarize entry points, central files, packages and a dependency-first tour."""
     documents_by_path = {document.path: document for document in documents}
-    ai_texts = dict(ai_summaries or {})
     categories = {file.path: _category(file.path) for file in graph.files}
     dependents: dict[str, set[str]] = defaultdict(set)
     dependencies: dict[str, set[str]] = defaultdict(set)
@@ -127,7 +106,7 @@ def build_overview(
         {
             "path": path,
             "reason": reason,
-            **_description(path, documents_by_path, dependents, ai_texts),
+            "summary": _summary(path, documents_by_path, dependents),
         }
         for path, reason in entry_candidates[:12]
     ]
@@ -138,7 +117,7 @@ def build_overview(
             "path": path,
             "score": round(score, 6),
             "reason": f"Imported by {len(dependents[path])} analyzed files.",
-            **_description(path, documents_by_path, dependents, ai_texts),
+            "summary": _summary(path, documents_by_path, dependents),
         }
         for path, score in core_paths
     ]
@@ -195,7 +174,6 @@ def build_overview(
         documents_by_path,
         dependents,
         categories,
-        ai_texts,
     )
 
     return {
@@ -411,7 +389,6 @@ def _reading_tour(
     documents: dict[str, SearchDocument],
     dependents: dict[str, set[str]],
     categories: dict[str, str],
-    ai_texts: Mapping[str, str],
 ) -> list[dict[str, str]]:
     ordered: list[str] = []
     visited: set[str] = set()
@@ -450,23 +427,10 @@ def _reading_tour(
                 if dependents[path]
                 else "A central source file that anchors the repository structure."
             ),
-            **_description(path, documents, dependents, ai_texts),
+            "summary": _summary(path, documents, dependents),
         }
         for path in ordered[:12]
     ]
-
-
-def _description(
-    path: str,
-    documents: dict[str, SearchDocument],
-    dependents: dict[str, set[str]],
-    ai_texts: Mapping[str, str],
-) -> dict[str, str]:
-    """Return `summary` and its `summarySource`: a verified AI text, else static."""
-    ai_text = ai_texts.get(path)
-    if ai_text:
-        return {"summary": ai_text, "summarySource": "ai"}
-    return {"summary": _summary(path, documents, dependents), "summarySource": "static"}
 
 
 def _summary(

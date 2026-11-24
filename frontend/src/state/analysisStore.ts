@@ -8,7 +8,6 @@ import type {
   Analysis,
   AnalysisStatus,
   DependencyGraph,
-  FileAiSummary,
   FileDetail,
   RankedFile,
   SearchIntent,
@@ -85,13 +84,6 @@ export interface AnalysisState {
   fileDetails: Readonly<Record<string, FileDetail>>;
   /** Set when fetching the selected file's details failed. */
   fileFailure: RequestFailure | null;
-  /** AI-generated file summaries fetched so far, by path. */
-  fileSummaries: Readonly<Record<string, FileAiSummary>>;
-  /** Paths whose AI summary is currently being generated/fetched. */
-  fileSummaryLoading: Readonly<Record<string, boolean>>;
-  /** Failures while fetching AI file summaries, by path. */
-  fileSummaryFailures: Readonly<Record<string, RequestFailure>>;
-
   /** Directories expanded in the file explorer. */
   expandedDirs: ReadonlySet<string>;
   /** Modules expanded on the dependency map; the rest are collapsed. */
@@ -121,8 +113,6 @@ export interface AnalysisActions {
    * directories in the explorer and fetches its details if needed.
    */
   selectFile(path: string | null): void;
-  /** Retries fetching the AI summary for a file. */
-  retryFileSummary(path: string): void;
   /** Expands or collapses a directory in the file explorer. */
   toggleDir(path: string, expanded?: boolean): void;
   /** Expands or collapses a module on the dependency map. */
@@ -195,7 +185,6 @@ export function createAnalysisStore(
   let pollController: AbortController | null = null;
   let pollTimer: ReturnType<typeof setTimeout> | null = null;
   let graphController: AbortController | null = null;
-  const summaryControllers = new Map<string, AbortController>();
   let fileController: AbortController | null = null;
   let searchController: AbortController | null = null;
   let moreController: AbortController | null = null;
@@ -278,59 +267,6 @@ export function createAnalysisStore(
         const failure = failureFrom(error);
         if (expiredBy(failure)) return;
         if (failure !== null) set({fileFailure: failure});
-      }
-    }
-
-    async function fetchFileSummary(path: string) {
-      if (
-        get().fileSummaries[path] !== undefined ||
-        summaryControllers.has(path)
-      ) {
-        return;
-      }
-      const controller = new AbortController();
-      summaryControllers.set(path, controller);
-      set(state => {
-        const nextFailures = {...state.fileSummaryFailures};
-        delete nextFailures[path];
-        return {
-          fileSummaryLoading: {...state.fileSummaryLoading, [path]: true},
-          fileSummaryFailures: nextFailures,
-        };
-      });
-      try {
-        const summary = await api.getFileSummary(analysisId, path, {
-          signal: controller.signal,
-        });
-        if (controller.signal.aborted) return;
-        set(state => ({
-          fileSummaries: {...state.fileSummaries, [path]: summary},
-          fileSummaryLoading: {...state.fileSummaryLoading, [path]: false},
-        }));
-      } catch (error: unknown) {
-        if (controller.signal.aborted) return;
-        const failure = failureFrom(error);
-        if (expiredBy(failure)) {
-          set(state => ({
-            fileSummaryLoading: {...state.fileSummaryLoading, [path]: false},
-          }));
-          return;
-        }
-        set(state => ({
-          fileSummaryLoading: {...state.fileSummaryLoading, [path]: false},
-          ...(failure !== null
-            ? {
-                fileSummaryFailures: {
-                  ...state.fileSummaryFailures,
-                  [path]: failure,
-                },
-              }
-            : {}),
-        }));
-      } finally {
-        if (summaryControllers.get(path) === controller) {
-          summaryControllers.delete(path);
-        }
       }
     }
 
@@ -483,9 +419,6 @@ export function createAnalysisStore(
       selectionRevision: 0,
       fileDetails: {},
       fileFailure: null,
-      fileSummaries: {},
-      fileSummaryLoading: {},
-      fileSummaryFailures: {},
       expandedDirs: new Set(),
       expandedModules: new Set(),
       search: null,
@@ -577,12 +510,6 @@ export function createAnalysisStore(
           fileController = new AbortController();
           void fetchFile(path, fileController.signal);
         }
-        void fetchFileSummary(path);
-      },
-
-      retryFileSummary(path) {
-        if (get().expired) return;
-        void fetchFileSummary(path);
       },
 
       toggleDir(path, expanded) {
@@ -653,10 +580,6 @@ export function createAnalysisStore(
         get().stopPolling();
         graphController?.abort();
         fileController?.abort();
-        for (const controller of summaryControllers.values()) {
-          controller.abort();
-        }
-        summaryControllers.clear();
       },
     };
   });

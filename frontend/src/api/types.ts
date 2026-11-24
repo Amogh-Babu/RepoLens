@@ -123,11 +123,6 @@ export interface OverviewFile {
   path: string;
   reason: string;
   summary: string;
-  /**
-   * Where `summary` came from: "ai" for a verified AI summary, "static"
-   * for the deterministic description. Missing means "static".
-   */
-  summarySource?: 'static' | 'ai';
   score?: number;
 }
 
@@ -202,13 +197,6 @@ export interface FileDetail {
   importedBy: string[];
   /** https://github.com/<owner>/<repo>/blob/<sha>/<path> */
   sourceUrl: string;
-}
-
-/** AI-generated overview of a single file. */
-export interface FileAiSummary {
-  path: string;
-  summary: string;
-  cached: boolean;
 }
 
 export type MatchKind =

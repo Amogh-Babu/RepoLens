@@ -325,24 +325,20 @@ describe('AnalysisPage search', () => {
     });
 
     await user.click(
-      await within(panel).findByRole('button', {name: 'Generate AI summary'}),
+      await within(panel).findByRole('button', {name: 'Generate AI overview'}),
     );
 
     expect(
       await within(panel).findByText(/Mock summary of app\/auth\/service\.py/),
     ).toBeInTheDocument();
-    expect(within(panel).getByText('AI-generated')).toBeInTheDocument();
-    // The summary's verified dependency links to the same file as the
-    // static Imports section; follow the summary's link.
-    const aiSection = within(panel).getByRole('region', {
-      name: /AI File Summary/,
-    });
+    // The compact overview remains alongside the ordinary static file details.
+    await user.click(within(panel).getByRole('button', {name: 'Imports 2'}));
     await user.click(
-      within(aiSection).getByRole('button', {name: 'app/models/user.py'}),
+      within(panel).getByRole('button', {name: 'app/models/user.py'}),
     );
     const next = await screen.findByRole('complementary', {name: 'user.py'});
     expect(
-      await within(next).findByRole('button', {name: 'Generate AI summary'}),
+      await within(next).findByRole('button', {name: 'Generate AI overview'}),
     ).toBeInTheDocument();
   });
 

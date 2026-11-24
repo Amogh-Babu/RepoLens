@@ -8,7 +8,6 @@ import type {
   ApiErrorBody,
   CodeSummary,
   DependencyGraph,
-  FileAiSummary,
   FileDetail,
   FileSummary,
   RepositoryOverview,
@@ -141,7 +140,6 @@ interface MockAnalysis {
 export class MockApiClient implements ApiClient {
   private readonly latencyMs: number;
   private readonly stageDurationMs: number;
-  private readonly generatedSummaries = new Map<string, string>();
   private readonly now: () => number;
   private readonly repo: FixtureRepo;
   private readonly analyses = new Map<string, MockAnalysis>();
@@ -416,45 +414,6 @@ export class MockApiClient implements ApiClient {
       importedBy: this.importersOf(file.path),
       sourceUrl: `${analysis.repoUrl}/blob/${analysis.sha}/${file.path}`,
     };
-  }
-
-  async getFileSummary(
-    analysisId: string,
-    path: string,
-    options?: RequestOptions,
-  ): Promise<FileAiSummary> {
-    await this.delay(options);
-    this.findCompleted(analysisId);
-    const file = this.repo.files.find(f => f.path === path);
-    if (file === undefined) {
-      throw new ApiError(
-        'FILE_NOT_FOUND',
-        `"${path}" is not part of this analysis.`,
-        null,
-        404,
-      );
-    }
-
-    const cacheKey = `${analysisId}:${path}`;
-    const existing = this.generatedSummaries.get(cacheKey);
-    if (existing !== undefined) {
-      return {path: file.path, summary: existing, cached: true};
-    }
-
-    const symbolNames = file.symbols.slice(0, 4).map(s => `\`${s.name}\``);
-    const importers = this.importersOf(file.path);
-    const lines = [
-      `\`${file.path}\` belongs to the \`${moduleOf(file.path)}\` module (${file.lineCount} lines).`,
-      symbolNames.length > 0
-        ? `- Key definitions: ${symbolNames.join(', ')}`
-        : '- Contains module-level setup or configuration.',
-      importers.length > 0
-        ? `- Imported by ${importers.length} ${importers.length === 1 ? 'file' : 'files'} in this repository.`
-        : '- Not imported directly by other analyzed files.',
-    ];
-    const summary = lines.join('\n');
-    this.generatedSummaries.set(cacheKey, summary);
-    return {path: file.path, summary, cached: false};
   }
 
   async search(

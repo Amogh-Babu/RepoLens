@@ -159,8 +159,6 @@ class OverviewFileResponse(BaseModel):
     path: str
     reason: str
     summary: str
-    # "ai" when `summary` is a verified AI summary, "static" otherwise.
-    summarySource: Literal["static", "ai"] = "static"
     score: float | None = None
 
 
@@ -375,15 +373,11 @@ async def _contract_validation_handler(
 def create_analysis_router(
     store: SqliteGraphStore,
     runner: AnalysisRunner | None = None,
-    summaries: CodeSummaryService | None = None,
 ) -> APIRouter:
     """Create routes for starting, polling, cancelling, and searching analyses."""
     active_runner = runner or DefaultAnalysisRunner()
     search_service = SearchService(store)
-    overview_service = OverviewService(
-        store,
-        ai_summaries=summaries.cached_summary_texts if summaries is not None else None,
-    )
+    overview_service = OverviewService(store)
     router = APIRouter(route_class=_ContractRoute)
 
     @router.post(
@@ -539,15 +533,7 @@ def create_analysis_router(
                 status_code=exc.status_code,
                 content=exc.to_dict(),
             )
-        # With AI summaries on, a description can change once a file is
-        # summarized, so the overview is revalidated instead of immutable.
-        ai_active = summaries is not None and summaries.active
-        return cached_json_response(
-            request,
-            payload,
-            f"{analysis_id}-overview",
-            cache_control="private, no-cache" if ai_active else "private, immutable",
-        )
+        return cached_json_response(request, payload, f"{analysis_id}-overview")
 
     return router
 
@@ -621,9 +607,7 @@ def create_app(
     application.add_exception_handler(RequestValidationError, _contract_validation_handler)
     application.state.store = graph_store
     application.include_router(create_health_router(graph_store))
-    application.include_router(
-        create_analysis_router(graph_store, runner=runner, summaries=summary_service)
-    )
+    application.include_router(create_analysis_router(graph_store, runner=runner))
     application.include_router(create_ai_router(summary_service))
     application.include_router(create_graph_router(graph_store))
 

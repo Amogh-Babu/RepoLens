@@ -119,7 +119,7 @@ def create_server_from_environment(
         for origin in environ.get("REPOLENS_CORS_ORIGINS", "").split(",")
         if origin.strip()
     )
-store = SqliteGraphStore(
+    store = SqliteGraphStore(
         db_path,
         embedder=FastEmbedEmbedder(
             cache_dir=environ.get("REPOLENS_EMBEDDING_CACHE", "").strip() or None,

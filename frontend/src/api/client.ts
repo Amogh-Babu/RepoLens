@@ -3,7 +3,6 @@ import type {
   AiStatus,
   Analysis,
   DependencyGraph,
-  FileAiSummary,
   FileSummary,
   FileDetail,
   RepositoryOverview,
@@ -74,13 +73,6 @@ export interface ApiClient {
     path: string,
     options?: RequestOptions,
   ): Promise<FileDetail>;
-
-  /** GET /analyses/{id}/file-summary/{path}: AI-generated overview of a file. */
-  getFileSummary(
-    analysisId: string,
-    path: string,
-    options?: RequestOptions,
-  ): Promise<FileAiSummary>;
 
   /** GET /analyses/{id}/search: one page of the ranked reading list. */
   search(
@@ -196,18 +188,6 @@ export class HttpApiClient implements ApiClient {
       'GET',
       `/analyses/${encodeURIComponent(analysisId)}/files/${encodeFilePath(path)}`,
       options,
-    );
-  }
-
-  getFileSummary(
-    analysisId: string,
-    path: string,
-    options?: RequestOptions,
-  ): Promise<FileAiSummary> {
-    return this.request(
-      'GET',
-      `/analyses/${encodeURIComponent(analysisId)}/file-summary/${encodeFilePath(path)}`,
-      {timeoutMs: AI_SUMMARY_TIMEOUT_MS, ...options},
     );
   }
 
