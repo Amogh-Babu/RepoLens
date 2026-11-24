@@ -642,9 +642,8 @@ A summary has `summary`, `purpose`, `responsibilities`, `keySymbols`,
 `dependencies`, `sideEffects`, `uncertainties`, `evidence` and `coverage`; the
 response's `metadata` (model, prompt and schema version, source hash,
 timestamps, cache status, inspected line ranges) is filled in by RepoLens,
-not the model. The overview uses a cached, verified summary as a file's
-description when there is one and marks it `summarySource: "ai"`; it never
-changes which files are listed or their order.
+not the model. Cached summaries appear in the existing AI File Overview;
+repository onboarding descriptions remain deterministic and unchanged.
 
 ### Configuration
 
