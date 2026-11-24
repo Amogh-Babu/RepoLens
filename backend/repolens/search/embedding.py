@@ -4,9 +4,11 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 import hashlib
 import math
+import os
+from pathlib import Path
 import re
 import threading
-from typing import Protocol
+from typing import Callable, Protocol
 
 import numpy as np
 import numpy.typing as npt
@@ -38,6 +40,54 @@ _MAX_CHUNKS_PER_FILE = 16
 # low hundreds of megabytes, where fastembed's default of 256 can need
 # gigabytes.
 DEFAULT_EMBED_BATCH_SIZE = 32
+DEFAULT_MAX_EMBED_THREADS = 2
+
+
+def _read_resource_file(path: str) -> str | None:
+    try:
+        return Path(path).read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
+def effective_cpu_count(
+    *,
+    read_text: Callable[[str], str | None] = _read_resource_file,
+    affinity_count: int | None = None,
+    host_count: int | None = None,
+) -> int:
+    """Return CPUs available to this process, including container quotas."""
+    if host_count is None:
+        host_count = os.cpu_count()
+    if affinity_count is None:
+        try:
+            affinity_count = len(os.sched_getaffinity(0))
+        except (AttributeError, OSError):
+            affinity_count = None
+
+    limits = [value for value in (host_count, affinity_count) if value and value > 0]
+    quota: int | None = None
+    cpu_max = read_text("/sys/fs/cgroup/cpu.max")
+    if cpu_max:
+        fields = cpu_max.split()
+        if len(fields) >= 2 and fields[0] != "max":
+            try:
+                quota = math.ceil(int(fields[0]) / int(fields[1]))
+            except (ValueError, ZeroDivisionError):
+                pass
+    if quota is None:
+        quota_text = read_text("/sys/fs/cgroup/cpu/cpu.cfs_quota_us")
+        period_text = read_text("/sys/fs/cgroup/cpu/cpu.cfs_period_us")
+        if quota_text and period_text:
+            try:
+                quota_value = int(quota_text)
+                if quota_value > 0:
+                    quota = math.ceil(quota_value / int(period_text))
+            except (ValueError, ZeroDivisionError):
+                pass
+    if quota is not None and quota > 0:
+        limits.append(quota)
+    return max(1, min(limits, default=1))
 
 
 class Embedder(Protocol):
@@ -70,7 +120,9 @@ class FastEmbedEmbedder:
     ) -> None:
         self._cache_dir = cache_dir
         self._batch_size = max(1, batch_size or DEFAULT_EMBED_BATCH_SIZE)
-        self._threads = max(1, threads) if threads else None
+        self._threads = max(1, threads) if threads else min(
+            DEFAULT_MAX_EMBED_THREADS, effective_cpu_count()
+        )
         self._model = None
         self._lock = threading.Lock()
 
@@ -86,7 +138,7 @@ class FastEmbedEmbedder:
 
     @property
     def threads(self) -> int | None:
-        """Inference threads, or None for ONNX Runtime's default (all cores)."""
+        """Inference threads, bounded by container CPU capacity by default."""
         return self._threads
 
     def embed(self, texts: Sequence[str]) -> list[Embedding]:
