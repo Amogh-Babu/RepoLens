@@ -178,3 +178,42 @@ def test_schema_violations_and_oversized_fields_are_rejected(overrides) -> None:
 def test_unparseable_output_is_rejected() -> None:
     assert _problems({"_unparseable": True})
     assert _problems("not a dict")
+
+
+def test_multi_method_side_effect_citation_must_cover_each_claimed_method() -> None:
+    source = (
+        "class First:\n"
+        "    def show(self):\n"
+        "        print('first')\n"
+        "\n"
+        "class Second:\n"
+        "    def show(self):\n"
+        "        print('second')\n"
+    )
+    from repolens.analysis import AnalysisService
+    from tests.ai_fixture import seed_store
+    from repolens.ai.context import build_context
+
+    path = "app/two.py"
+    store = seed_store({path: source})
+    context = build_context(
+        detail=store.get_file(ANALYSIS_ID, path),
+        parsed=AnalysisService().analyze_source(path, source),
+        source=source,
+        max_input_chars=40000,
+    )
+    answer = good_auth_answer(
+        summary="Shows a message.", purpose="Output messages.",
+        responsibilities=["Prints text."],
+        keySymbols=[], dependencies=[], uncertainties=[],
+        evidence=[{"startLine": 2, "endLine": 3, "description": "First output."}],
+        sideEffects=[{"kind":"other", "description":"Output by `First.show` and `Second.show`.", "startLine":2, "endLine":3}],
+    )
+    verdict = validate_summary(answer, context)
+    assert any("Second.show" in x and "does not include" in x for x in verdict.problems)
+
+    answer["sideEffects"] = [
+        {"kind":"other", "description":"Output by `First.show`.", "startLine":2, "endLine":3},
+        {"kind":"other", "description":"Output by `Second.show`.", "startLine":6, "endLine":7},
+    ]
+    assert validate_summary(answer, context).ok

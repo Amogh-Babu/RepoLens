@@ -60,6 +60,7 @@ def validate_summary(payload: Any, context: CodeSummaryContext) -> ValidationRes
     problems.extend(_check_symbols(summary, context))
     problems.extend(_check_dependencies(summary, context))
     problems.extend(_check_ranges(summary, context))
+    problems.extend(_check_multi_method_side_effect_claims(summary, context))
     problems.extend(_check_code_names(summary, context))
     if context.coverage == "partial" and summary.coverage == "complete":
         problems.append(
@@ -157,6 +158,46 @@ def _check_ranges(summary: CodeSummary, context: CodeSummaryContext) -> list[str
             )
         elif not _inspected(context, start, end):
             problems.append(f"{field} range {start}-{end} cites lines that were not provided.")
+    return problems
+
+
+def _check_multi_method_side_effect_claims(
+    summary: CodeSummary, context: CodeSummaryContext
+) -> list[str]:
+    """Reject a citation that names several methods but covers only some.
+
+    This is deliberately a narrow structural rule. It catches a verified
+    production failure where a single side-effect citation named three
+    distinct `Class.show` implementations while its range held just one.
+    It does *not* claim to prove semantic accuracy, and descriptions with
+    fewer than two qualified, known methods remain covered by other checks.
+    """
+    methods = {
+        symbol.name: symbol.line
+        for symbol in context.symbols
+        if symbol.kind == "method" and "." in symbol.name
+    }
+    problems: list[str] = []
+    for effect in summary.side_effects:
+        mentioned = {
+            match.group(1).strip()
+            for match in _BACKTICKED.finditer(effect.description)
+            if match.group(1).strip() in methods
+        }
+        if len(mentioned) < 2:
+            continue
+        outside = sorted(
+            name
+            for name in mentioned
+            if not effect.start_line <= methods[name] <= effect.end_line
+        )
+        if outside:
+            problems.append(
+                "sideEffects range "
+                f"{effect.start_line}-{effect.end_line} does not include "
+                "definitions of the named methods: " + ", ".join(outside) + ". "
+                "Use separate entries with focused ranges or remove the claim."
+            )
     return problems
 
 

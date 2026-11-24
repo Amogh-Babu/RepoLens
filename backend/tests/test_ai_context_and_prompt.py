@@ -319,3 +319,18 @@ def test_one_huge_definition_is_cut_line_by_line_as_a_last_resort() -> None:
     assert context.coverage == "partial"
     assert context.inspected_lines[0][0] == 1
     assert len(context.inspected_lines) == 1
+
+
+def test_partial_context_metadata_excludes_uninspected_symbols() -> None:
+    from repolens.ai.prompts import metadata_payload
+
+    methods = "\n".join(f"def f_{i}():\n    return {i}\n" for i in range(80))
+    context = _context(source=methods, path="app/large.py", budget=400)
+    assert context.coverage == "partial"
+    metadata = metadata_payload(context)
+    assert len(metadata["symbols"]) < len(context.symbols)
+    assert metadata["symbols"]
+    assert all(
+        any(a <= symbol["line"] <= b for a, b in context.inspected_lines)
+        for symbol in metadata["symbols"]
+    )
