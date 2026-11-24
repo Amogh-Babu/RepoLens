@@ -656,7 +656,7 @@ description is available and clearly labels those descriptions as AI-generated.
 | `REPOLENS_AI_MODEL` | `gpt-5.4-mini` | Any Responses API model that supports Structured Outputs. |
 | `REPOLENS_AI_TIMEOUT_SECONDS` | `30` | Per-request provider timeout. |
 | `REPOLENS_AI_MAX_INPUT_CHARS` | `40000` | Most numbered source characters sent per request. Larger files are cut and marked partial. |
-| `REPOLENS_AI_MAX_OUTPUT_TOKENS` | `2048` | Cap on generated tokens (reasoning models count reasoning tokens too). |
+| `REPOLENS_AI_MAX_OUTPUT_TOKENS` | `4096` | Cap on generated tokens (reasoning models count reasoning tokens too). |
 | `REPOLENS_AI_MAX_CONCURRENT_REQUESTS` | `2` | Model calls at the same time; more answer `AI_BUSY`. |
 | `REPOLENS_AI_DAILY_CALL_LIMIT` | `100` | Model calls per UTC day, repair attempts included. |
 | `REPOLENS_AI_MAX_RETRIES` | `1` | SDK retries on transient provider errors. |

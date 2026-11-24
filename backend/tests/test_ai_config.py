@@ -15,7 +15,7 @@ def test_defaults_keep_ai_off_and_bounded() -> None:
     assert config.model == DEFAULT_MODEL == "gpt-5.4-mini"
     assert config.timeout_seconds == 30
     assert config.max_input_chars == 40_000
-    assert config.max_output_tokens == 2048
+    assert config.max_output_tokens == 4096
     assert config.max_concurrent_requests == 2
     assert config.daily_call_limit == 100
     assert config.reasoning_effort == ""
