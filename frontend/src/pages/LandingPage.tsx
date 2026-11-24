@@ -6,6 +6,7 @@ import {describeError} from '../api/describeError.ts';
 import {toApiError} from '../api/errors.ts';
 import type {DependencyGraph} from '../api/types.ts';
 import {ErrorBanner} from '../components/ErrorBanner.tsx';
+import {HelpMenu} from '../components/HelpMenu.tsx';
 import {ListFallback} from '../components/map/ListFallback.tsx';
 import {MapErrorBoundary} from '../components/map/MapErrorBoundary.tsx';
 import type {RepoInputValue} from '../components/RepoInputForm.tsx';
@@ -719,6 +720,8 @@ export function LandingPage() {
           onClose={() => setTourOpen(false)}
         />
       )}
+
+      <HelpMenu />
     </main>
   );
 }
