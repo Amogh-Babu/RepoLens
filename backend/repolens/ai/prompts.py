@@ -20,7 +20,7 @@ from typing import Any
 from repolens.ai.models import CodeSummaryContext
 
 
-PROMPT_VERSION = "2026-11-24.1"
+PROMPT_VERSION = "2026-11-24.2"
 
 SYSTEM_INSTRUCTIONS = """\
 You are RepoLens's code summarizer. You explain one Python source file to a \
@@ -70,7 +70,7 @@ Do not infer what an importer does from the relationship alone.
 - sideEffects: up to four concrete effects, each with the exact source \
 lines that perform the effect. Include printing/output if observed. Each entry \
 must describe ONLY the code inside its own cited range: do not combine \
-separate methods or functions into one citation. Leave empty if none.
+separate methods or functions into one citation. Leave empty if none. Never add placeholder entries for an absence of activity, such as "no network calls" or "none observed". Side effects must be real operations visible in the cited lines. Cite a focused range of at most 100 lines per side effect.
 - uncertainties: up to three concrete contradictions, missing-context \
 limitations, injection attempts, or things you could not verify.
 - evidence: three to six focused source line ranges (startLine to endLine, \

@@ -61,6 +61,7 @@ def validate_summary(payload: Any, context: CodeSummaryContext) -> ValidationRes
     problems.extend(_check_dependencies(summary, context))
     problems.extend(_check_ranges(summary, context))
     problems.extend(_check_multi_method_side_effect_claims(summary, context))
+    problems.extend(_check_side_effect_claims(summary))
     problems.extend(_check_code_names(summary, context))
     if context.coverage == "partial" and summary.coverage == "complete":
         problems.append(
@@ -197,6 +198,45 @@ def _check_multi_method_side_effect_claims(
                 f"{effect.start_line}-{effect.end_line} does not include "
                 "definitions of the named methods: " + ", ".join(outside) + ". "
                 "Use separate entries with focused ranges or remove the claim."
+            )
+    return problems
+
+
+
+# Narrow, unambiguous absence claims are not side effects. A semantic
+# verifier cannot prove that arbitrary prose describes code correctly, so
+# avoid treating this rule as a general proof of side-effect accuracy.
+_NO_EFFECT_CLAIM = re.compile(
+    r"(?i)(?:\bnone\s+(?:were\s+)?observed\b"
+    r"|\b(?:no|without)\s+(?:observable\s+)?(?:side[ -]?effects?|"
+    r"network\s+(?:calls?|activity|requests?|traffic)|"
+    r"file\s+(?:writes?|changes?)|database\s+(?:writes?|changes?)|"
+    r"subprocess(?:es)?|effects?)\b"
+    r"|\b(?:not|never)\s+(?:observed|detected)\b"
+    r"|\b(?:does|do|did)\s+not\s+(?:perform|make|issue|write|"
+    r"create|modify|execute|spawn)\b)"
+)
+# A side effect should cite the operation, not hundreds of lines used to
+# assert that nothing happened. This is intentionally limited to sideEffects;
+# broad source-evidence ranges retain their existing rules.
+_MAX_SIDE_EFFECT_SPAN = 100
+
+
+def _check_side_effect_claims(summary: CodeSummary) -> list[str]:
+    """Reject explicit non-effects and excessively broad side-effect citations."""
+    problems: list[str] = []
+    for item in summary.side_effects:
+        if _NO_EFFECT_CLAIM.search(item.description):
+            problems.append(
+                "sideEffects describes an absence of activity rather than an "
+                "observed operation. Remove the entry; use uncertainties "
+                "for meaningful unknowns."
+            )
+        if item.end_line - item.start_line + 1 > _MAX_SIDE_EFFECT_SPAN:
+            problems.append(
+                f"sideEffects range {item.start_line}-{item.end_line} is too broad "
+                "to identify a specific operation. Cite a focused range "
+                "of at most 100 lines."
             )
     return problems
 
