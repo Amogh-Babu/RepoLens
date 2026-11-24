@@ -4,12 +4,13 @@ import type {ApiClient} from '../api/client.ts';
 import {describeError} from '../api/describeError.ts';
 import {ApiError} from '../api/errors.ts';
 import type {AiStatus, FileSummary} from '../api/types.ts';
-import {AiSummaryContent} from './AiSummaryContent.tsx';
+import {AiSummaryDetails} from './AiSummaryDetails.tsx';
 import {ErrorBanner} from './ErrorBanner.tsx';
 
 interface AiSummarySectionProps {
   analysisId: string;
   path: string;
+  onSelectFile?: (path: string) => void;
 }
 
 type State =
@@ -44,7 +45,11 @@ function toApiError(error: unknown): ApiError {
 }
 
 /** Cache-read and explicit-generation controller for the existing overview UI. */
-export function AiSummarySection({analysisId, path}: AiSummarySectionProps) {
+export function AiSummarySection({
+  analysisId,
+  path,
+  onSelectFile,
+}: AiSummarySectionProps) {
   const api = useApiClient();
   const key = `${analysisId}\n${path}`;
   const [entry, setEntry] = useState<{key: string; state: State}>({
@@ -157,7 +162,11 @@ export function AiSummarySection({analysisId, path}: AiSummarySectionProps) {
       )}
       {data?.summary !== null && data?.summary !== undefined && (
         <>
-          <AiSummaryContent text={data.summary.summary} />
+          <AiSummaryDetails
+            summary={data.summary}
+            metadata={data.metadata}
+            onSelectFile={onSelectFile}
+          />
           {state.kind !== 'generating' && (
             <button
               type="button"

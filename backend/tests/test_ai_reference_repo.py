@@ -271,15 +271,23 @@ def test_the_deterministic_baseline_misses_what_the_code_does() -> None:
     assert baseline["notes_app/cache.py"].forbidden_hits
 
 
-def test_cached_file_summaries_do_not_replace_repository_overview_descriptions(
+def test_cached_file_summaries_appear_in_repository_overview(
     client: TestClient, analysis_id: str, summaries: dict[str, dict]
 ) -> None:
-    overview = client.get(f"/analyses/{analysis_id}/overview").json()
+    response = client.get(f"/analyses/{analysis_id}/overview")
+    assert response.status_code == 200
+    overview = response.json()
 
-    tour = {item["path"]: item for item in overview["tour"]}
-    summarized_tour_paths = tour.keys() & summaries.keys()
+    for section in ("entryPoints", "coreFiles", "tour"):
+        for item in overview[section]:
+            if item["path"] in summaries:
+                assert item["summarySource"] == "ai"
+                assert (
+                    item["summary"]
+                    == summaries[item["path"]]["summary"]["summary"]
+                )
+            else:
+                assert item["summarySource"] == "static"
 
-    assert summarized_tour_paths
-    assert all("summarySource" not in item for item in tour.values())
-    for path in summarized_tour_paths:
-        assert tour[path]["summary"] != summaries[path]["summary"]["summary"]
+    tour_paths = {item["path"] for item in overview["tour"]}
+    assert tour_paths & summaries.keys()

@@ -148,6 +148,103 @@ describe('AI File Overview integration', () => {
     expect(screen.queryByText('AI File Summary')).not.toBeInTheDocument();
   });
 
+  it('shows structured details, evidence, and an AI accuracy disclaimer', async () => {
+    const user = userEvent.setup();
+    const item = completed();
+    if (item.summary === null) throw new Error('Missing summary fixture');
+    item.summary.purpose = 'Authenticate sessions';
+    item.summary.responsibilities = ['Verify stored passwords'];
+    item.summary.keySymbols = [
+      {
+        name: 'authenticate',
+        kind: 'function',
+        line: 9,
+        description: 'Check credentials.',
+        url: `${REPO}/blob/${SHA}/${PATH}#L9`,
+      },
+    ];
+    item.summary.dependencies = [
+      {
+        path: 'app/auth/views.py',
+        relationship: 'importedBy',
+        description: 'Called by the request handler.',
+      },
+    ];
+    item.summary.sideEffects = [
+      {
+        kind: 'filesystem',
+        description: 'Write session data.',
+        startLine: 15,
+        endLine: 16,
+        url: `${REPO}/blob/${SHA}/${PATH}#L15-L16`,
+      },
+    ];
+    item.summary.uncertainties = ['Cannot confirm external login behavior.'];
+    item.summary.evidence = [
+      {
+        startLine: 9,
+        endLine: 14,
+        description: 'Authentication implementation.',
+        url: `${REPO}/blob/${SHA}/${PATH}#L9-L14`,
+      },
+    ];
+    const overview = renderPanel(fakeClient({cached: item}));
+    expect(
+      await within(overview).findByText('AI-generated overview'),
+    ).toBeVisible();
+    expect(within(overview).getByText(/may still be inaccurate/)).toBeVisible();
+    await user.click(
+      within(overview).getByText('Purpose and responsibilities'),
+    );
+    expect(within(overview).getByText('Verify stored passwords')).toBeVisible();
+    await user.click(within(overview).getByText('Key symbols (1)'));
+    expect(
+      within(overview).getByRole('link', {name: /authenticate/}),
+    ).toHaveAttribute('href', `${REPO}/blob/${SHA}/${PATH}#L9`);
+    await user.click(within(overview).getByText('Dependencies (1)'));
+    expect(within(overview).getByText('app/auth/views.py')).toBeVisible();
+    await user.click(within(overview).getByText('Side effects (1)'));
+    expect(
+      within(overview).getByRole('link', {name: /filesystem/}),
+    ).toHaveAttribute('href', `${REPO}/blob/${SHA}/${PATH}#L15-L16`);
+    await user.click(within(overview).getByText('Uncertainties (1)'));
+    expect(
+      within(overview).getByText('Cannot confirm external login behavior.'),
+    ).toBeVisible();
+    await user.click(within(overview).getByText('Source evidence (1)'));
+    expect(
+      within(overview).getByRole('link', {name: /Lines 9/}),
+    ).toHaveAttribute('href', `${REPO}/blob/${SHA}/${PATH}#L9-L14`);
+  });
+
+  it('warns about partial source coverage and shows inspected ranges', async () => {
+    const item = completed();
+    if (item.summary === null || item.metadata === null) {
+      throw new Error('Missing summary fixture');
+    }
+    item.summary.coverage = 'partial';
+    item.metadata.coverage = 'partial';
+    item.metadata.inspectedLines = [
+      [1, 20],
+      [30, 40],
+    ];
+    const overview = renderPanel(fakeClient({cached: item}));
+    expect(await within(overview).findByRole('note')).toHaveTextContent(
+      'Partial summary: only part of this file was inspected.',
+    );
+    expect(within(overview).getByText(/1–20, 30–40/)).toBeVisible();
+  });
+
+  it('never interprets model HTML as active markup', async () => {
+    const overview = renderPanel(
+      fakeClient({cached: completed('<img src=x onerror=alert(1)>')}),
+    );
+    expect(
+      await within(overview).findByText('<img src=x onerror=alert(1)>'),
+    ).toBeVisible();
+    expect(within(overview).queryByRole('img')).not.toBeInTheDocument();
+  });
+
   it('offers generation on a cache miss and calls POST only after a click', async () => {
     const user = userEvent.setup();
     const client = fakeClient();

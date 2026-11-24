@@ -4,7 +4,7 @@ import hashlib
 import logging
 import os
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any, Literal, Protocol
 from urllib.parse import urlparse
 import uuid
@@ -160,6 +160,7 @@ class OverviewFileResponse(BaseModel):
     reason: str
     summary: str
     score: float | None = None
+    summarySource: Literal['static', 'ai'] = 'static'
 
 
 class OverviewPackageResponse(BaseModel):
@@ -373,6 +374,7 @@ async def _contract_validation_handler(
 def create_analysis_router(
     store: SqliteGraphStore,
     runner: AnalysisRunner | None = None,
+    summaries: CodeSummaryService | None = None,
 ) -> APIRouter:
     """Create routes for starting, polling, cancelling, and searching analyses."""
     active_runner = runner or DefaultAnalysisRunner()
@@ -528,14 +530,34 @@ def create_analysis_router(
     def get_overview(analysis_id: AnalysisIdPath, request: Request) -> Any:
         try:
             payload = overview_service.get_overview(analysis_id)
+            if summaries is not None and summaries.active:
+                _apply_cached_summaries(payload, summaries.cached_summary_texts(analysis_id))
         except GraphStoreError as exc:
             return JSONResponse(
                 status_code=exc.status_code,
                 content=exc.to_dict(),
             )
-        return cached_json_response(request, payload, f"{analysis_id}-overview")
+        return cached_json_response(
+            request, payload, f"{analysis_id}-overview",
+            cache_control="private, no-cache" if summaries is not None and summaries.active
+            else "private, immutable",
+        )
 
     return router
+
+
+def _apply_cached_summaries(
+    overview: dict[str, Any], cached: Mapping[str, str]
+) -> None:
+    """Overlay verified, already-cached AI text without triggering model calls."""
+    for collection in ('entryPoints', 'coreFiles', 'tour'):
+        for item in overview.get(collection, []):
+            text = cached.get(item['path'])
+            if text:
+                item['summary'] = text
+                item['summarySource'] = 'ai'
+            else:
+                item['summarySource'] = 'static'
 
 
 class HealthResponse(BaseModel):
@@ -607,7 +629,7 @@ def create_app(
     application.add_exception_handler(RequestValidationError, _contract_validation_handler)
     application.state.store = graph_store
     application.include_router(create_health_router(graph_store))
-    application.include_router(create_analysis_router(graph_store, runner=runner))
+    application.include_router(create_analysis_router(graph_store, runner=runner, summaries=summary_service))
     application.include_router(create_ai_router(summary_service))
     application.include_router(create_graph_router(graph_store))
 

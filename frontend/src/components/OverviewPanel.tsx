@@ -234,7 +234,15 @@ function OverviewFileButton({
       {index !== undefined && <span className="overview__step">{index}</span>}
       <span className="overview__file-copy">
         <span className="overview__path">{file.path}</span>
-        {index !== undefined && (
+        {file.summary && (
+          <span className="overview__reason">
+            {file.summarySource === 'ai' && (
+              <span className="overview__ai-label">AI-generated · </span>
+            )}
+            {file.summary}
+          </span>
+        )}
+        {index !== undefined && file.reason && (
           <span className="overview__reason">{file.reason}</span>
         )}
       </span>

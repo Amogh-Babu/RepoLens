@@ -106,7 +106,11 @@ export function FileDetailPanel({
       {(() => {
         const aiBlock =
           analysisId === undefined ? null : (
-            <AiSummarySection analysisId={analysisId} path={path} />
+            <AiSummarySection
+              analysisId={analysisId}
+              path={path}
+              onSelectFile={onSelectFile}
+            />
           );
 
         if (readingOrder !== null) {

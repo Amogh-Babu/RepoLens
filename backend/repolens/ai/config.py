@@ -54,7 +54,7 @@ class AiConfig:
     model: str = DEFAULT_MODEL
     timeout_seconds: float = 30.0
     max_input_chars: int = 40_000
-    max_output_tokens: int = 700
+    max_output_tokens: int = 2048
     max_concurrent_requests: int = 2
     daily_call_limit: int = 100
     max_retries: int = 1
