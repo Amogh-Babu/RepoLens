@@ -439,3 +439,53 @@
     animation: none;
   }
 }
+
+/* Structured, source-linked AI overview. */
+.detail__ai-details {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 0.875rem;
+  min-width: 0;
+}
+
+.detail__ai-disclaimer {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--color-muted);
+}
+
+.detail__ai-expandable {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+
+.detail__ai-expandable > summary {
+  cursor: pointer;
+  padding: 8px 10px;
+  font-weight: 600;
+}
+
+.detail__ai-expanded-body,
+.detail__ai-expanded-list {
+  margin: 0;
+  padding: 10px 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+.detail__ai-expanded-list {
+  padding-left: 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.detail__ai-expanded-list li {
+  overflow-wrap: anywhere;
+}
+
+.detail__ai-expanded-list a {
+  color: var(--color-accent);
+}

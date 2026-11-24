@@ -642,8 +642,10 @@ A summary has `summary`, `purpose`, `responsibilities`, `keySymbols`,
 `dependencies`, `sideEffects`, `uncertainties`, `evidence` and `coverage`; the
 response's `metadata` (model, prompt and schema version, source hash,
 timestamps, cache status, inspected line ranges) is filled in by RepoLens,
-not the model. Cached summaries appear in the existing AI File Overview;
-repository onboarding descriptions remain deterministic and unchanged.
+not the model. Cached summaries appear in the existing AI File Overview, with expandable
+responsibilities, symbols, dependencies, side effects, uncertainties, and linked
+evidence. Repository onboarding uses AI summaries where a verified cached
+description is available and clearly labels those descriptions as AI-generated.
 
 ### Configuration
 
@@ -654,7 +656,7 @@ repository onboarding descriptions remain deterministic and unchanged.
 | `REPOLENS_AI_MODEL` | `gpt-5.4-mini` | Any Responses API model that supports Structured Outputs. |
 | `REPOLENS_AI_TIMEOUT_SECONDS` | `30` | Per-request provider timeout. |
 | `REPOLENS_AI_MAX_INPUT_CHARS` | `40000` | Most numbered source characters sent per request. Larger files are cut and marked partial. |
-| `REPOLENS_AI_MAX_OUTPUT_TOKENS` | `700` | Cap on generated tokens (reasoning models count reasoning tokens too). |
+| `REPOLENS_AI_MAX_OUTPUT_TOKENS` | `2048` | Cap on generated tokens (reasoning models count reasoning tokens too). |
 | `REPOLENS_AI_MAX_CONCURRENT_REQUESTS` | `2` | Model calls at the same time; more answer `AI_BUSY`. |
 | `REPOLENS_AI_DAILY_CALL_LIMIT` | `100` | Model calls per UTC day, repair attempts included. |
 | `REPOLENS_AI_MAX_RETRIES` | `1` | SDK retries on transient provider errors. |
@@ -690,7 +692,13 @@ python -m benchmarks.ai_summary_eval --live   # the configured model; sends the 
 ```
 
 The offline tests replay hand-written answers, so they test RepoLens, not a
-model. **No live evaluation has been recorded yet.**
+model. A live evaluation on November 24, 2026 generated all expected fixture
+behaviors in 8/8 files before benchmark adjustments; strict pass rate was
+5/8 versus 1/8 for the deterministic baseline. Follow-up benchmark fixes
+addressed explicit refutations and delegated side effects. This is evidence
+of usefulness, not a guarantee of semantic correctness. The 2048-token
+default was used in that live experiment but should still be checked in an
+end-to-end deployment.
 
 ### Cache, limits and privacy
 

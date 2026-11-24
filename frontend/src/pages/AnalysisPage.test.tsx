@@ -332,9 +332,18 @@ describe('AnalysisPage search', () => {
       await within(panel).findByText(/Mock summary of app\/auth\/service\.py/),
     ).toBeInTheDocument();
     // The compact overview remains alongside the ordinary static file details.
-    await user.click(within(panel).getByRole('button', {name: 'Imports 2'}));
+    const importsButton = within(panel).getByRole('button', {
+      name: 'Imports 2',
+    });
+    await user.click(importsButton);
+    const importsSection = importsButton.closest('section');
+    if (importsSection === null) {
+      throw new Error('Imports section not found');
+    }
     await user.click(
-      within(panel).getByRole('button', {name: 'app/models/user.py'}),
+      within(importsSection).getByRole('button', {
+        name: 'app/models/user.py',
+      }),
     );
     const next = await screen.findByRole('complementary', {name: 'user.py'});
     expect(

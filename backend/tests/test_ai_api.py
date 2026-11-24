@@ -408,19 +408,33 @@ def test_unfinished_analyses_cannot_be_summarized() -> None:
     assert response.json()["code"] == "ANALYSIS_NOT_READY"
 
 
-def test_generating_a_file_summary_does_not_create_a_duplicate_overview_surface(
+def test_generating_a_file_summary_refreshes_the_cached_overview(
     store: SqliteGraphStore,
 ) -> None:
     client = _client(make_service(store), store)
     first = client.get(f"/analyses/{ANALYSIS_ID}/overview")
+    assert first.status_code == 200
+    assert first.headers["cache-control"] == "private, no-cache"
 
-    client.post(SUMMARY_URL)
+    generated = client.post(SUMMARY_URL)
+    assert generated.status_code == 200
+
     second = client.get(
-        f"/analyses/{ANALYSIS_ID}/overview", headers={"If-None-Match": first.headers["etag"]}
+        f"/analyses/{ANALYSIS_ID}/overview",
+        headers={"If-None-Match": first.headers["etag"]},
     )
+    assert second.status_code == 200
+    assert second.headers["cache-control"] == "private, no-cache"
+    assert second.headers["etag"] != first.headers["etag"]
 
-    assert first.headers["cache-control"] == "private, immutable"
-    assert second.status_code == 304
+    files = second.json()["entryPoints"] + second.json()["coreFiles"] + second.json()["tour"]
+    matched = [item for item in files if item["path"] == "app/auth.py"]
+    assert matched
+    assert all(item["summarySource"] == "ai" for item in matched)
+    assert all(
+        item["summary"] == generated.json()["summary"]["summary"]
+        for item in matched
+    )
 
 
 def test_status_reports_usage_and_estimated_cost_without_secrets(

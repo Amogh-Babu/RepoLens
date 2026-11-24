@@ -123,6 +123,8 @@ export interface OverviewFile {
   path: string;
   reason: string;
   summary: string;
+  /** Only verified AI descriptions are marked 'ai'. */
+  summarySource?: 'static' | 'ai';
   score?: number;
 }
 
