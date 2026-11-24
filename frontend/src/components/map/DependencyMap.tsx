@@ -17,12 +17,11 @@ import {neighborhood, subgraph} from '../../utils/subgraph.ts';
 import type {MapActions} from './mapActions.ts';
 import {MapActionsContext} from './mapActions.ts';
 import {MapKey} from './MapKey.tsx';
-import type {MapEdge, MapHighlight, MapNode} from './mapLayout.ts';
+import type {MapEdge, MapHighlight, MapLayout, MapNode} from './mapLayout.ts';
 import {
   fileNodeId,
   groupNodeId,
   highlightAround,
-  layoutMap,
   limitExpanded,
   MAX_DRAWN_FILES,
   moduleNodeId,
@@ -30,6 +29,7 @@ import {
   unitFor,
 } from './mapLayout.ts';
 import {FileNode, ModuleGroupNode, ModuleNode} from './MapNodes.tsx';
+import {useMapLayout} from './useMapLayout.ts';
 import './DependencyMap.css';
 
 /** The map must draw within this budget or the list view is shown. */
@@ -48,6 +48,7 @@ const NODE_TYPES = {
 };
 
 const FIT_VIEW_OPTIONS = {padding: 0.15, maxZoom: 1.2};
+const EMPTY_LAYOUT: MapLayout = {nodes: [], edges: []};
 /** The smallest zoom at which file names on the map can still be read. */
 const READABLE_ZOOM = 0.75;
 /** Room left above and beside a folder shown from its top-left corner. */
@@ -159,11 +160,21 @@ function MapCanvas({
       ),
     [focusKey, expandedModules, shownGraph],
   );
-  const layout = useMemo(
-    () =>
-      layoutMap(shownGraph, shownExpanded, {collapsible: focusKey === null}),
-    [shownGraph, shownExpanded, focusKey],
+  const layoutState = useMapLayout(
+    shownGraph,
+    shownExpanded,
+    focusKey === null,
   );
+  const layout =
+    layoutState.status === 'ready'
+      ? layoutState.layout
+      : layoutState.status === 'pending' && layoutState.previous !== null
+        ? layoutState.previous
+        : EMPTY_LAYOUT;
+  const layoutFailed = layoutState.status === 'failed';
+  useEffect(() => {
+    if (layoutFailed) onTooSlow();
+  }, [layoutFailed, onTooSlow]);
   // Positions the user dragged nodes to; reset whenever the layout changes.
   const [nodes, setNodes] = useState<MapNode[]>(layout.nodes);
   const [layoutShown, setLayoutShown] = useState(layout);
@@ -469,9 +480,15 @@ function MapCanvas({
           </p>
         )}
         <div className="map__canvas">
-          {focused && layout.nodes.length === 0 && (
-            <p role="status">No matching files to show on the map.</p>
-          )}
+          {focused &&
+            layoutState.status === 'ready' &&
+            layout.nodes.length === 0 && (
+              <p role="status">No matching files to show on the map.</p>
+            )}
+          {layoutState.status === 'pending' &&
+            layoutState.previous === null && (
+              <p role="status">Laying out the map…</p>
+            )}
           {keyOpen && <MapKey id={keyId} onClose={() => showKey(false)} />}
           <button
             type="button"
