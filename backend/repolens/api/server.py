@@ -24,6 +24,9 @@ Configuration comes from the environment:
   one adds its own indexing memory peak.
 - `REPOLENS_EMBED_BATCH_SIZE` and `REPOLENS_EMBED_THREADS`: see
   `FastEmbedEmbedder`.
+- `REPOLENS_AI_ENABLED`, `OPENAI_API_KEY`, and the other `REPOLENS_AI_*`
+  variables: optional AI file summaries, off by default (see
+  `repolens.ai.config`).
 """
 
 from collections.abc import Mapping
@@ -34,6 +37,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from repolens.ai import CodeSummaryService, load_ai_config
 from repolens.api.app import AnalysisRunner, create_app
 from repolens.graph.store import SqliteGraphStore
 from repolens.pipeline import DEFAULT_MAX_CONCURRENT_ANALYSES, PipelineAnalysisRunner
@@ -64,6 +68,7 @@ def create_server(
     runner: AnalysisRunner | None = None,
     frontend_dir: Path | None = None,
     cors_origins: tuple[str, ...] = (),
+    summaries: CodeSummaryService | None = None,
 ) -> FastAPI:
     """Mount the API under `/api` and, if built, the frontend at `/`.
 
@@ -74,7 +79,7 @@ def create_server(
     server = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     server.mount(
         API_PREFIX,
-        create_app(store, runner, cors_origins=cors_origins),
+        create_app(store, runner, cors_origins=cors_origins, summaries=summaries),
         name="api",
     )
 
@@ -114,16 +119,16 @@ def create_server_from_environment(
         for origin in environ.get("REPOLENS_CORS_ORIGINS", "").split(",")
         if origin.strip()
     )
-    return create_server(
-        store=SqliteGraphStore(
-            db_path,
-            embedder=FastEmbedEmbedder(
-                cache_dir=environ.get("REPOLENS_EMBEDDING_CACHE", "").strip()
-                or None,
-                batch_size=_positive_int(environ, "REPOLENS_EMBED_BATCH_SIZE"),
-                threads=_positive_int(environ, "REPOLENS_EMBED_THREADS"),
-            ),
+    store = SqliteGraphStore(
+        db_path,
+        embedder=FastEmbedEmbedder(
+            cache_dir=environ.get("REPOLENS_EMBEDDING_CACHE", "").strip() or None,
+            batch_size=_positive_int(environ, "REPOLENS_EMBED_BATCH_SIZE"),
+            threads=_positive_int(environ, "REPOLENS_EMBED_THREADS"),
         ),
+    )
+    return create_server(
+        store=store,
         runner=(
             runner
             if runner is not None
@@ -136,6 +141,7 @@ def create_server_from_environment(
         ),
         frontend_dir=Path(frontend) if frontend else None,
         cors_origins=origins,
+        summaries=CodeSummaryService(store, load_ai_config(environ)),
     )
 
 

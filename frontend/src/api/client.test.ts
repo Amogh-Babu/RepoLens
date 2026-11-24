@@ -189,4 +189,66 @@ describe('encodeFilePath', () => {
   it('encodes each segment but keeps the slashes', () => {
     expect(encodeFilePath('a b/c#d/e?.py')).toBe('a%20b/c%23d/e%3F.py');
   });
+
+  it('reads the AI status', async () => {
+    const {calls, fetchFn} = stubFetch(() =>
+      jsonResponse({enabled: false, provider: null, model: null}),
+    );
+    const client = new HttpApiClient('/api', fetchFn);
+
+    const status = await client.getAiStatus();
+
+    expect(status.enabled).toBe(false);
+    expect(calls[0]?.url).toBe('/api/ai/status');
+    expect(calls[0]?.init.method).toBe('GET');
+  });
+
+  it('reads a cached AI summary without generating one', async () => {
+    const {calls, fetchFn} = stubFetch(() =>
+      jsonResponse({status: 'notGenerated', summary: null}),
+    );
+    const client = new HttpApiClient('/api', fetchFn);
+
+    await client.getFileSummary('a 1', 'app/my file.py');
+
+    expect(calls[0]?.url).toBe(
+      '/api/analyses/a%201/ai-summaries/app/my%20file.py',
+    );
+    expect(calls[0]?.init.method).toBe('GET');
+  });
+
+  it('generates and regenerates AI summaries with POST', async () => {
+    const {calls, fetchFn} = stubFetch(() =>
+      jsonResponse({status: 'completed'}),
+    );
+    const client = new HttpApiClient('/api', fetchFn);
+
+    await client.generateFileSummary('a1', 'app/x.py');
+    await client.generateFileSummary('a1', 'app/x.py', {regenerate: true});
+
+    expect(calls.map(call => [call.init.method, call.url])).toEqual([
+      ['POST', '/api/analyses/a1/ai-summaries/app/x.py'],
+      ['POST', '/api/analyses/a1/ai-summaries/app/x.py?regenerate=true'],
+    ]);
+  });
+
+  it('reports AI summary errors with their code and hint', async () => {
+    const {fetchFn} = stubFetch(() =>
+      jsonResponse(
+        {
+          code: 'AI_SUMMARY_UNVERIFIED',
+          message: 'The AI summary could not be verified.',
+          hint: 'The static description is still available.',
+        },
+        502,
+      ),
+    );
+    const client = new HttpApiClient('/api', fetchFn);
+
+    const error = await rejection(client.generateFileSummary('a1', 'x.py'));
+
+    expect(error.code).toBe('AI_SUMMARY_UNVERIFIED');
+    expect(error.hint).toBe('The static description is still available.');
+    expect(error.httpStatus).toBe(502);
+  });
 });

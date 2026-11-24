@@ -16,6 +16,12 @@ from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from pydantic import BaseModel
 
+from repolens.ai import (
+    AiConfig,
+    CodeSummaryService,
+    create_ai_router,
+    load_ai_config,
+)
 from repolens.graph.endpoints import (
     AnalysisIdPath,
     DependencyGraphResponse,
@@ -527,9 +533,7 @@ def create_analysis_router(
                 status_code=exc.status_code,
                 content=exc.to_dict(),
             )
-        return cached_json_response(
-            request, payload, f"{analysis_id}-overview"
-        )
+        return cached_json_response(request, payload, f"{analysis_id}-overview")
 
     return router
 
@@ -568,6 +572,7 @@ def create_app(
     runner: AnalysisRunner | None = None,
     *,
     cors_origins: Sequence[str] = ("*",),
+    summaries: CodeSummaryService | None = None,
 ) -> FastAPI:
     """Create the RepoLens FastAPI application matching the frontend contract.
 
@@ -575,8 +580,16 @@ def create_app(
     another origin. The default allows any, which suits local development;
     `repolens.api.server` serves the frontend from the same origin and passes
     none, so no CORS headers are sent at all.
+
+    `summaries` serves AI file summaries. Without one, AI summaries are off
+    and every route answers as it did before they existed.
     """
     graph_store = store if store is not None else SqliteGraphStore()
+    summary_service = (
+        summaries
+        if summaries is not None
+        else CodeSummaryService(graph_store, AiConfig())
+    )
 
     application = FastAPI(
         title="RepoLens API",
@@ -595,6 +608,7 @@ def create_app(
     application.state.store = graph_store
     application.include_router(create_health_router(graph_store))
     application.include_router(create_analysis_router(graph_store, runner=runner))
+    application.include_router(create_ai_router(summary_service))
     application.include_router(create_graph_router(graph_store))
 
     return application
@@ -614,11 +628,13 @@ def _error_response(
 
 # The server analyzes real repositories. `create_app()` without a runner keeps
 # the offline stub for tests.
+_STORE = SqliteGraphStore(
+    embedder=FastEmbedEmbedder(
+        cache_dir=os.environ.get("REPOLENS_EMBEDDING_CACHE") or None
+    )
+)
 app = create_app(
-    store=SqliteGraphStore(
-        embedder=FastEmbedEmbedder(
-            cache_dir=os.environ.get("REPOLENS_EMBEDDING_CACHE") or None
-        )
-    ),
+    store=_STORE,
     runner=PipelineAnalysisRunner(),
+    summaries=CodeSummaryService(_STORE, load_ai_config()),
 )

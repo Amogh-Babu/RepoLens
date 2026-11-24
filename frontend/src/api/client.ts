@@ -1,8 +1,9 @@
 import {ApiError, isApiErrorBody} from './errors.ts';
 import type {
+  AiStatus,
   Analysis,
   DependencyGraph,
-  FileAiSummary,
+  FileSummary,
   FileDetail,
   RepositoryOverview,
   SearchRequest,
@@ -27,6 +28,12 @@ export const SEARCH_TIMEOUT_MS = 5_000;
 
 /** AI file summary generation may take longer on the first request. */
 export const AI_SUMMARY_TIMEOUT_MS = 60_000;
+
+/**
+ * Generating an AI summary waits for the model, possibly twice (one repair
+ * attempt), so it gets far longer than an ordinary request.
+ */
+export const SUMMARY_TIMEOUT_MS = 120_000;
 
 /**
  * Everything the UI needs from the backend. Every method rejects only with
@@ -67,19 +74,36 @@ export interface ApiClient {
     options?: RequestOptions,
   ): Promise<FileDetail>;
 
-  /** GET /analyses/{id}/file-summary/{path}: AI-generated overview of a file. */
-  getFileSummary(
-    analysisId: string,
-    path: string,
-    options?: RequestOptions,
-  ): Promise<FileAiSummary>;
-
   /** GET /analyses/{id}/search: one page of the ranked reading list. */
   search(
     analysisId: string,
     request: SearchRequest,
     options?: RequestOptions,
   ): Promise<SearchResponse>;
+
+  /** GET /ai/status: whether AI file summaries are available. */
+  getAiStatus(options?: RequestOptions): Promise<AiStatus>;
+
+  /**
+   * GET /analyses/{id}/ai-summaries/{path}: the cached AI summary, or
+   * status "notGenerated". Never starts a model call.
+   */
+  getFileSummary(
+    analysisId: string,
+    path: string,
+    options?: RequestOptions,
+  ): Promise<FileSummary>;
+
+  /**
+   * POST /analyses/{id}/ai-summaries/{path}: the cached summary, or a newly
+   * generated and verified one. `regenerate` replaces a cached summary.
+   */
+  generateFileSummary(
+    analysisId: string,
+    path: string,
+    request?: {regenerate?: boolean},
+    options?: RequestOptions,
+  ): Promise<FileSummary>;
 }
 
 /**
@@ -167,18 +191,6 @@ export class HttpApiClient implements ApiClient {
     );
   }
 
-  getFileSummary(
-    analysisId: string,
-    path: string,
-    options?: RequestOptions,
-  ): Promise<FileAiSummary> {
-    return this.request(
-      'GET',
-      `/analyses/${encodeURIComponent(analysisId)}/file-summary/${encodeFilePath(path)}`,
-      {timeoutMs: AI_SUMMARY_TIMEOUT_MS, ...options},
-    );
-  }
-
   search(
     analysisId: string,
     request: SearchRequest,
@@ -198,6 +210,36 @@ export class HttpApiClient implements ApiClient {
       'GET',
       `/analyses/${encodeURIComponent(analysisId)}/search?${params.toString()}`,
       {timeoutMs: SEARCH_TIMEOUT_MS, ...options},
+    );
+  }
+
+  getAiStatus(options?: RequestOptions): Promise<AiStatus> {
+    return this.request('GET', '/ai/status', options);
+  }
+
+  getFileSummary(
+    analysisId: string,
+    path: string,
+    options?: RequestOptions,
+  ): Promise<FileSummary> {
+    return this.request(
+      'GET',
+      `/analyses/${encodeURIComponent(analysisId)}/ai-summaries/${encodeFilePath(path)}`,
+      options,
+    );
+  }
+
+  generateFileSummary(
+    analysisId: string,
+    path: string,
+    request: {regenerate?: boolean} = {},
+    options?: RequestOptions,
+  ): Promise<FileSummary> {
+    const query = request.regenerate ? '?regenerate=true' : '';
+    return this.request(
+      'POST',
+      `/analyses/${encodeURIComponent(analysisId)}/ai-summaries/${encodeFilePath(path)}${query}`,
+      {timeoutMs: SUMMARY_TIMEOUT_MS, ...options},
     );
   }
 

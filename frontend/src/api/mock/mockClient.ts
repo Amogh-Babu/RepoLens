@@ -2,12 +2,14 @@ import type {ApiClient, RequestOptions} from '../client.ts';
 import {ApiError} from '../errors.ts';
 import {ANALYSIS_STAGES} from '../types.ts';
 import type {
+  AiStatus,
   Analysis,
   AnalysisStage,
   ApiErrorBody,
+  CodeSummary,
   DependencyGraph,
-  FileAiSummary,
   FileDetail,
+  FileSummary,
   RepositoryOverview,
   ModuleGroup,
   RankedFile,
@@ -103,6 +105,8 @@ export interface MockApiClientOptions {
   now?: () => number;
   /** Repository served for every successful analysis. */
   repo?: FixtureRepo;
+  /** Whether mock AI file summaries are on. Defaults to true. */
+  aiEnabled?: boolean;
 }
 
 interface MockAnalysis {
@@ -136,10 +140,12 @@ interface MockAnalysis {
 export class MockApiClient implements ApiClient {
   private readonly latencyMs: number;
   private readonly stageDurationMs: number;
-  private readonly generatedSummaries = new Map<string, string>();
   private readonly now: () => number;
   private readonly repo: FixtureRepo;
   private readonly analyses = new Map<string, MockAnalysis>();
+  private readonly aiEnabled: boolean;
+  /** Generated mock summaries, keyed by analysis id and path. */
+  private readonly summaries = new Map<string, FileSummary>();
   private nextId = 1;
 
   constructor(options: MockApiClientOptions = {}) {
@@ -147,6 +153,7 @@ export class MockApiClient implements ApiClient {
     this.stageDurationMs = options.stageDurationMs ?? 600;
     this.now = options.now ?? Date.now;
     this.repo = options.repo ?? FLASK_AUTH_REPO;
+    this.aiEnabled = options.aiEnabled ?? true;
   }
 
   async startAnalysis(
@@ -409,45 +416,6 @@ export class MockApiClient implements ApiClient {
     };
   }
 
-  async getFileSummary(
-    analysisId: string,
-    path: string,
-    options?: RequestOptions,
-  ): Promise<FileAiSummary> {
-    await this.delay(options);
-    this.findCompleted(analysisId);
-    const file = this.repo.files.find(f => f.path === path);
-    if (file === undefined) {
-      throw new ApiError(
-        'FILE_NOT_FOUND',
-        `"${path}" is not part of this analysis.`,
-        null,
-        404,
-      );
-    }
-
-    const cacheKey = `${analysisId}:${path}`;
-    const existing = this.generatedSummaries.get(cacheKey);
-    if (existing !== undefined) {
-      return {path: file.path, summary: existing, cached: true};
-    }
-
-    const symbolNames = file.symbols.slice(0, 4).map(s => `\`${s.name}\``);
-    const importers = this.importersOf(file.path);
-    const lines = [
-      `\`${file.path}\` belongs to the \`${moduleOf(file.path)}\` module (${file.lineCount} lines).`,
-      symbolNames.length > 0
-        ? `- Key definitions: ${symbolNames.join(', ')}`
-        : '- Contains module-level setup or configuration.',
-      importers.length > 0
-        ? `- Imported by ${importers.length} ${importers.length === 1 ? 'file' : 'files'} in this repository.`
-        : '- Not imported directly by other analyzed files.',
-    ];
-    const summary = lines.join('\n');
-    this.generatedSummaries.set(cacheKey, summary);
-    return {path: file.path, summary, cached: false};
-  }
-
   async search(
     analysisId: string,
     request: SearchRequest,
@@ -481,6 +449,119 @@ export class MockApiClient implements ApiClient {
       results: ranked.slice(offset, offset + limit),
       matchedPaths: ranked.map(file => file.path),
     };
+  }
+
+  async getAiStatus(options?: RequestOptions): Promise<AiStatus> {
+    await this.delay(options);
+    if (!this.aiEnabled) {
+      return {
+        enabled: false,
+        provider: null,
+        model: null,
+        notice: null,
+        dailyCallLimit: null,
+        usage: null,
+      };
+    }
+    return {
+      enabled: true,
+      provider: 'Mock',
+      model: 'mock-model',
+      notice:
+        'Mock mode: summaries are made up from the fixture, not by a model.',
+      dailyCallLimit: 100,
+      usage: null,
+    };
+  }
+
+  async getFileSummary(
+    analysisId: string,
+    path: string,
+    options?: RequestOptions,
+  ): Promise<FileSummary> {
+    await this.delay(options);
+    const file = this.findSummarizable(analysisId, path);
+    const cached = this.summaries.get(`${analysisId}\n${path}`);
+    if (cached !== undefined) {
+      return {
+        ...cached,
+        metadata: cached.metadata && {
+          ...cached.metadata,
+          cached: true,
+          cacheStatus: 'hit',
+        },
+      };
+    }
+    const analysis = this.findCompleted(analysisId);
+    return {
+      analysisId,
+      path: file.path,
+      sha: analysis.sha,
+      status: 'notGenerated',
+      summary: null,
+      metadata: null,
+    };
+  }
+
+  async generateFileSummary(
+    analysisId: string,
+    path: string,
+    request: {regenerate?: boolean} = {},
+    options?: RequestOptions,
+  ): Promise<FileSummary> {
+    await this.delay(options);
+    const file = this.findSummarizable(analysisId, path);
+    const key = `${analysisId}\n${path}`;
+    const cached = this.summaries.get(key);
+    if (cached !== undefined && !request.regenerate) {
+      return this.getFileSummary(analysisId, path, options);
+    }
+    const analysis = this.findCompleted(analysisId);
+    const sourceUrl = `${analysis.repoUrl}/blob/${analysis.sha}/${file.path}`;
+    const result: FileSummary = {
+      analysisId,
+      path: file.path,
+      sha: analysis.sha,
+      status: 'completed',
+      summary: mockSummary(file, sourceUrl, this.importersOf(file.path)),
+      metadata: {
+        model: 'mock-model',
+        promptVersion: 'mock',
+        schemaVersion: '1',
+        sourceHash: 'mock',
+        generatedAt: new Date(this.now()).toISOString(),
+        cached: false,
+        cacheStatus: cached === undefined ? 'miss' : 'regenerated',
+        coverage: 'complete',
+        inspectedLines: [[1, file.lineCount]],
+        lineCount: file.lineCount,
+        sourceUrl,
+      },
+    };
+    this.summaries.set(key, result);
+    return result;
+  }
+
+  private findSummarizable(analysisId: string, path: string): FixtureFile {
+    if (!this.aiEnabled) {
+      throw new ApiError(
+        'AI_DISABLED',
+        'AI file summaries are not enabled on this server.',
+        null,
+        503,
+      );
+    }
+    this.findCompleted(analysisId);
+    const file = this.repo.files.find(f => f.path === path);
+    if (file === undefined) {
+      throw new ApiError(
+        'FILE_NOT_FOUND',
+        `"${path}" is not part of this analysis.`,
+        null,
+        404,
+      );
+    }
+    return file;
   }
 
   /** Waits for the simulated latency, honoring the caller's signal. */
@@ -619,6 +700,60 @@ export class MockApiClient implements ApiClient {
       .filter(file => file.imports.some(imp => imp.targetPath === path))
       .map(file => file.path);
   }
+}
+
+/**
+ * A made-up summary built from fixture metadata, so mock mode can show the
+ * AI File Summary section without a model.
+ */
+function mockSummary(
+  file: FixtureFile,
+  sourceUrl: string,
+  importers: string[],
+): CodeSummary {
+  const names = file.symbols.map(symbol => `\`${symbol.name}\``).join(', ');
+  const last = Math.max(1, file.lineCount);
+  return {
+    summary: names
+      ? `Mock summary of ${file.path}: defines ${names}.`
+      : `Mock summary of ${file.path}.`,
+    purpose: file.comments[0]?.text ?? 'Not described in the fixture.',
+    responsibilities: file.symbols.length
+      ? file.symbols.map(symbol => `Defines the ${symbol.kind} ${symbol.name}.`)
+      : ['Holds no top-level definitions.'],
+    keySymbols: file.symbols.map(symbol => ({
+      name: symbol.name,
+      kind: symbol.kind,
+      description: `The ${symbol.kind} ${symbol.name}.`,
+      line: symbol.line,
+      url: `${sourceUrl}#L${symbol.line}`,
+    })),
+    dependencies: [
+      ...file.imports
+        .filter(imp => imp.kind === 'internal' && imp.targetPath)
+        .map(imp => ({
+          path: imp.targetPath ?? '',
+          relationship: 'imports' as const,
+          description: `Imported as ${imp.rawName}.`,
+        })),
+      ...importers.map(path => ({
+        path,
+        relationship: 'importedBy' as const,
+        description: 'Imports this file.',
+      })),
+    ],
+    sideEffects: [],
+    uncertainties: ['Mock data: not generated by a model.'],
+    evidence: [
+      {
+        startLine: 1,
+        endLine: last,
+        description: 'The whole file.',
+        url: `${sourceUrl}#L1-L${last}`,
+      },
+    ],
+    coverage: 'complete',
+  };
 }
 
 /** Directory of a file, used as its module id. "." for root files. */

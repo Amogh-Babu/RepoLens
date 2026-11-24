@@ -1,28 +1,22 @@
 import type {ReactNode} from 'react';
 import {useId, useState} from 'react';
 import {encodeFilePath} from '../api/client.ts';
-import type {
-  FileAiSummary,
-  FileDetail,
-  ImportInfo,
-  SymbolKind,
-} from '../api/types.ts';
+import type {FileDetail, ImportInfo, SymbolKind} from '../api/types.ts';
 import type {RequestFailure} from '../state/analysisStore.ts';
+import {AiSummarySection} from './AiSummarySection.tsx';
 import {ErrorBanner} from './ErrorBanner.tsx';
 import './FileDetailPanel.css';
 
 interface FileDetailPanelProps {
   path: string;
+  /** The analysis the file belongs to; enables the optional AI overview. */
+  analysisId?: string;
   /** Repository URL and commit, to link the source before details load. */
   repoUrl: string;
   sha: string;
   /** Null while loading or after a failure. */
   detail: FileDetail | null;
   failure: RequestFailure | null;
-  aiSummary?: FileAiSummary | null;
-  aiSummaryLoading?: boolean;
-  aiSummaryFailure?: RequestFailure | null;
-  onRetryAiSummary?: () => void;
   onSelectFile: (path: string) => void;
   onRetry: () => void;
   onClose: () => void;
@@ -58,14 +52,11 @@ const KIND_LABELS: Record<SymbolKind, string> = {
  */
 export function FileDetailPanel({
   path,
+  analysisId,
   repoUrl,
   sha,
   detail,
   failure,
-  aiSummary = null,
-  aiSummaryLoading = false,
-  aiSummaryFailure = null,
-  onRetryAiSummary,
   onSelectFile,
   onRetry,
   onClose,
@@ -113,35 +104,10 @@ export function FileDetailPanel({
       </div>
 
       {(() => {
-        const hasAiBlock =
-          aiSummaryLoading || aiSummary !== null || aiSummaryFailure !== null;
-        const aiBlock = !hasAiBlock ? null : aiSummaryLoading &&
-          aiSummary === null ? (
-          <div
-            className="detail__ai-skeleton"
-            role="status"
-            aria-busy="true"
-            aria-label="Generating AI overview…"
-          >
-            <span className="detail__ai-skeleton-line detail__ai-skeleton-line--wide" />
-            <span className="detail__ai-skeleton-line detail__ai-skeleton-line--full" />
-            <span className="detail__ai-skeleton-line detail__ai-skeleton-line--mid" />
-          </div>
-        ) : aiSummaryFailure !== null ? (
-          aiSummaryFailure.code === 'TIMEOUT' ? (
-            <p className="detail__muted">AI overview timed out.</p>
-          ) : aiSummaryFailure.code === 'FILE_NOT_FOUND' ||
-            aiSummaryFailure.code === 'UNKNOWN' ? (
-            <p className="detail__muted">AI overview unavailable.</p>
-          ) : (
-            <ErrorBanner
-              error={aiSummaryFailure.error}
-              onRetry={onRetryAiSummary}
-            />
-          )
-        ) : (
-          aiSummary !== null && <AiSummaryContent text={aiSummary.summary} />
-        );
+        const aiBlock =
+          analysisId === undefined ? null : (
+            <AiSummarySection analysisId={analysisId} path={path} />
+          );
 
         if (readingOrder !== null) {
           return (
@@ -198,7 +164,11 @@ export function FileDetailPanel({
         }
 
         return aiBlock !== null ? (
-          <div className="detail__ai-summary" aria-label="AI overview">
+          <div
+            className="detail__ai-summary"
+            role="region"
+            aria-label="AI overview"
+          >
             {aiBlock}
           </div>
         ) : null;
@@ -450,53 +420,4 @@ function FileLinks({
       ))}
     </ul>
   );
-}
-
-function renderInlineCode(text: string): ReactNode[] {
-  const parts = text.split(/(`[^`]+`)/g);
-  return parts.map((part, index) => {
-    if (part.startsWith('`') && part.endsWith('`') && part.length > 2) {
-      return <code key={index}>{part.slice(1, -1)}</code>;
-    }
-    return part;
-  });
-}
-
-function AiSummaryContent({text}: {text: string}) {
-  const lines = text.split(/\r?\n/);
-  const blocks: ReactNode[] = [];
-  let listItems: string[] = [];
-
-  const flushList = (keyPrefix: string) => {
-    if (listItems.length === 0) return;
-    blocks.push(
-      <ul key={`${keyPrefix}-ul`} className="detail__ai-list">
-        {listItems.map((item, idx) => (
-          <li key={idx}>{renderInlineCode(item)}</li>
-        ))}
-      </ul>,
-    );
-    listItems = [];
-  };
-
-  lines.forEach((rawLine, index) => {
-    const line = rawLine.trim();
-    if (line === '') {
-      flushList(`line-${index}`);
-      return;
-    }
-    if (line.startsWith('- ') || line.startsWith('* ')) {
-      listItems.push(line.slice(2).trim());
-      return;
-    }
-    flushList(`line-${index}`);
-    blocks.push(
-      <p key={`p-${index}`} className="detail__ai-paragraph">
-        {renderInlineCode(line)}
-      </p>,
-    );
-  });
-  flushList('end');
-
-  return <div className="detail__ai-body">{blocks}</div>;
 }
