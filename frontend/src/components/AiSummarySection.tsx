@@ -1,9 +1,9 @@
 import {useEffect, useState} from 'react';
+import {loadAiStatus} from '../api/aiStatus.ts';
 import {useApiClient} from '../api/apiClientContext.ts';
-import type {ApiClient} from '../api/client.ts';
 import {describeError} from '../api/describeError.ts';
 import {ApiError} from '../api/errors.ts';
-import type {AiStatus, FileSummary} from '../api/types.ts';
+import type {FileSummary} from '../api/types.ts';
 import {AiSummaryDetails} from './AiSummaryDetails.tsx';
 import {ErrorBanner} from './ErrorBanner.tsx';
 
@@ -25,18 +25,6 @@ type State =
       error: ApiError;
       previous: FileSummary | null;
     };
-
-const statusRequests = new WeakMap<ApiClient, Promise<AiStatus>>();
-
-function loadStatus(api: ApiClient): Promise<AiStatus> {
-  let request = statusRequests.get(api);
-  if (request === undefined) {
-    request = api.getAiStatus();
-    request.catch(() => statusRequests.delete(api));
-    statusRequests.set(api, request);
-  }
-  return request;
-}
 
 function toApiError(error: unknown): ApiError {
   return error instanceof ApiError
@@ -65,7 +53,7 @@ export function AiSummarySection({
     };
     void (async () => {
       try {
-        const status = await loadStatus(api);
+        const status = await loadAiStatus(api);
         if (!status.enabled) {
           settle({kind: 'disabled'});
           return;
@@ -148,10 +136,14 @@ export function AiSummarySection({
         </>
       )}
       {state.kind === 'generating' && data === null && (
-        <div role="status" aria-label="Generating AI overview…">
-          <span className="detail__ai-skeleton-line detail__ai-skeleton-line--wide" />
-          <span className="detail__ai-skeleton-line detail__ai-skeleton-line--full" />
-          <span className="detail__ai-skeleton-line detail__ai-skeleton-line--mid" />
+        <div
+          className="ai-skeleton"
+          role="status"
+          aria-label="Generating AI overview…"
+        >
+          <span className="ai-skeleton-line ai-skeleton-line--wide" />
+          <span className="ai-skeleton-line ai-skeleton-line--full" />
+          <span className="ai-skeleton-line ai-skeleton-line--mid" />
         </div>
       )}
       {state.kind === 'failed' && (

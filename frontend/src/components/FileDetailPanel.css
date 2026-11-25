@@ -392,54 +392,6 @@
   font-size: 0.8125em;
 }
 
-.detail__ai-skeleton {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 2px 0;
-}
-
-.detail__ai-skeleton-line {
-  display: block;
-  height: 12px;
-  border-radius: 6px;
-  background: linear-gradient(
-    90deg,
-    rgba(125, 211, 252, 0.14) 25%,
-    rgba(125, 211, 252, 0.32) 50%,
-    rgba(125, 211, 252, 0.14) 75%
-  );
-  background-size: 200% 100%;
-  animation: detail-skeleton-shimmer 1.4s ease-in-out infinite;
-}
-
-.detail__ai-skeleton-line--wide {
-  width: 92%;
-}
-
-.detail__ai-skeleton-line--full {
-  width: 100%;
-}
-
-.detail__ai-skeleton-line--mid {
-  width: 68%;
-}
-
-@keyframes detail-skeleton-shimmer {
-  0% {
-    background-position: 200% 0;
-  }
-  100% {
-    background-position: -200% 0;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .detail__ai-skeleton-line {
-    animation: none;
-  }
-}
-
 /* Structured, source-linked AI overview. */
 .detail__ai-details {
   display: flex;

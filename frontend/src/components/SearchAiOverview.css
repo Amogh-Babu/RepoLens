@@ -1,0 +1,129 @@
+/* AI overview above the search reading list. */
+.search-ai {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  min-width: 0;
+}
+
+.search-ai > * {
+  max-width: 100%;
+}
+
+.search-ai .ai-skeleton,
+.search-ai .error-banner {
+  align-self: stretch;
+}
+
+.search-ai__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  align-self: stretch;
+}
+
+.search-ai__badge {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-accent);
+}
+
+.search-ai__muted {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--color-muted);
+}
+
+.search-ai__summary p,
+.search-ai__reason p,
+.search-ai__uncertainties p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.search-ai code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--color-selected);
+  font-family: var(--font-mono);
+  font-size: 0.8125em;
+  overflow-wrap: anywhere;
+}
+
+.search-ai__step {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-self: stretch;
+}
+
+.search-ai__label {
+  margin: 0;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-muted);
+}
+
+.search-ai__list,
+.search-ai__uncertainties {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.search-ai__file {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.search-ai__path {
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-accent);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.search-ai__path code {
+  background: none;
+  padding: 0;
+}
+
+.search-ai__path:hover code {
+  text-decoration: underline;
+}
+
+.search-ai__path:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.search-ai__reason {
+  color: var(--color-text);
+}
+
+.search-ai__disclaimer {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--color-muted);
+}

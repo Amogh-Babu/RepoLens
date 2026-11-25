@@ -532,7 +532,11 @@ function Sidebar({
             onTourLoaded={onTourLoaded}
           />
         ) : tab === 'reading' ? (
-          <ReadingPanel onSelectFile={onSelectFile} onStartTour={onStartTour} />
+          <ReadingPanel
+            analysisId={analysisId}
+            onSelectFile={onSelectFile}
+            onStartTour={onStartTour}
+          />
         ) : (
           <ExplorerPanel onSelectFile={onSelectFile} />
         )}
@@ -542,9 +546,11 @@ function Sidebar({
 }
 
 function ReadingPanel({
+  analysisId,
   onSelectFile,
   onStartTour,
 }: {
+  analysisId: string;
   onSelectFile: (path: string) => void;
   onStartTour: () => void;
 }) {
@@ -557,6 +563,7 @@ function ReadingPanel({
 
   return (
     <ReadingList
+      analysisId={analysisId}
       search={search}
       selectedPath={selectedPath}
       onSelectFile={onSelectFile}

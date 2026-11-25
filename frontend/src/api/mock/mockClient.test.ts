@@ -327,3 +327,152 @@ describe('MockApiClient AI summaries', () => {
     ).rejects.toMatchObject({code: 'AI_DISABLED'});
   });
 });
+
+describe('MockApiClient AI search overviews', () => {
+  async function finished(aiEnabled = true) {
+    const client = new MockApiClient({
+      latencyMs: 0,
+      stageDurationMs: 0,
+      aiEnabled,
+    });
+    const {analysisId} = await client.startAnalysis({url: REPO_URL});
+    return {client, analysisId};
+  }
+
+  it('reads a search notice with the AI status', async () => {
+    const {client} = await finished();
+    expect((await client.getAiStatus()).searchNotice).toMatch(/Mock mode/);
+    const off = await finished(false);
+    expect((await off.client.getAiStatus()).searchNotice).toBeNull();
+  });
+
+  it('generates once, then serves the cached overview', async () => {
+    const {client, analysisId} = await finished();
+    const request = {q: 'login', intent: 'implementation' as const};
+
+    const before = await client.getSearchOverview(analysisId, request);
+    const generated = await client.generateSearchOverview(analysisId, request);
+    const cached = await client.getSearchOverview(analysisId, request);
+    const again = await client.generateSearchOverview(analysisId, request);
+    const regenerated = await client.generateSearchOverview(
+      analysisId,
+      request,
+      {regenerate: true},
+    );
+
+    expect(before).toMatchObject({
+      analysisId,
+      query: 'login',
+      intent: 'implementation',
+      status: 'notGenerated',
+      overview: null,
+      metadata: null,
+    });
+    expect(generated.status).toBe('completed');
+    expect(generated.metadata).toMatchObject({
+      cached: false,
+      cacheStatus: 'miss',
+    });
+    expect(cached.status).toBe('completed');
+    expect(cached.overview).toEqual(generated.overview);
+    expect(cached.metadata).toMatchObject({cached: true, cacheStatus: 'hit'});
+    expect(again.metadata?.cacheStatus).toBe('hit');
+    expect(regenerated.metadata).toMatchObject({
+      cached: false,
+      cacheStatus: 'regenerated',
+    });
+  });
+
+  it('points at files from the reading list, in reading order', async () => {
+    const {client, analysisId} = await finished();
+    const search = await client.search(analysisId, {q: 'login'});
+
+    const {overview} = await client.generateSearchOverview(analysisId, {
+      q: 'login',
+    });
+
+    const paths = search.results.map(entry => entry.path);
+    expect(overview?.startHere.path).toBe(paths[0]);
+    expect(overview?.readNext.map(step => step.path)).toEqual(
+      paths.slice(1, 1 + (overview?.readNext.length ?? 0)),
+    );
+    expect(overview?.summary).toContain('login');
+  });
+
+  it('keeps a separate overview per query and intent', async () => {
+    const {client, analysisId} = await finished();
+    await client.generateSearchOverview(analysisId, {q: 'login'});
+
+    expect(
+      (await client.getSearchOverview(analysisId, {q: 'login'})).status,
+    ).toBe('completed');
+    expect(
+      (
+        await client.getSearchOverview(analysisId, {
+          q: 'login',
+          intent: 'tests',
+        })
+      ).status,
+    ).toBe('notGenerated');
+    expect(
+      (await client.getSearchOverview(analysisId, {q: 'session'})).status,
+    ).toBe('notGenerated');
+  });
+
+  it('lists the cached file summaries it used', async () => {
+    const {client, analysisId} = await finished();
+    const {overview} = await client.generateSearchOverview(analysisId, {
+      q: 'login',
+    });
+    const start = overview?.startHere.path ?? '';
+    await client.generateFileSummary(analysisId, start);
+
+    const regenerated = await client.generateSearchOverview(
+      analysisId,
+      {q: 'login'},
+      {regenerate: true},
+    );
+
+    expect(regenerated.metadata?.usedFileSummaries).toEqual([start]);
+  });
+
+  it('reports noResults for a query that matches nothing', async () => {
+    const {client, analysisId} = await finished();
+    const request = {q: 'zzzz-nothing-matches'};
+
+    expect((await client.getSearchOverview(analysisId, request)).status).toBe(
+      'noResults',
+    );
+    const generated = await client.generateSearchOverview(analysisId, request);
+    expect(generated).toMatchObject({status: 'noResults', overview: null});
+  });
+
+  it('rejects an empty query and answers AI_DISABLED when AI is off', async () => {
+    const {client, analysisId} = await finished();
+    expect(
+      (await rejection(client.getSearchOverview(analysisId, {q: '  '}))).code,
+    ).toBe('INVALID_QUERY');
+
+    const off = await finished(false);
+    await expect(
+      off.client.getSearchOverview(off.analysisId, {q: 'login'}),
+    ).rejects.toMatchObject({code: 'AI_DISABLED'});
+    await expect(
+      off.client.generateSearchOverview(off.analysisId, {q: 'login'}),
+    ).rejects.toMatchObject({code: 'AI_DISABLED'});
+  });
+
+  it('rejects with ABORTED when the signal is already aborted', async () => {
+    const {client, analysisId} = await finished();
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      client.generateSearchOverview(
+        analysisId,
+        {q: 'login'},
+        {signal: controller.signal},
+      ),
+    ).rejects.toMatchObject({code: 'ABORTED'});
+  });
+});
