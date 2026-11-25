@@ -433,6 +433,12 @@ def _reading_tour(
     ]
 
 
+def first_docstring_line(document: SearchDocument) -> str:
+    """Return the first line of a file's first non-empty docstring, or ''."""
+    docstring = next((line.strip() for line in document.docstrings if line.strip()), "")
+    return docstring.splitlines()[0][:180] if docstring else ""
+
+
 def _summary(
     path: str,
     documents: dict[str, SearchDocument],
@@ -440,9 +446,9 @@ def _summary(
 ) -> str:
     document = documents.get(path)
     if document is not None:
-        docstring = next((line.strip() for line in document.docstrings if line.strip()), "")
+        docstring = first_docstring_line(document)
         if docstring:
-            return docstring.splitlines()[0][:180]
+            return docstring
         symbol_count = len(document.symbols) + len(document.members)
     else:
         symbol_count = 0

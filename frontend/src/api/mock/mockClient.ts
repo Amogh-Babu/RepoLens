@@ -1,4 +1,8 @@
-import type {ApiClient, RequestOptions} from '../client.ts';
+import type {
+  ApiClient,
+  GenerateSearchOverviewOptions,
+  RequestOptions,
+} from '../client.ts';
 import {ApiError} from '../errors.ts';
 import {ANALYSIS_STAGES} from '../types.ts';
 import type {
@@ -15,6 +19,9 @@ import type {
   RankedFile,
   SearchMatch,
   SearchIntent,
+  SearchOverview,
+  SearchOverviewRequest,
+  SearchOverviewResponse,
   SearchRequest,
   SearchResponse,
   StartAnalysisRequest,
@@ -146,6 +153,8 @@ export class MockApiClient implements ApiClient {
   private readonly aiEnabled: boolean;
   /** Generated mock summaries, keyed by analysis id and path. */
   private readonly summaries = new Map<string, FileSummary>();
+  /** Generated mock search overviews, keyed by analysis id, query and intent. */
+  private readonly searchOverviews = new Map<string, SearchOverviewResponse>();
   private nextId = 1;
 
   constructor(options: MockApiClientOptions = {}) {
@@ -459,6 +468,7 @@ export class MockApiClient implements ApiClient {
         provider: null,
         model: null,
         notice: null,
+        searchNotice: null,
         dailyCallLimit: null,
         usage: null,
       };
@@ -469,6 +479,8 @@ export class MockApiClient implements ApiClient {
       model: 'mock-model',
       notice:
         'Mock mode: summaries are made up from the fixture, not by a model.',
+      searchNotice:
+        'Mock mode: search overviews are made up from the fixture, not by a model.',
       dailyCallLimit: 100,
       usage: null,
     };
@@ -542,7 +554,93 @@ export class MockApiClient implements ApiClient {
     return result;
   }
 
-  private findSummarizable(analysisId: string, path: string): FixtureFile {
+  async getSearchOverview(
+    analysisId: string,
+    request: SearchOverviewRequest,
+    options?: RequestOptions,
+  ): Promise<SearchOverviewResponse> {
+    await this.delay(options);
+    const {query, intent, ranked} = this.rankForOverview(analysisId, request);
+    const base = {analysisId, query, intent, overview: null, metadata: null};
+    if (ranked.length === 0) return {...base, status: 'noResults'};
+    const cached = this.searchOverviews.get(
+      searchOverviewKey(analysisId, query, intent),
+    );
+    if (cached === undefined) return {...base, status: 'notGenerated'};
+    return {
+      ...cached,
+      metadata: cached.metadata && {
+        ...cached.metadata,
+        cached: true,
+        cacheStatus: 'hit',
+      },
+    };
+  }
+
+  async generateSearchOverview(
+    analysisId: string,
+    request: SearchOverviewRequest,
+    {regenerate = false, ...options}: GenerateSearchOverviewOptions = {},
+  ): Promise<SearchOverviewResponse> {
+    await this.delay(options);
+    const {query, intent, ranked} = this.rankForOverview(analysisId, request);
+    const key = searchOverviewKey(analysisId, query, intent);
+    const cached = this.searchOverviews.get(key);
+    if (ranked.length === 0 || (cached !== undefined && !regenerate)) {
+      return this.getSearchOverview(analysisId, request, options);
+    }
+    const shown = ranked.slice(0, 5).map(entry => entry.path);
+    const result: SearchOverviewResponse = {
+      analysisId,
+      query,
+      intent,
+      status: 'completed',
+      overview: mockSearchOverview(query, ranked),
+      metadata: {
+        model: 'mock-model',
+        promptVersion: 'mock',
+        schemaVersion: '1',
+        generatedAt: new Date(this.now()).toISOString(),
+        cached: false,
+        cacheStatus: cached === undefined ? 'miss' : 'regenerated',
+        usedFileSummaries: shown.filter(path =>
+          this.summaries.has(`${analysisId}
+${path}`),
+        ),
+      },
+    };
+    this.searchOverviews.set(key, result);
+    return result;
+  }
+
+  /** Validates an overview request and ranks its files like search does. */
+  private rankForOverview(
+    analysisId: string,
+    request: SearchOverviewRequest,
+  ): {query: string; intent: SearchIntent | null; ranked: RankedFile[]} {
+    this.requireAi();
+    this.findCompleted(analysisId);
+    const query = request.q.trim();
+    if (query === '' || query.length > MAX_QUERY_LENGTH) {
+      throw new ApiError(
+        'INVALID_QUERY',
+        query === ''
+          ? 'Enter a keyword to search for.'
+          : `Searches are limited to ${MAX_QUERY_LENGTH} characters.`,
+        null,
+        400,
+      );
+    }
+    const intent = request.intent ?? null;
+    const ranked = rankFiles(
+      this.repo.files,
+      query.toLowerCase().split(/\s+/),
+      intent ?? undefined,
+    );
+    return {query, intent, ranked};
+  }
+
+  private requireAi(): void {
     if (!this.aiEnabled) {
       throw new ApiError(
         'AI_DISABLED',
@@ -551,6 +649,10 @@ export class MockApiClient implements ApiClient {
         503,
       );
     }
+  }
+
+  private findSummarizable(analysisId: string, path: string): FixtureFile {
+    this.requireAi();
     this.findCompleted(analysisId);
     const file = this.repo.files.find(f => f.path === path);
     if (file === undefined) {
@@ -700,6 +802,48 @@ export class MockApiClient implements ApiClient {
       .filter(file => file.imports.some(imp => imp.targetPath === path))
       .map(file => file.path);
   }
+}
+
+function searchOverviewKey(
+  analysisId: string,
+  query: string,
+  intent: SearchIntent | null,
+): string {
+  return `${analysisId}
+${query}
+${intent ?? ''}`;
+}
+
+/**
+ * A made-up search overview built from the ranked reading list, so mock mode
+ * can show the AI search overview without a model.
+ */
+function mockSearchOverview(
+  query: string,
+  ranked: RankedFile[],
+): SearchOverview {
+  const [first, ...rest] = ranked as [RankedFile, ...RankedFile[]];
+  const readNext = rest.slice(0, 3).map(entry => ({
+    path: entry.path,
+    reason: entry.orderReason || entry.reason,
+  }));
+  const undescribed = ranked.length - readNext.length - 1;
+  return {
+    summary:
+      `Mock overview of “${query}”: ${ranked.length} ` +
+      `${ranked.length === 1 ? 'file matches' : 'files match'}, and ` +
+      `\`${first.path}\` is where the matches meet.`,
+    startHere: {path: first.path, reason: first.reason},
+    readNext,
+    uncertainties:
+      undescribed > 0
+        ? [
+            undescribed === 1
+              ? '1 more matching file was not described.'
+              : `${undescribed} more matching files were not described.`,
+          ]
+        : [],
+  };
 }
 
 /**

@@ -6,6 +6,8 @@ import type {
   FileSummary,
   FileDetail,
   RepositoryOverview,
+  SearchOverviewRequest,
+  SearchOverviewResponse,
   SearchRequest,
   SearchResponse,
   StartAnalysisRequest,
@@ -18,6 +20,12 @@ export interface RequestOptions {
   signal?: AbortSignal;
   /** Overrides the default timeout. The promise rejects with code TIMEOUT. */
   timeoutMs?: number;
+}
+
+/** Options for generating an AI search overview. */
+export interface GenerateSearchOverviewOptions extends RequestOptions {
+  /** Replaces a cached overview with a newly generated one. */
+  regenerate?: boolean;
 }
 
 /** Default timeout for every request except search. */
@@ -104,6 +112,35 @@ export interface ApiClient {
     request?: {regenerate?: boolean},
     options?: RequestOptions,
   ): Promise<FileSummary>;
+
+  /**
+   * GET /analyses/{id}/ai-search-overview: the cached AI overview of a
+   * search, or status "notGenerated". Never starts a model call.
+   */
+  getSearchOverview(
+    analysisId: string,
+    request: SearchOverviewRequest,
+    options?: RequestOptions,
+  ): Promise<SearchOverviewResponse>;
+
+  /**
+   * POST /analyses/{id}/ai-search-overview: the cached overview, or a newly
+   * generated and verified one. `regenerate` replaces a cached overview.
+   */
+  generateSearchOverview(
+    analysisId: string,
+    request: SearchOverviewRequest,
+    options?: GenerateSearchOverviewOptions,
+  ): Promise<SearchOverviewResponse>;
+}
+
+/** Query string for the AI search overview routes. */
+function searchOverviewParams(request: SearchOverviewRequest): URLSearchParams {
+  const params = new URLSearchParams({q: request.q});
+  if (request.intent !== undefined && request.intent !== null) {
+    params.set('intent', request.intent);
+  }
+  return params;
 }
 
 /**
@@ -239,6 +276,33 @@ export class HttpApiClient implements ApiClient {
     return this.request(
       'POST',
       `/analyses/${encodeURIComponent(analysisId)}/ai-summaries/${encodeFilePath(path)}${query}`,
+      {timeoutMs: SUMMARY_TIMEOUT_MS, ...options},
+    );
+  }
+
+  getSearchOverview(
+    analysisId: string,
+    request: SearchOverviewRequest,
+    options?: RequestOptions,
+  ): Promise<SearchOverviewResponse> {
+    const params = searchOverviewParams(request);
+    return this.request(
+      'GET',
+      `/analyses/${encodeURIComponent(analysisId)}/ai-search-overview?${params.toString()}`,
+      options,
+    );
+  }
+
+  generateSearchOverview(
+    analysisId: string,
+    request: SearchOverviewRequest,
+    {regenerate = false, ...options}: GenerateSearchOverviewOptions = {},
+  ): Promise<SearchOverviewResponse> {
+    const params = searchOverviewParams(request);
+    params.set('regenerate', String(regenerate));
+    return this.request(
+      'POST',
+      `/analyses/${encodeURIComponent(analysisId)}/ai-search-overview?${params.toString()}`,
       {timeoutMs: SUMMARY_TIMEOUT_MS, ...options},
     );
   }

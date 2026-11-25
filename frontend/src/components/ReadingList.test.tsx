@@ -1,6 +1,12 @@
 import {render, screen, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type {RankedFile} from '../api/types.ts';
+import {ApiClientContext} from '../api/apiClientContext.ts';
+import type {ApiClient} from '../api/client.ts';
+import type {
+  AiStatus,
+  RankedFile,
+  SearchOverviewResponse,
+} from '../api/types.ts';
 import type {SearchState} from '../state/analysisStore.ts';
 import {ReadingList} from './ReadingList.tsx';
 
@@ -36,7 +42,38 @@ function searchState(overrides: Partial<SearchState> = {}): SearchState {
   };
 }
 
-function renderList(search: SearchState, selectedPath: string | null = null) {
+const AI_OFF: AiStatus = {
+  enabled: false,
+  provider: null,
+  model: null,
+  notice: null,
+  searchNotice: null,
+  dailyCallLimit: null,
+  usage: null,
+};
+
+function fakeClient(aiEnabled = false) {
+  return {
+    getAiStatus: vi.fn().mockResolvedValue({...AI_OFF, enabled: aiEnabled}),
+    getSearchOverview: vi.fn((analysisId: string, request: {q: string}) =>
+      Promise.resolve({
+        analysisId,
+        query: request.q,
+        intent: null,
+        status: 'notGenerated',
+        overview: null,
+        metadata: null,
+      } satisfies SearchOverviewResponse),
+    ),
+    generateSearchOverview: vi.fn(),
+  };
+}
+
+function renderList(
+  search: SearchState,
+  selectedPath: string | null = null,
+  client = fakeClient(),
+) {
   const handlers = {
     onSelectFile: vi.fn(),
     onLoadMore: vi.fn(),
@@ -44,7 +81,14 @@ function renderList(search: SearchState, selectedPath: string | null = null) {
     onRetry: vi.fn(),
   };
   render(
-    <ReadingList search={search} selectedPath={selectedPath} {...handlers} />,
+    <ApiClientContext value={client as unknown as ApiClient}>
+      <ReadingList
+        analysisId="analysis-1"
+        search={search}
+        selectedPath={selectedPath}
+        {...handlers}
+      />
+    </ApiClientContext>,
   );
   return handlers;
 }
@@ -156,5 +200,43 @@ describe('ReadingList', () => {
     expect(screen.getByRole('button', {name: /service\.py/})).toBeVisible();
     await user.click(screen.getByRole('button', {name: 'Retry'}));
     expect(onRetry).toHaveBeenCalled();
+  });
+
+  it('offers the AI overview above the reading tour', async () => {
+    const client = fakeClient(true);
+    renderList(searchState({intent: 'tests'}), null, client);
+
+    const overview = await screen.findByRole('region', {
+      name: 'AI search overview',
+    });
+    const start = screen.getByRole('button', {name: /Start reading tour/});
+    expect(
+      overview.compareDocumentPosition(start) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      await within(overview).findByRole('button', {
+        name: 'Generate AI overview',
+      }),
+    ).toBeVisible();
+    expect(client.getSearchOverview).toHaveBeenCalledWith(
+      'analysis-1',
+      {q: 'login', intent: 'tests'},
+      expect.anything(),
+    );
+    expect(client.generateSearchOverview).not.toHaveBeenCalled();
+  });
+
+  it('does not offer the AI overview when nothing matches', async () => {
+    const client = fakeClient(true);
+    renderList(searchState({results: [], total: 0}), null, client);
+
+    expect(await screen.findByText(/No files match/)).toBeVisible();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(
+      screen.queryByRole('region', {name: 'AI search overview'}),
+    ).not.toBeInTheDocument();
+    expect(client.getAiStatus).not.toHaveBeenCalled();
+    expect(client.getSearchOverview).not.toHaveBeenCalled();
   });
 });

@@ -208,3 +208,52 @@ code {
 main:focus {
   outline: none;
 }
+
+/* Placeholder lines while an AI summary or overview is generated. */
+.ai-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.ai-skeleton-line {
+  display: block;
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    rgba(125, 211, 252, 0.14) 25%,
+    rgba(125, 211, 252, 0.32) 50%,
+    rgba(125, 211, 252, 0.14) 75%
+  );
+  background-size: 200% 100%;
+  animation: ai-skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+.ai-skeleton-line--wide {
+  width: 92%;
+}
+
+.ai-skeleton-line--full {
+  width: 100%;
+}
+
+.ai-skeleton-line--mid {
+  width: 68%;
+}
+
+@keyframes ai-skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-skeleton-line {
+    animation: none;
+  }
+}

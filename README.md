@@ -130,7 +130,7 @@ requirements files:
 cd backend && uv lock && uv export --locked --no-dev --format requirements-txt --no-emit-project -o requirements.txt && uv export --locked --format requirements-txt --no-emit-project -o requirements-dev.txt
 ```
 
-## Optional: AI file summaries
+## Optional: AI file summaries and search overviews
 
 RepoLens can add an AI-generated summary to the file panel, written from the
 file's actual source (not just its docstrings) and checked against the static
@@ -149,8 +149,15 @@ file's source to OpenAI. The model (`REPOLENS_AI_MODEL`, default
 [`backend/README.md`](backend/README.md#ai-file-summaries-repolensai) and
 [`backend/.env.example`](backend/.env.example).
 
-If you host RepoLens with AI on, every visitor can generate summaries on your
-key. A server-wide daily limit (`REPOLENS_AI_DAILY_CALL_LIMIT`, default 100)
+With AI on, a search can also get a short **AI overview** above its reading
+list: what that part of the code does, which file to open first, and what to
+read next. Like file summaries, it is generated only when you click
+**Generate AI overview** and cached for that query and reading goal. It sends
+OpenAI the file names, symbol names, docstring lines and any cached AI file
+summaries of the top search results, but no source code.
+
+If you host RepoLens with AI on, every visitor can generate summaries and
+overviews on your key. Both share the same limits. A server-wide daily limit (`REPOLENS_AI_DAILY_CALL_LIMIT`, default 100)
 and a per-visitor hourly limit (`REPOLENS_AI_CLIENT_HOURLY_LIMIT`, default 10)
 keep that bounded; see
 [Hosting publicly](backend/README.md#hosting-publicly) before deploying.

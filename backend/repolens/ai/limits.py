@@ -15,9 +15,11 @@ is enough for one server process, which is how RepoLens runs.
 """
 
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 import math
 import threading
+from typing import Any
 
 
 WINDOW_SECONDS = 3600.0
@@ -104,3 +106,80 @@ class ClientLimitReached(Exception):
         super().__init__(f"client limit of {limit} per hour reached")
         self.limit = limit
         self.retry_after_seconds = retry_after_seconds
+
+
+class AiGate:
+    """The limits every AI feature shares: one per server, not per feature.
+
+    File summaries and search overviews draw on the same concurrency slots,
+    the same per-visitor hourly budget, and the same daily call budget (kept
+    in the store's `ai_usage` row), so an operator sets and watches one set
+    of limits in `/ai/status`.
+    """
+
+    def __init__(
+        self,
+        store: Any,
+        config: Any,
+        *,
+        clock: Callable[[], float],
+        slot_wait_seconds: float = 5.0,
+    ) -> None:
+        """Initialize the gate.
+
+        Args:
+          store: The graph store (`reserve_ai_call` / `record_ai_usage`).
+          config: The `AiConfig` whose limits apply.
+          clock: Time source, shared with the services.
+          slot_wait_seconds: How long a request waits for a free model slot
+            before answering AI_BUSY.
+        """
+        self._store = store
+        self._config = config
+        self.clock = clock
+        self.slot_wait_seconds = slot_wait_seconds
+        self._slots = threading.BoundedSemaphore(config.max_concurrent_requests)
+        self._client_limiter = ClientRateLimiter(config.client_hourly_limit, clock)
+
+    def acquire_client(self, client: str | None) -> float | None:
+        """Count one new generation against `client`'s hourly budget.
+
+        Returns a ticket for `release_client`, or None without a client or
+        limit.
+
+        Raises:
+          ClientLimitError: The visitor used its hourly budget.
+        """
+        if client is None:
+            return None
+        from repolens.ai.errors import ClientLimitError
+
+        try:
+            return self._client_limiter.acquire(client)
+        except ClientLimitReached as limited:
+            raise ClientLimitError(limited.limit, limited.retry_after_seconds) from None
+
+    def release_client(self, client: str | None, ticket: float | None) -> None:
+        """Give back a generation that ended before any model call."""
+        if client is not None:
+            self._client_limiter.release(client, ticket)
+
+    def reserve_call(self, day: str) -> bool:
+        """Count one model call against today's budget, if any is left."""
+        return self._store.reserve_ai_call(day, self._config.daily_call_limit)
+
+    @contextmanager
+    def slot(self) -> Iterator[None]:
+        """Hold one model-call slot.
+
+        Raises:
+          SummaryBusyError: No slot became free in time.
+        """
+        from repolens.ai.errors import SummaryBusyError
+
+        if not self._slots.acquire(timeout=self.slot_wait_seconds):
+            raise SummaryBusyError()
+        try:
+            yield
+        finally:
+            self._slots.release()

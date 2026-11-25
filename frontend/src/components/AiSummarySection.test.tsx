@@ -318,7 +318,7 @@ describe('AI File Overview integration', () => {
       }),
     );
     expect(
-      await within(overview).findByText('AI summary limit reached'),
+      await within(overview).findByText('AI generation limit reached'),
     ).toBeVisible();
     expect(within(overview).getByText(/about 12 minutes/)).toBeVisible();
     expect(

@@ -648,6 +648,41 @@ responsibilities, symbols, dependencies, side effects, uncertainties, and linked
 evidence. Repository onboarding uses AI summaries where a verified cached
 description is available and clearly labels those descriptions as AI-generated.
 
+### AI search overviews
+
+When AI is on, the reading list for a search can show an AI overview of its
+top results: a short `summary`, a `startHere` file with a reason, up to four
+`readNext` files in order, and up to two `uncertainties`. It uses the same
+model, configuration, cache rules and limits as file summaries: the
+concurrency slots, the per-visitor hourly limit and the daily call limit are
+shared (one `AiGate` per server), so `/ai/status` shows one budget.
+
+```text
+POST /analyses/{id}/ai-search-overview?q=...&intent=...
+  -> run the same search the reading list shows; take the top 8 results
+  -> no results? -> status "noResults" (no model call)
+  -> cached for this normalized query, reading goal and top-8 order? -> serve
+  -> context: paths, match and order reasons, symbol names, first docstring
+     lines, imports between the results, and cached verified file summaries
+     (nothing is downloaded; no source is sent)
+  -> OpenAI Responses API, strict JSON schema         (shared limits apply)
+  -> verify: every recommended path is a listed result, every backticked
+     name is a listed path or symbol; one repair attempt
+  -> cache in SQLite (`ai_search_overviews`, expires with the analysis)
+```
+
+| Endpoint | What it does |
+| --- | --- |
+| `GET /analyses/{id}/ai-search-overview?q=&intent=` | The cached overview, or `status: "notGenerated"` / `"noResults"`. Never calls the model. |
+| `POST /analyses/{id}/ai-search-overview?q=&intent=` | The cached overview, or a newly generated and verified one. `regenerate=true` replaces it, with the same cooldown as summaries. |
+
+Errors are the file summary codes above, plus `INVALID_QUERY` (422) and
+`ANALYSIS_UNAVAILABLE` (404) as on `/search`. `GET /ai/status` adds
+`searchNotice`, the text shown before generating. The query is never logged.
+`python -m benchmarks.ai_search_overview_eval` scores overviews on the labeled
+search queries (offline by default; `--live` uses the configured model and
+costs money).
+
 ### Configuration
 
 | Variable | Default | Meaning |

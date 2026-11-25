@@ -274,6 +274,11 @@ export interface AiStatus {
   model: string | null;
   /** What generating a summary sends where; shown before generating. */
   notice: string | null;
+  /**
+   * What generating a search overview sends where; shown before
+   * generating. Absent on backends without search overviews.
+   */
+  searchNotice?: string | null;
   dailyCallLimit: number | null;
   usage: AiUsage | null;
 }
@@ -357,4 +362,50 @@ export interface FileSummary {
   status: 'notGenerated' | 'completed';
   summary: CodeSummary | null;
   metadata: SummaryMetadata | null;
+}
+
+/** One file the AI search overview points the reader to. */
+export interface SearchOverviewStep {
+  path: string;
+  /** Why to read this file, in plain text. */
+  reason: string;
+}
+
+/** A verified AI overview of a search. Every field is plain text, never HTML. */
+export interface SearchOverview {
+  summary: string;
+  startHere: SearchOverviewStep;
+  readNext: SearchOverviewStep[];
+  uncertainties: string[];
+}
+
+/** Provenance of a search overview, filled in by RepoLens, not the model. */
+export interface SearchOverviewMetadata {
+  model: string;
+  promptVersion: string;
+  schemaVersion: string;
+  /** ISO 8601. */
+  generatedAt: string;
+  /** True when served from the cache instead of generated now. */
+  cached: boolean;
+  cacheStatus: 'hit' | 'miss' | 'regenerated';
+  /** Paths whose cached AI file summaries the model was shown. */
+  usedFileSummaries: string[];
+}
+
+/** GET and POST /analyses/{id}/ai-search-overview query parameters. */
+export interface SearchOverviewRequest {
+  q: string;
+  intent?: SearchIntent | null;
+}
+
+/** GET and POST /analyses/{id}/ai-search-overview response body. */
+export interface SearchOverviewResponse {
+  analysisId: string;
+  query: string;
+  intent: SearchIntent | null;
+  /** 'noResults' when the query matches no files, so there is nothing to summarize. */
+  status: 'notGenerated' | 'completed' | 'noResults';
+  overview: SearchOverview | null;
+  metadata: SearchOverviewMetadata | null;
 }
