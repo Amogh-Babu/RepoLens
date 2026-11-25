@@ -6,6 +6,8 @@ Given a public GitHub repository and a branch, tag, or commit, RepoLens statical
 
 RepoLens does not import, execute, or build code from analyzed repositories.
 
+![Screenshot of RepoLens graph view and search](docs/images/search.png)
+
 ## Try RepoLens
 
 Once RepoLens releases, you'll be able to access the tool online.
@@ -23,7 +25,11 @@ Next, from the repository root, run:
 docker compose up --build
 ```
 
-Then open **http://localhost:8000**. The first build takes a few minutes; later
+Then open **http://localhost:8000**. You'll see the home page, where you can enter a repository URL and press **Analyze**.
+
+![RepoLens home page](docs/images/index.png)
+
+The first build takes a few minutes; later
 starts take seconds. Analyses are kept in a Docker volume, so they survive
 restarts until they expire after 24 hours. Press `Ctrl+C` to stop.
 
@@ -64,13 +70,15 @@ These settings trade speed for memory:
 * `REPOLENS_EMBED_THREADS` (default: every core): model inference threads.
   Fewer threads make indexing slower but do not lower memory.
 
-### Using RepoLens in the Browser
+### Using RepoLens in the browser
 
 1. Open **http://localhost:8000** (or **http://localhost:5173** when running the development servers below).
-2. Paste any public Python GitHub repository URL (for example, `https://github.com/pallets/itsdangerous` or `https://github.com/pallets/click`) and optionally specify a branch, tag, or commit SHA.
+2. Paste any public Python GitHub repository URL (for example, [`https://github.com/pallets/click`](https://github.com/pallets/click) or [`https://github.com/pallets/itsdangerous`](https://github.com/pallets/itsdangerous)) and optionally specify a branch, tag, or commit SHA.
 3. Click **Analyze** to download, filter, parse, and store the repository's dependency graph.
 4. Start with a task in the **Search Bar**, in your own words (for example, "where do I start if I'm working on production?"). RepoLens combines exact matches with a local embedding model, then gives you a ranked reading order with explanations. Search runs locally; repository text is not sent to an embedding service.
 5. In the reading list, choose whether you want the overall topic, implementation, configuration, or tests and examples. The choice prioritizes files based on their paths without excluding other results. The dependency map can show only search matches, including matches beyond the current reading-list page.
+
+![Browsing a reading list](docs/images/readinglist.png)
 
 ---
 
@@ -111,7 +119,7 @@ backend on port 8000, and the API's interactive docs are at
 | **Frontend** | `Vitest` + React Testing Library | `npm --prefix frontend test` (also `run lint`, `run format:check`, `run typecheck`) | Add `<Component>.test.tsx` or `<module>.test.ts` next to the code under test |
 | **Image** | `pytest` inside Docker | `docker build --target test .` | Runs the backend suite in the exact production environment |
 
-### Update Dependencies
+### Update dependencies
 
 Backend dependencies are locked. To upgrade them, move `exclude-newer` in
 [`backend/pyproject.toml`](backend/pyproject.toml) to a recent date (keep it a
@@ -122,7 +130,7 @@ requirements files:
 cd backend && uv lock && uv export --locked --no-dev --format requirements-txt --no-emit-project -o requirements.txt && uv export --locked --format requirements-txt --no-emit-project -o requirements-dev.txt
 ```
 
-## Optional: AI File Summaries and Search Overviews
+## Optional: AI file summaries and search overviews
 
 RepoLens can add an AI-generated summary to the file panel, written from the
 file's actual source (not just its docstrings) and checked against the static
@@ -207,11 +215,11 @@ Interested in improving RepoLens?
 - Start with [docs/DEVELOPERS.md](https://github.com/Amogh-Babu/RepoLens/tree/main/docs/DEVELOPERS.md) for architecture, setup, tests, benchmarks, and guidance for extending the analyzer.
 - Discuss bugs and proposed changes at the [issue tracker](https://github.com/Amogh-Babu/RepoLens/issues).
 
-## Reporting Issues
+## Reporting issues
  
 Found a bug or have an idea for RepoLens? Open an issue on the [issue tracker](../../issues) and include the details below. Clear reports help us fix problems faster.
  
-### Issue Template
+### Issue template
  
 Copy this into a new issue and fill in each section:
  
