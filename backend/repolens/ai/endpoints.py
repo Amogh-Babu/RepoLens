@@ -14,7 +14,7 @@ event loop.
 import logging
 from typing import Any, Literal
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -123,7 +123,20 @@ class FileSummaryResponse(BaseModel):
 
 
 def _error(exc: SummaryError | GraphStoreError) -> JSONResponse:
-    return JSONResponse(status_code=exc.status_code, content=exc.to_dict(), headers=_NO_STORE)
+    headers = dict(_NO_STORE)
+    retry_after = getattr(exc, "retry_after_seconds", None)
+    if retry_after is not None:
+        headers["Retry-After"] = str(retry_after)
+    return JSONResponse(status_code=exc.status_code, content=exc.to_dict(), headers=headers)
+
+
+def _client_id(request: Request) -> str:
+    """Identify the visitor for the per-visitor limit by IP address.
+
+    Behind a reverse proxy this is only the visitor's address if uvicorn
+    trusts that proxy's `X-Forwarded-For` header (`--forwarded-allow-ips`).
+    """
+    return request.client.host if request.client else "unknown"
 
 
 def _unexpected(analysis_id: str) -> JSONResponse:
@@ -171,13 +184,17 @@ def create_ai_router(service: CodeSummaryService) -> APIRouter:
         summary="Return the cached AI summary of a file, or generate and verify one",
     )
     def create_summary(
+        request: Request,
         analysis_id: AnalysisIdPath,
         file_path: str,
         regenerate: bool = Query(default=False),
     ) -> Any:
         try:
             payload = service.generate_summary(
-                analysis_id, file_path, regenerate=regenerate
+                analysis_id,
+                file_path,
+                regenerate=regenerate,
+                client=_client_id(request),
             )
         except (SummaryError, GraphStoreError) as exc:
             return _error(exc)

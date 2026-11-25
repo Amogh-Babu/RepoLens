@@ -34,6 +34,7 @@ from repolens.ai.config import AiConfig
 from repolens.ai.context import build_context
 from repolens.ai.errors import (
     AiDisabledError,
+    ClientLimitError,
     DailyLimitError,
     ProviderTimeoutError,
     ProviderUnavailableError,
@@ -43,6 +44,7 @@ from repolens.ai.errors import (
     SummaryError,
     SummaryValidationError,
 )
+from repolens.ai.limits import ClientLimitReached, ClientRateLimiter
 from repolens.ai.models import SCHEMA_VERSION, CodeSummary, CodeSummaryContext
 from repolens.ai.prompts import PROMPT_VERSION
 from repolens.ai.provider import CodeSummaryProvider, OpenAICodeSummaryProvider
@@ -116,6 +118,7 @@ class CodeSummaryService:
         self._clock = clock
         self._slot_wait_seconds = slot_wait_seconds
         self._slots = threading.BoundedSemaphore(config.max_concurrent_requests)
+        self._client_limiter = ClientRateLimiter(config.client_hourly_limit, clock)
         self._inflight: dict[tuple[str, str], Future[dict[str, Any]]] = {}
         self._inflight_lock = threading.Lock()
 
@@ -212,12 +215,18 @@ class CodeSummaryService:
         path: str,
         *,
         regenerate: bool = False,
+        client: str | None = None,
     ) -> dict[str, Any]:
         """Return a verified summary, generating it if it is not cached.
 
         With `regenerate`, a cached summary is replaced, at most once per
         cooldown period. Concurrent requests for the same file share one
         generation.
+
+        `client` identifies the visitor (the API passes the client IP
+        address). A new generation counts against that visitor's hourly
+        limit; cache hits and joining a generation in flight do not. Without
+        a `client`, no per-visitor limit applies.
 
         Raises:
           SummaryError: AI is off, the source cannot be fetched or does not
@@ -238,19 +247,39 @@ class CodeSummaryService:
                 raise RegenerateCooldownError(max(1, int(cooldown - elapsed + 0.999)))
 
         key = (analysis_id, detail.path)
+        ticket: float | None = None
         with self._inflight_lock:
             pending = self._inflight.get(key)
             if pending is None:
+                if client is not None:
+                    try:
+                        ticket = self._client_limiter.acquire(client)
+                    except ClientLimitReached as limited:
+                        raise ClientLimitError(
+                            limited.limit, limited.retry_after_seconds
+                        ) from None
                 future: Future[dict[str, Any]] = Future()
                 self._inflight[key] = future
         if pending is not None:
             return self._wait_for(pending)
 
+        called_model = False
+
+        def note_model_call() -> None:
+            nonlocal called_model
+            called_model = True
+
         try:
             payload = self._generate(
-                analysis_id, detail, cache_status="regenerated" if row is not None else "miss"
+                analysis_id,
+                detail,
+                cache_status="regenerated" if row is not None else "miss",
+                on_model_call=note_model_call,
             )
         except BaseException as error:
+            if client is not None and not called_model:
+                # Nothing was spent, so the visitor keeps this generation.
+                self._client_limiter.release(client, ticket)
             future.set_exception(error)
             raise
         else:
@@ -285,7 +314,12 @@ class CodeSummaryService:
         )
 
     def _generate(
-        self, analysis_id: str, detail: FileDetail, *, cache_status: str
+        self,
+        analysis_id: str,
+        detail: FileDetail,
+        *,
+        cache_status: str,
+        on_model_call: Callable[[], None] = lambda: None,
     ) -> dict[str, Any]:
         day = _today(self._clock())
         self._store.record_ai_usage(day, cache_misses=1)
@@ -307,7 +341,7 @@ class CodeSummaryService:
         if not self._slots.acquire(timeout=self._slot_wait_seconds):
             raise SummaryBusyError()
         try:
-            summary = self._call_and_verify(analysis_id, context, day)
+            summary = self._call_and_verify(analysis_id, context, day, on_model_call)
         finally:
             self._slots.release()
 
@@ -327,14 +361,23 @@ class CodeSummaryService:
         return self._payload(detail, row, cached=False, cache_status=cache_status)
 
     def _call_and_verify(
-        self, analysis_id: str, context: CodeSummaryContext, day: str
+        self,
+        analysis_id: str,
+        context: CodeSummaryContext,
+        day: str,
+        on_model_call: Callable[[], None] = lambda: None,
     ) -> CodeSummary:
-        """Call the model, verify, and repair once; return a verified summary."""
+        """Call the model, verify, and repair once; return a verified summary.
+
+        `on_model_call` runs once a model call is reserved, just before it is
+        made, so callers can tell spent generations from abandoned ones.
+        """
         assert self._provider is not None
         feedback: tuple[str, ...] = ()
         for attempt in range(1, MAX_ATTEMPTS + 1):
             if not self._store.reserve_ai_call(day, self._config.daily_call_limit):
                 raise DailyLimitError()
+            on_model_call()
             started = time.monotonic()
             try:
                 result = self._provider.summarize(context, feedback)

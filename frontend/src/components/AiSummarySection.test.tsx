@@ -298,6 +298,34 @@ describe('AI File Overview integration', () => {
     expect(within(overview).getByText(/Provider failed/)).toBeVisible();
   });
 
+  it('explains the per-visitor limit without offering a retry', async () => {
+    const user = userEvent.setup();
+    const client = fakeClient({
+      generate: () =>
+        Promise.reject(
+          new ApiError(
+            'AI_CLIENT_LIMIT',
+            'You have generated 10 new AI summaries in the last hour.',
+            'Cached summaries are still available. You can generate more in about 12 minutes.',
+            429,
+          ),
+        ),
+    });
+    const overview = renderPanel(client);
+    await user.click(
+      await within(overview).findByRole('button', {
+        name: 'Generate AI overview',
+      }),
+    );
+    expect(
+      await within(overview).findByText('AI summary limit reached'),
+    ).toBeVisible();
+    expect(within(overview).getByText(/about 12 minutes/)).toBeVisible();
+    expect(
+      within(overview).queryByRole('button', {name: 'Retry'}),
+    ).not.toBeInTheDocument();
+  });
+
   it('leaves file details usable while generation is pending', async () => {
     const user = userEvent.setup();
     const client = fakeClient({generate: () => new Promise(() => {})});

@@ -141,6 +141,12 @@ file's source to OpenAI. The model (`REPOLENS_AI_MODEL`, default
 [`backend/README.md`](backend/README.md#ai-file-summaries-repolensai) and
 [`backend/.env.example`](backend/.env.example).
 
+If you host RepoLens with AI on, every visitor can generate summaries on your
+key. A server-wide daily limit (`REPOLENS_AI_DAILY_CALL_LIMIT`, default 100)
+and a per-visitor hourly limit (`REPOLENS_AI_CLIENT_HOURLY_LIMIT`, default 10)
+keep that bounded; see
+[Hosting publicly](backend/README.md#hosting-publicly) before deploying.
+
 ---
 
 ## Operational Use Cases (First Prototype Status)
