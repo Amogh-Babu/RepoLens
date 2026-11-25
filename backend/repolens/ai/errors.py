@@ -15,12 +15,15 @@ class SummaryError(Exception):
         message: str,
         hint: str | None = None,
         status_code: int = 502,
+        retry_after_seconds: int | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
         self.hint = hint
         self.status_code = status_code
+        # Sent as the HTTP `Retry-After` header when set.
+        self.retry_after_seconds = retry_after_seconds
 
     def to_dict(self) -> dict[str, str | None]:
         """Serialize the error into the standard {code, message, hint} shape."""
@@ -108,6 +111,24 @@ class DailyLimitError(SummaryError):
             message="Today's AI summary budget has been used up.",
             hint="Cached summaries are still available. New ones resume tomorrow (UTC).",
             status_code=429,
+        )
+
+
+class ClientLimitError(SummaryError):
+    """This visitor generated its hourly share of new summaries."""
+
+    def __init__(self, limit: int, retry_after_seconds: int) -> None:
+        minutes = max(1, -(-retry_after_seconds // 60))
+        wait = "about a minute" if minutes == 1 else f"about {minutes} minutes"
+        noun = "summary" if limit == 1 else "summaries"
+        super().__init__(
+            code="AI_CLIENT_LIMIT",
+            message=f"You have generated {limit} new AI {noun} in the last hour.",
+            hint=(
+                f"Cached summaries are still available. You can generate more in {wait}."
+            ),
+            status_code=429,
+            retry_after_seconds=retry_after_seconds,
         )
 
 

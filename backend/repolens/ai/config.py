@@ -39,6 +39,8 @@ class AiConfig:
       max_output_tokens: Cap on generated tokens per request.
       max_concurrent_requests: Model calls allowed at the same time.
       daily_call_limit: Model calls allowed per UTC day.
+      client_hourly_limit: New summaries one visitor (client IP address) may
+        generate per sliding hour; 0 turns the per-visitor limit off.
       max_retries: Provider retries on transient errors (rate limits, 5xx).
       regenerate_cooldown_seconds: Minimum gap between regenerations of one
         cached summary.
@@ -57,6 +59,7 @@ class AiConfig:
     max_output_tokens: int = 4096
     max_concurrent_requests: int = 2
     daily_call_limit: int = 100
+    client_hourly_limit: int = 10
     max_retries: int = 1
     regenerate_cooldown_seconds: float = 60.0
     reasoning_effort: str = ""
@@ -104,6 +107,9 @@ class AiConfig:
             ),
             daily_call_limit=_positive_int(
                 env, "REPOLENS_AI_DAILY_CALL_LIMIT", defaults.daily_call_limit
+            ),
+            client_hourly_limit=_non_negative_int(
+                env, "REPOLENS_AI_CLIENT_HOURLY_LIMIT", defaults.client_hourly_limit
             ),
             max_retries=_non_negative_int(
                 env, "REPOLENS_AI_MAX_RETRIES", defaults.max_retries

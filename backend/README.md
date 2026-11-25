@@ -632,7 +632,8 @@ POST /analyses/{id}/ai-summaries/{path}
 | `POST /analyses/{id}/ai-summaries/{path}` | The cached summary, or a newly generated and verified one. `?regenerate=true` replaces a cached summary, at most once a minute per file. |
 
 Errors use the usual `{code, message, hint}` shape: `AI_DISABLED` (503),
-`AI_BUSY`, `AI_DAILY_LIMIT`, `AI_REGENERATE_COOLDOWN` (429), `AI_TIMEOUT`
+`AI_BUSY`, `AI_DAILY_LIMIT`, `AI_CLIENT_LIMIT` (with a `Retry-After` header),
+`AI_REGENERATE_COOLDOWN` (429), `AI_TIMEOUT`
 (504), `AI_UNAVAILABLE`, `AI_SUMMARY_UNVERIFIED`, `SOURCE_UNAVAILABLE` (502),
 `SOURCE_NOT_FOUND`, `FILE_NOT_FOUND`, `ANALYSIS_NOT_FOUND` (404),
 `SOURCE_MISMATCH`, `ANALYSIS_NOT_READY` (409), `SOURCE_UNSUPPORTED` (422) and
@@ -659,6 +660,7 @@ description is available and clearly labels those descriptions as AI-generated.
 | `REPOLENS_AI_MAX_OUTPUT_TOKENS` | `4096` | Cap on generated tokens (reasoning models count reasoning tokens too). |
 | `REPOLENS_AI_MAX_CONCURRENT_REQUESTS` | `2` | Model calls at the same time; more answer `AI_BUSY`. |
 | `REPOLENS_AI_DAILY_CALL_LIMIT` | `100` | Model calls per UTC day, repair attempts included. |
+| `REPOLENS_AI_CLIENT_HOURLY_LIMIT` | `10` | New summaries one visitor (client IP address) may generate per sliding hour; more answer `AI_CLIENT_LIMIT`. `0` turns it off. |
 | `REPOLENS_AI_MAX_RETRIES` | `1` | SDK retries on transient provider errors. |
 | `REPOLENS_AI_REGENERATE_COOLDOWN_SECONDS` | `60` | Minimum gap between regenerations of one summary. |
 | `REPOLENS_AI_REASONING_EFFORT` | (empty) | Optional `reasoning.effort` for reasoning models; empty sends none. |
@@ -666,6 +668,26 @@ description is available and clearly labels those descriptions as AI-generated.
 
 See [`.env.example`](.env.example). The defaults are starting points, not
 measured optima: no live run has tuned them yet.
+
+### Hosting publicly
+
+Anyone who can reach a server with AI enabled can generate summaries, and
+every call is billed to the server's key. Two limits protect it:
+`REPOLENS_AI_DAILY_CALL_LIMIT` caps the whole server's spend, and
+`REPOLENS_AI_CLIENT_HOURLY_LIMIT` stops one visitor from using all of it.
+Only new generations count against a visitor: cached summaries, and joining a
+generation another request already started, are free, and a request that
+fails before any model call (unsupported file, GitHub download failure,
+`AI_BUSY`, `AI_DAILY_LIMIT`) is not counted. The per-visitor counts live in
+memory, so they reset when the server restarts.
+
+Visitors are told apart by IP address. Behind a reverse proxy (as on most
+hosting platforms), that is the address from the proxy's `X-Forwarded-For`
+header; the Docker image tells uvicorn to trust it (`--forwarded-allow-ips
+"*"`). Do not expose the container directly to the internet with AI enabled:
+without a proxy that sets the header, a visitor could forge it. Also set a
+monthly budget on the OpenAI project, and store the key as a secret on the
+hosting platform, never in the repository or a shared document.
 
 ### Verification
 
