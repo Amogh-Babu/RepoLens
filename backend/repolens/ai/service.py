@@ -34,7 +34,6 @@ from repolens.ai.config import AiConfig
 from repolens.ai.context import build_context
 from repolens.ai.errors import (
     AiDisabledError,
-    ClientLimitError,
     DailyLimitError,
     ProviderTimeoutError,
     ProviderUnavailableError,
@@ -44,7 +43,7 @@ from repolens.ai.errors import (
     SummaryError,
     SummaryValidationError,
 )
-from repolens.ai.limits import ClientLimitReached, ClientRateLimiter
+from repolens.ai.limits import AiGate
 from repolens.ai.models import SCHEMA_VERSION, CodeSummary, CodeSummaryContext
 from repolens.ai.prompts import PROMPT_VERSION
 from repolens.ai.provider import CodeSummaryProvider, OpenAICodeSummaryProvider
@@ -92,6 +91,7 @@ class CodeSummaryService:
         analysis_service: AnalysisService | None = None,
         clock: Callable[[], float] = time.time,
         slot_wait_seconds: float = 5.0,
+        gate: AiGate | None = None,
     ) -> None:
         """Initialize the service.
 
@@ -105,6 +105,9 @@ class CodeSummaryService:
           clock: Time source, replaceable in tests.
           slot_wait_seconds: How long a request waits for a free model slot
             before answering AI_BUSY.
+          gate: The limits shared with other AI features. Built from
+            `config`, `clock` and `slot_wait_seconds` when omitted; then
+            `clock` and `slot_wait_seconds` come from the gate.
         """
         self._store = store
         self._config = config
@@ -115,16 +118,28 @@ class CodeSummaryService:
         self._analysis_service = (
             analysis_service if analysis_service is not None else AnalysisService()
         )
-        self._clock = clock
-        self._slot_wait_seconds = slot_wait_seconds
-        self._slots = threading.BoundedSemaphore(config.max_concurrent_requests)
-        self._client_limiter = ClientRateLimiter(config.client_hourly_limit, clock)
+        self._gate = (
+            gate
+            if gate is not None
+            else AiGate(store, config, clock=clock, slot_wait_seconds=slot_wait_seconds)
+        )
+        self._clock = self._gate.clock
+        self._slot_wait_seconds = self._gate.slot_wait_seconds
         self._inflight: dict[tuple[str, str], Future[dict[str, Any]]] = {}
         self._inflight_lock = threading.Lock()
 
     @property
     def config(self) -> AiConfig:
         return self._config
+
+    @property
+    def store(self) -> SqliteGraphStore:
+        return self._store
+
+    @property
+    def gate(self) -> AiGate:
+        """The limits this service shares with the other AI features."""
+        return self._gate
 
     @property
     def active(self) -> bool:
@@ -251,13 +266,7 @@ class CodeSummaryService:
         with self._inflight_lock:
             pending = self._inflight.get(key)
             if pending is None:
-                if client is not None:
-                    try:
-                        ticket = self._client_limiter.acquire(client)
-                    except ClientLimitReached as limited:
-                        raise ClientLimitError(
-                            limited.limit, limited.retry_after_seconds
-                        ) from None
+                ticket = self._gate.acquire_client(client)
                 future: Future[dict[str, Any]] = Future()
                 self._inflight[key] = future
         if pending is not None:
@@ -277,9 +286,9 @@ class CodeSummaryService:
                 on_model_call=note_model_call,
             )
         except BaseException as error:
-            if client is not None and not called_model:
+            if not called_model:
                 # Nothing was spent, so the visitor keeps this generation.
-                self._client_limiter.release(client, ticket)
+                self._gate.release_client(client, ticket)
             future.set_exception(error)
             raise
         else:
@@ -338,12 +347,8 @@ class CodeSummaryService:
             max_input_chars=self._config.max_input_chars,
         )
 
-        if not self._slots.acquire(timeout=self._slot_wait_seconds):
-            raise SummaryBusyError()
-        try:
+        with self._gate.slot():
             summary = self._call_and_verify(analysis_id, context, day, on_model_call)
-        finally:
-            self._slots.release()
 
         row = self._store.save_ai_summary(
             analysis_id,
@@ -375,7 +380,7 @@ class CodeSummaryService:
         assert self._provider is not None
         feedback: tuple[str, ...] = ()
         for attempt in range(1, MAX_ATTEMPTS + 1):
-            if not self._store.reserve_ai_call(day, self._config.daily_call_limit):
+            if not self._gate.reserve_call(day):
                 raise DailyLimitError()
             on_model_call()
             started = time.monotonic()

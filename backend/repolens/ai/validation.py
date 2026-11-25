@@ -22,12 +22,12 @@ from repolens.ai.models import CodeSummary, CodeSummaryContext
 
 
 # A code name in backticks: `login`, `Session.refresh`, `load_config()`.
-_BACKTICKED = re.compile(r"`([^`\n]{1,120})`")
-_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+BACKTICKED = re.compile(r"`([^`\n]{1,120})`")
+IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 _MAX_PROBLEMS = 12
 # Python's own names (`None`, `len`, `self`...) can be mentioned without
 # appearing in the file.
-_PYTHON_WORDS = frozenset(keyword.kwlist) | frozenset(dir(builtins)) | {"self", "cls"}
+PYTHON_WORDS = frozenset(keyword.kwlist) | frozenset(dir(builtins)) | {"self", "cls"}
 
 
 @dataclass(frozen=True)
@@ -182,7 +182,7 @@ def _check_multi_method_side_effect_claims(
     for effect in summary.side_effects:
         mentioned = {
             match.group(1).strip()
-            for match in _BACKTICKED.finditer(effect.description)
+            for match in BACKTICKED.finditer(effect.description)
             if match.group(1).strip() in methods
         }
         if len(mentioned) < 2:
@@ -251,17 +251,17 @@ def _check_code_names(summary: CodeSummary, context: CodeSummaryContext) -> list
     known = {symbol.name for symbol in context.symbols}
     known |= {item.raw_name for item in context.imports}
     known |= set(context.internal_imports) | set(context.imported_by) | {context.path}
-    source_words = set(_IDENTIFIER.findall(context.source)) | _PYTHON_WORDS
+    source_words = set(IDENTIFIER.findall(context.source)) | PYTHON_WORDS
     for path in known:
-        source_words.update(_IDENTIFIER.findall(path))
+        source_words.update(IDENTIFIER.findall(path))
     problems = []
     reported: set[str] = set()
     for text in _prose(summary):
-        for match in _BACKTICKED.finditer(text):
+        for match in BACKTICKED.finditer(text):
             name = match.group(1).strip()
             if name in known or name in reported:
                 continue
-            words = _IDENTIFIER.findall(name)
+            words = IDENTIFIER.findall(name)
             missing = [word for word in words if word not in source_words]
             if words and missing:
                 reported.add(name)

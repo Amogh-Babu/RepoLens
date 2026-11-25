@@ -27,13 +27,14 @@ from repolens.search.embedding import MODEL_NAME
 
 
 # Bump whenever a table, column, or constraint below changes.
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 # STRICT tables need SQLite 3.37 (2021). Older libraries still get every CHECK
 # constraint, just without SQLite's own column type enforcement.
 _STRICT_MIN_VERSION = (3, 37, 0)
 
 _TABLES = (
+    "ai_search_overviews",
     "ai_usage",
     "ai_summaries",
     "embeddings",
@@ -170,6 +171,30 @@ CREATE TABLE IF NOT EXISTS ai_summaries (
     FOREIGN KEY (analysis_id) REFERENCES analyses(id) ON DELETE CASCADE,
     UNIQUE (
         repo, commit_sha, file_path, source_hash,
+        model_id, prompt_version, schema_version
+    )
+){table_options};
+
+-- Validated AI overviews of one search's top results. A row is one
+-- overview's identity: analysis, normalized query, reading goal, the ordered
+-- top results it covers, model, prompt and schema version. It is deleted with
+-- its analysis, so it never outlives the analysis TTL.
+CREATE TABLE IF NOT EXISTS ai_search_overviews (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    analysis_id TEXT NOT NULL,
+    query_norm TEXT NOT NULL,
+    intent TEXT NOT NULL,
+    results_hash TEXT NOT NULL,
+    model_id TEXT NOT NULL,
+    prompt_version TEXT NOT NULL,
+    schema_version TEXT NOT NULL,
+    used_file_summaries TEXT NOT NULL,
+    overview_json TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    expires_at REAL NOT NULL,
+    FOREIGN KEY (analysis_id) REFERENCES analyses(id) ON DELETE CASCADE,
+    UNIQUE (
+        analysis_id, query_norm, intent, results_hash,
         model_id, prompt_version, schema_version
     )
 ){table_options};

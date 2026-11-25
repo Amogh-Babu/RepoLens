@@ -144,14 +144,18 @@ class RegenerateCooldownError(SummaryError):
         )
 
 
+FILE_TASK = "summarize this file"
+FILE_FALLBACK = "The file's symbols, imports, and map still work."
+
+
 class ProviderTimeoutError(SummaryError):
     """The model provider did not answer in time."""
 
-    def __init__(self) -> None:
+    def __init__(self, task: str = FILE_TASK, fallback: str = FILE_FALLBACK) -> None:
         super().__init__(
             code="AI_TIMEOUT",
-            message="The AI provider took too long to summarize this file.",
-            hint="Try again. The file's symbols, imports, and map still work.",
+            message=f"The AI provider took too long to {task}.",
+            hint=f"Try again. {fallback}",
             status_code=504,
         )
 
@@ -159,11 +163,15 @@ class ProviderTimeoutError(SummaryError):
 class ProviderUnavailableError(SummaryError):
     """The model provider failed, refused, or rate-limited the request."""
 
-    def __init__(self, message: str = "The AI provider could not summarize this file.") -> None:
+    def __init__(
+        self,
+        message: str = f"The AI provider could not {FILE_TASK}.",
+        fallback: str = FILE_FALLBACK,
+    ) -> None:
         super().__init__(
             code="AI_UNAVAILABLE",
             message=message,
-            hint="Try again later. The file's symbols, imports, and map still work.",
+            hint=f"Try again later. {fallback}",
             status_code=502,
         )
 
@@ -171,14 +179,34 @@ class ProviderUnavailableError(SummaryError):
 class SummaryValidationError(SummaryError):
     """The model's answer failed verification, even after one repair attempt."""
 
-    def __init__(self, problems: tuple[str, ...]) -> None:
+    def __init__(
+        self,
+        problems: tuple[str, ...],
+        *,
+        message: str = (
+            "The AI summary could not be verified against the source, so "
+            "it is not shown."
+        ),
+        hint: str = "The static description of this file is still available. Try again later.",
+    ) -> None:
         super().__init__(
             code="AI_SUMMARY_UNVERIFIED",
-            message=(
-                "The AI summary could not be verified against the source, so "
-                "it is not shown."
-            ),
-            hint="The static description of this file is still available. Try again later.",
+            message=message,
+            hint=hint,
             status_code=502,
         )
         self.problems = problems
+
+
+class SearchOverviewValidationError(SummaryValidationError):
+    """A search overview failed verification, even after one repair attempt."""
+
+    def __init__(self, problems: tuple[str, ...]) -> None:
+        super().__init__(
+            problems,
+            message=(
+                "The AI overview named files or code that are not in these search "
+                "results, so it is not shown."
+            ),
+            hint="The reading list below is unaffected. Try again later.",
+        )

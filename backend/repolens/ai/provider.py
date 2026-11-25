@@ -1,4 +1,4 @@
-"""Model providers for AI file summaries.
+"""Model providers for AI file summaries (and the shared OpenAI call).
 
 `CodeSummaryProvider` is the seam: the service only ever calls `summarize`,
 so tests inject a fake provider and never touch the network.
@@ -7,6 +7,10 @@ Outputs (a strict JSON schema derived from `CodeSummary`). It sends only the
 parameters the installed SDK's `responses.create` accepts, and no sampling
 controls such as `temperature`, which some models reject.
 
+`build_openai_client` and `call_structured` are shared with the search
+overview provider (`repolens.ai.search_provider`), so both features make the
+same kind of request and turn SDK failures into the same errors.
+
 Nothing here logs the request body, the source, or the API key.
 """
 
@@ -14,8 +18,15 @@ import copy
 import json
 from typing import Any, Protocol
 
+from pydantic import BaseModel
+
 from repolens.ai.config import AiConfig
-from repolens.ai.errors import ProviderTimeoutError, ProviderUnavailableError
+from repolens.ai.errors import (
+    FILE_FALLBACK,
+    FILE_TASK,
+    ProviderTimeoutError,
+    ProviderUnavailableError,
+)
 from repolens.ai.models import (
     CodeSummary,
     CodeSummaryContext,
@@ -54,14 +65,14 @@ class CodeSummaryProvider(Protocol):
         ...
 
 
-def strict_output_schema() -> dict[str, Any]:
-    """Return `CodeSummary`'s JSON schema in the strict Structured Outputs form.
+def strict_output_schema(model: type[BaseModel] = CodeSummary) -> dict[str, Any]:
+    """Return `model`'s JSON schema in the strict Structured Outputs form.
 
     Every object lists all of its properties as required and forbids others;
     keywords strict mode may reject are removed (their limits are re-checked
     locally when the answer is parsed).
     """
-    schema = copy.deepcopy(CodeSummary.model_json_schema(by_alias=True))
+    schema = copy.deepcopy(model.model_json_schema(by_alias=True))
     _make_strict(schema)
     return schema
 
@@ -117,6 +128,67 @@ def build_request(
     return request
 
 
+def build_openai_client(config: AiConfig) -> Any:
+    """Return an `openai.OpenAI` client for `config` (the key is never logged)."""
+    from openai import OpenAI  # Imported lazily: only needed when enabled.
+
+    return OpenAI(
+        api_key=config.api_key,
+        timeout=config.timeout_seconds,
+        max_retries=config.max_retries,
+    )
+
+
+def call_structured(
+    client: Any,
+    config: AiConfig,
+    request: dict[str, Any],
+    *,
+    task: str = FILE_TASK,
+    noun: str = "summary",
+    fallback: str = FILE_FALLBACK,
+) -> ProviderResult:
+    """Send one Structured Outputs request and return the parsed answer.
+
+    `task` ("summarize this file"), `noun` ("summary") and `fallback` (what
+    still works) only shape the error messages.
+
+    Raises:
+      ProviderTimeoutError: The provider did not answer in time.
+      ProviderUnavailableError: The provider failed, refused, stopped early,
+        or rate-limited the request.
+    """
+    import openai
+
+    try:
+        response = client.responses.create(**request, timeout=config.timeout_seconds)
+    except openai.APITimeoutError as error:
+        raise ProviderTimeoutError(task, fallback) from error
+    except openai.RateLimitError as error:
+        raise ProviderUnavailableError(
+            "The AI provider is rate-limiting RepoLens right now.", fallback
+        ) from error
+    except (openai.AuthenticationError, openai.PermissionDeniedError) as error:
+        raise ProviderUnavailableError(
+            "The AI provider rejected RepoLens's credentials.", fallback
+        ) from error
+    except openai.NotFoundError as error:
+        raise ProviderUnavailableError(
+            f"The AI provider does not offer the configured model '{config.model}'.",
+            fallback,
+        ) from error
+    except openai.OpenAIError as error:
+        raise ProviderUnavailableError(
+            f"The AI provider could not {task}.", fallback
+        ) from error
+
+    return ProviderResult(
+        payload=_parse_output(response, task=task, noun=noun, fallback=fallback),
+        model=str(getattr(response, "model", None) or config.model),
+        usage=_usage(response),
+    )
+
+
 class OpenAICodeSummaryProvider:
     """Summarize files with the OpenAI Responses API."""
 
@@ -130,76 +202,48 @@ class OpenAICodeSummaryProvider:
             when omitted; tests pass a fake.
         """
         self._config = config
-        if client is None:
-            from openai import OpenAI  # Imported lazily: only needed when enabled.
-
-            client = OpenAI(
-                api_key=config.api_key,
-                timeout=config.timeout_seconds,
-                max_retries=config.max_retries,
-            )
-        self._client = client
+        self._client = client if client is not None else build_openai_client(config)
 
     def summarize(
         self,
         context: CodeSummaryContext,
         repair_feedback: tuple[str, ...] = (),
     ) -> ProviderResult:
-        import openai
-
-        request = build_request(self._config, context, repair_feedback)
-        try:
-            response = self._client.responses.create(
-                **request, timeout=self._config.timeout_seconds
-            )
-        except openai.APITimeoutError as error:
-            raise ProviderTimeoutError() from error
-        except openai.RateLimitError as error:
-            raise ProviderUnavailableError(
-                "The AI provider is rate-limiting RepoLens right now."
-            ) from error
-        except (openai.AuthenticationError, openai.PermissionDeniedError) as error:
-            raise ProviderUnavailableError(
-                "The AI provider rejected RepoLens's credentials."
-            ) from error
-        except openai.NotFoundError as error:
-            raise ProviderUnavailableError(
-                f"The AI provider does not offer the configured model '{self._config.model}'."
-            ) from error
-        except openai.OpenAIError as error:
-            raise ProviderUnavailableError() from error
-
-        return ProviderResult(
-            payload=_parse_output(response),
-            model=str(getattr(response, "model", None) or self._config.model),
-            usage=_usage(response),
+        return call_structured(
+            self._client,
+            self._config,
+            build_request(self._config, context, repair_feedback),
         )
 
 
-def _parse_output(response: Any) -> object:
+def _parse_output(
+    response: Any,
+    *,
+    task: str = FILE_TASK,
+    noun: str = "summary",
+    fallback: str = FILE_FALLBACK,
+) -> object:
     """Return the JSON answer, or a marker the validator will reject."""
     status = getattr(response, "status", None)
     if status == "incomplete":
         details = getattr(response, "incomplete_details", None)
         reason = getattr(details, "reason", None) or "unknown"
         raise ProviderUnavailableError(
-            f"The AI provider stopped before finishing the summary ({reason})."
+            f"The AI provider stopped before finishing the {noun} ({reason}).", fallback
         )
     if status not in (None, "completed"):
-        raise ProviderUnavailableError()
-    _raise_on_refusal(response)
+        raise ProviderUnavailableError(f"The AI provider could not {task}.", fallback)
+    for item in getattr(response, "output", None) or ():
+        for part in getattr(item, "content", None) or ():
+            if getattr(part, "type", None) == "refusal":
+                raise ProviderUnavailableError(
+                    f"The AI provider declined to {task}.", fallback
+                )
     text = getattr(response, "output_text", "") or ""
     try:
         return json.loads(text)
     except ValueError:
         return {"_unparseable": True}
-
-
-def _raise_on_refusal(response: Any) -> None:
-    for item in getattr(response, "output", None) or ():
-        for part in getattr(item, "content", None) or ():
-            if getattr(part, "type", None) == "refusal":
-                raise ProviderUnavailableError("The AI provider declined to summarize this file.")
 
 
 def _usage(response: Any) -> ProviderUsage:

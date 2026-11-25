@@ -1310,6 +1310,113 @@ class SqliteGraphStore:
         return saved
 
     @_locked
+    def get_ai_search_overview(
+        self,
+        analysis_id: str,
+        *,
+        query_norm: str,
+        intent: str,
+        results_hash: str,
+        model_id: str,
+        prompt_version: str,
+        schema_version: str,
+    ) -> sqlite3.Row | None:
+        """Return the cached AI overview of one search, or None.
+
+        `intent` is '' for the topic overall. Any change to the query, the
+        reading goal, the ordered top results, the model, the prompt or the
+        schema version is a cache miss.
+
+        Raises:
+          GraphStoreError: The analysis is missing, expired, or not complete.
+        """
+        self._get_valid_analysis_row(analysis_id, require_completed=True)
+        return self._conn.execute(
+            """
+            SELECT * FROM ai_search_overviews
+            WHERE analysis_id = ? AND query_norm = ? AND intent = ?
+              AND results_hash = ? AND model_id = ? AND prompt_version = ?
+              AND schema_version = ? AND expires_at > ?
+            LIMIT 1;
+            """,
+            (
+                analysis_id,
+                query_norm,
+                intent,
+                results_hash,
+                model_id,
+                prompt_version,
+                schema_version,
+                time.time(),
+            ),
+        ).fetchone()
+
+    @_locked
+    def save_ai_search_overview(
+        self,
+        analysis_id: str,
+        *,
+        query_norm: str,
+        intent: str,
+        results_hash: str,
+        model_id: str,
+        prompt_version: str,
+        schema_version: str,
+        used_file_summaries: str,
+        overview_json: str,
+        created_at: float | None = None,
+    ) -> sqlite3.Row:
+        """Insert or replace a validated overview; it expires with its analysis.
+
+        Raises:
+          GraphStoreError: The analysis is missing, expired, or not complete.
+        """
+        row = self._get_valid_analysis_row(analysis_id, require_completed=True)
+        now = created_at if created_at is not None else time.time()
+        with self._conn:
+            self._conn.execute(
+                """
+                INSERT INTO ai_search_overviews (
+                    analysis_id, query_norm, intent, results_hash, model_id,
+                    prompt_version, schema_version, used_file_summaries,
+                    overview_json, created_at, expires_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (
+                    analysis_id, query_norm, intent, results_hash,
+                    model_id, prompt_version, schema_version
+                ) DO UPDATE SET
+                    used_file_summaries = excluded.used_file_summaries,
+                    overview_json = excluded.overview_json,
+                    created_at = excluded.created_at,
+                    expires_at = excluded.expires_at;
+                """,
+                (
+                    analysis_id,
+                    query_norm,
+                    intent,
+                    results_hash,
+                    model_id,
+                    prompt_version,
+                    schema_version,
+                    used_file_summaries,
+                    overview_json,
+                    now,
+                    float(row["expires_at"]),
+                ),
+            )
+        saved = self.get_ai_search_overview(
+            analysis_id,
+            query_norm=query_norm,
+            intent=intent,
+            results_hash=results_hash,
+            model_id=model_id,
+            prompt_version=prompt_version,
+            schema_version=schema_version,
+        )
+        assert saved is not None
+        return saved
+
+    @_locked
     def reserve_ai_call(self, day: str, limit: int) -> bool:
         """Count one model call against `day`'s budget, if any is left.
 

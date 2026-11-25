@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from repolens.ai import (
     AiConfig,
     CodeSummaryService,
+    SearchOverviewService,
     create_ai_router,
     load_ai_config,
 )
@@ -595,6 +596,7 @@ def create_app(
     *,
     cors_origins: Sequence[str] = ("*",),
     summaries: CodeSummaryService | None = None,
+    search_overviews: SearchOverviewService | None = None,
 ) -> FastAPI:
     """Create the RepoLens FastAPI application matching the frontend contract.
 
@@ -605,6 +607,9 @@ def create_app(
 
     `summaries` serves AI file summaries. Without one, AI summaries are off
     and every route answers as it did before they existed.
+
+    `search_overviews` serves AI overviews of search results. Without one, it
+    is built on `summaries`, so it shares their model, limits and cache.
     """
     graph_store = store if store is not None else SqliteGraphStore()
     summary_service = (
@@ -630,7 +635,7 @@ def create_app(
     application.state.store = graph_store
     application.include_router(create_health_router(graph_store))
     application.include_router(create_analysis_router(graph_store, runner=runner, summaries=summary_service))
-    application.include_router(create_ai_router(summary_service))
+    application.include_router(create_ai_router(summary_service, search_overviews))
     application.include_router(create_graph_router(graph_store))
 
     return application

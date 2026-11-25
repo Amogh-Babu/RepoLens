@@ -5,6 +5,10 @@
   calls the model.
 - `POST /analyses/{id}/ai-summaries/{path}`: return the cached summary or
   generate one; `?regenerate=true` replaces a cached one (rate-limited).
+- `GET /analyses/{id}/ai-search-overview?q=&intent=`: the cached overview of
+  a search's top results, if any. Never calls the model.
+- `POST /analyses/{id}/ai-search-overview?q=&intent=`: return the cached
+  overview or generate one; `regenerate=true` as for summaries.
 
 Errors use the API's `{code, message, hint}` shape. Routes are plain `def`s,
 so FastAPI runs them on its worker threads and a model call never blocks the
@@ -25,9 +29,12 @@ from repolens.ai.models import (
     Relationship,
     SideEffectKind,
 )
+from repolens.ai.search_service import SearchOverviewService
 from repolens.ai.service import CodeSummaryService
 from repolens.graph.endpoints import AnalysisIdPath
 from repolens.graph.store import GraphStoreError
+from repolens.search import AnalysisUnavailableError, QueryValidationError
+from repolens.search.service import SearchIntent
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -56,6 +63,7 @@ class AiStatusResponse(BaseModel):
     notice: str | None
     dailyCallLimit: int | None
     usage: AiUsageResponse | None
+    searchNotice: str | None = None
 
 
 class KeySymbolResponse(BaseModel):
@@ -122,6 +130,37 @@ class FileSummaryResponse(BaseModel):
     metadata: SummaryMetadataResponse | None
 
 
+class ReadingStepResponse(BaseModel):
+    path: str
+    reason: str
+
+
+class SearchOverviewBodyResponse(BaseModel):
+    summary: str
+    startHere: ReadingStepResponse
+    readNext: list[ReadingStepResponse]
+    uncertainties: list[str]
+
+
+class SearchOverviewMetadataResponse(BaseModel):
+    model: str
+    promptVersion: str
+    schemaVersion: str
+    generatedAt: str
+    cached: bool
+    cacheStatus: Literal["hit", "miss", "regenerated"]
+    usedFileSummaries: list[str]
+
+
+class SearchOverviewResponse(BaseModel):
+    analysisId: str
+    query: str
+    intent: SearchIntent | None
+    status: Literal["notGenerated", "completed", "noResults"]
+    overview: SearchOverviewBodyResponse | None
+    metadata: SearchOverviewMetadataResponse | None
+
+
 def _error(exc: SummaryError | GraphStoreError) -> JSONResponse:
     headers = dict(_NO_STORE)
     retry_after = getattr(exc, "retry_after_seconds", None)
@@ -152,9 +191,56 @@ def _unexpected(analysis_id: str) -> JSONResponse:
     )
 
 
-def create_ai_router(service: CodeSummaryService) -> APIRouter:
-    """Create the AI status and file-summary routes."""
+def _plain_error(status_code: int, code: str, message: str, hint: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=status_code,
+        content={"code": code, "message": message, "hint": hint},
+        headers=_NO_STORE,
+    )
+
+
+def _overview_response(call: Any, analysis_id: str) -> JSONResponse:
+    """Run one search-overview call and turn its failures into API errors."""
+    try:
+        payload = call()
+    except (SummaryError, GraphStoreError) as exc:
+        return _error(exc)
+    except QueryValidationError as exc:
+        return _plain_error(
+            422,
+            "INVALID_QUERY",
+            str(exc),
+            "Enter a keyword or phrase of at most 200 characters.",
+        )
+    except AnalysisUnavailableError:
+        return _plain_error(
+            404,
+            "ANALYSIS_UNAVAILABLE",
+            "This analysis is missing or has expired.",
+            "Re-analyze the repository before searching it.",
+        )
+    except Exception:
+        _LOGGER.exception("AI search overview failed for analysis %s", analysis_id)
+        return _plain_error(
+            500,
+            "AI_SUMMARY_FAILED",
+            "The AI overview could not be produced.",
+            "The reading list is unaffected. Try again later.",
+        )
+    return JSONResponse(content=payload, headers=_NO_STORE)
+
+
+def create_ai_router(
+    service: CodeSummaryService,
+    overviews: SearchOverviewService | None = None,
+) -> APIRouter:
+    """Create the AI status, file-summary and search-overview routes.
+
+    Without `overviews`, one is built on `service`, sharing its limits.
+    """
     router = APIRouter()
+    if overviews is None:
+        overviews = SearchOverviewService(service.store, service)
 
     @router.get(
         "/ai/status",
@@ -162,7 +248,9 @@ def create_ai_router(service: CodeSummaryService) -> APIRouter:
         summary="Report whether AI file summaries are enabled, and today's usage",
     )
     def ai_status() -> Any:
-        return JSONResponse(content=service.status(), headers=_NO_STORE)
+        status = service.status()
+        status["searchNotice"] = overviews.notice()
+        return JSONResponse(content=status, headers=_NO_STORE)
 
     @router.get(
         "/analyses/{analysis_id}/ai-summaries/{file_path:path}",
@@ -201,5 +289,42 @@ def create_ai_router(service: CodeSummaryService) -> APIRouter:
         except Exception:
             return _unexpected(analysis_id)
         return JSONResponse(content=payload, headers=_NO_STORE)
+
+    @router.get(
+        "/analyses/{analysis_id}/ai-search-overview",
+        response_model=SearchOverviewResponse,
+        summary="Get the cached AI overview of a search's top results, without generating one",
+    )
+    def read_search_overview(
+        analysis_id: AnalysisIdPath,
+        q: str,
+        intent: SearchIntent | None = None,
+    ) -> Any:
+        return _overview_response(
+            lambda: overviews.get_overview(analysis_id, q, intent), analysis_id
+        )
+
+    @router.post(
+        "/analyses/{analysis_id}/ai-search-overview",
+        response_model=SearchOverviewResponse,
+        summary="Return the cached AI overview of a search, or generate and verify one",
+    )
+    def create_search_overview(
+        request: Request,
+        analysis_id: AnalysisIdPath,
+        q: str,
+        intent: SearchIntent | None = None,
+        regenerate: bool = Query(default=False),
+    ) -> Any:
+        return _overview_response(
+            lambda: overviews.generate_overview(
+                analysis_id,
+                q,
+                intent,
+                regenerate=regenerate,
+                client=_client_id(request),
+            ),
+            analysis_id,
+        )
 
     return router
