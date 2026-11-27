@@ -16,6 +16,7 @@ const SERVICE: RankedFile = {
   score: 40,
   reason: 'Defines login_user; imported by 2 other matching files',
   orderReason: 'Comes before app/auth/views.py, which imports it.',
+  role: 'prerequisite',
   matches: [
     {kind: 'symbol', text: 'login_user', line: 22},
     {kind: 'filename', text: 'app/auth/service.py', line: null},
@@ -27,6 +28,7 @@ const VIEWS: RankedFile = {
   score: 20,
   reason: 'Defines login',
   orderReason: 'Comes after app/auth/service.py, which it imports.',
+  role: 'edit',
   matches: [{kind: 'symbol', text: 'login', line: 11}],
 };
 
@@ -120,6 +122,76 @@ describe('ReadingList', () => {
     await user.click(screen.getByRole('button', {name: /service\.py/}));
 
     expect(onSelectFile).toHaveBeenCalledWith('app/auth/service.py');
+  });
+
+  it('groups task suggestions and selects related tests without starting a tour', async () => {
+    const user = userEvent.setup();
+    const onStartTour = vi.fn();
+    const onSelectFile = vi.fn();
+    const client = fakeClient();
+    render(
+      <ApiClientContext value={client as unknown as ApiClient}>
+        <ReadingList
+          analysisId="analysis-1"
+          search={searchState({testRecommendations: ['tests/test_views.py']})}
+          selectedPath={null}
+          onSelectFile={onSelectFile}
+          onStartTour={onStartTour}
+          onLoadMore={vi.fn()}
+          onRefine={vi.fn()}
+          onRetry={vi.fn()}
+        />
+      </ApiClientContext>,
+    );
+    expect(
+      within(screen.getByRole('region', {name: 'Read first'})).getByText(
+        SERVICE.path,
+      ),
+    ).toBeVisible();
+    expect(
+      within(screen.getByRole('region', {name: 'Edit here'})).getByText(
+        VIEWS.path,
+      ),
+    ).toBeVisible();
+    await user.click(
+      within(screen.getByRole('region', {name: 'Tests to run'})).getByRole(
+        'button',
+      ),
+    );
+    expect(onSelectFile).toHaveBeenCalledWith('tests/test_views.py');
+    expect(onStartTour).not.toHaveBeenCalled();
+  });
+
+  it('keeps unrelated matches visible and does not duplicate a matching test', () => {
+    const test: RankedFile = {
+      ...SERVICE,
+      path: 'tests/test_views.py',
+      role: 'test',
+      position: 3,
+    };
+    const other: RankedFile = {
+      ...SERVICE,
+      path: 'app/other.py',
+      role: null,
+      position: 4,
+    };
+    renderList(
+      searchState({
+        results: [SERVICE, VIEWS, test, other],
+        total: 4,
+        testRecommendations: [test.path],
+      }),
+    );
+    expect(
+      within(screen.getByRole('region', {name: 'Other matches'})).getByText(
+        other.path,
+      ),
+    ).toBeVisible();
+    expect(
+      within(screen.getByRole('region', {name: 'Tests to run'})).getAllByText(
+        test.path,
+      ),
+    ).toHaveLength(1);
   });
 
   it('lets the reader refine and reset the reading goal', async () => {

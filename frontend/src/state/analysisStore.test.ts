@@ -335,12 +335,14 @@ describe('createAnalysisStore search', () => {
     return {
       query,
       total,
+      testRecommendations: [`tests/${query}.py`],
       results: Array.from({length: count}, (_, i) => ({
         position: offset + i + 1,
         path: `${query}/${offset + i}.py`,
         score: 1,
         reason: 'r',
         orderReason: '',
+        role: null,
         matches: [],
       })),
     };
@@ -404,6 +406,9 @@ describe('createAnalysisStore search', () => {
     await vi.waitFor(() =>
       expect(store.getState().search?.results).toHaveLength(20),
     );
+    expect(store.getState().search?.testRecommendations).toEqual([
+      'tests/auth.py',
+    ]);
     store.getState().loadMoreResults();
     await vi.waitFor(() =>
       expect(store.getState().search?.results).toHaveLength(40),
@@ -412,6 +417,9 @@ describe('createAnalysisStore search', () => {
     await vi.waitFor(() =>
       expect(store.getState().search?.results).toHaveLength(45),
     );
+    expect(store.getState().search?.testRecommendations).toEqual([
+      'tests/auth.py',
+    ]);
     store.getState().loadMoreResults();
 
     expect(search.mock.calls.map(call => call[1])).toEqual([

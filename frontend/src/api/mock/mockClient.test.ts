@@ -257,6 +257,24 @@ describe('MockApiClient results', () => {
     expect(page.results).toEqual(all.results.slice(2, 4));
   });
 
+  it('keeps test recommendations separate from default matches', async () => {
+    const {client, completed} = setUp();
+    const analysisId = await completed();
+    const response = await client.search(analysisId, {q: 'login_user'});
+    const edit = response.results.find(result => result.role === 'edit');
+    expect(edit?.path).toBe('app/auth/service.py');
+    expect(response.testRecommendations).toContain('tests/test_auth.py');
+    expect(
+      response.results.some(result => result.path.startsWith('tests/')),
+    ).toBe(false);
+    for (const path of response.testRecommendations) {
+      const detail = await client.getFile(analysisId, path);
+      expect(detail.imports.some(imp => imp.targetPath === edit?.path)).toBe(
+        true,
+      );
+    }
+  });
+
   it('returns no results for a query that matches nothing', async () => {
     const {client, completed} = setUp();
 

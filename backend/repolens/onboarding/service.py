@@ -4,6 +4,7 @@ from collections import Counter, defaultdict
 from pathlib import PurePosixPath
 from typing import Any
 
+from repolens.file_categories import file_category
 from repolens.graph.models import DependencyGraph
 from repolens.graph.ports import GraphStore
 from repolens.search.models import SearchDocument
@@ -45,28 +46,6 @@ _FRAMEWORK_MODULES = frozenset(
         "bottle",
     }
 )
-_TEST_DIRS = frozenset({"test", "tests"})
-_TOOL_DIRS = frozenset({"script", "scripts", "tool", "tools"})
-_DOC_DIRS = frozenset({"doc", "docs", "documentation"})
-_EXAMPLE_DIRS = frozenset({"example", "examples", "demo", "demos"})
-_MIGRATION_DIRS = frozenset({"migration", "migrations"})
-_CONFIG_NAMES = frozenset(
-    {
-        "pyproject.toml",
-        "setup.cfg",
-        "setup.py",
-        "tox.ini",
-        "noxfile.py",
-        "requirements.txt",
-        "dockerfile",
-        "makefile",
-    }
-)
-_CONFIG_SUFFIXES = frozenset(
-    {".ini", ".cfg", ".toml", ".yaml", ".yml", ".json", ".lock", ".env"}
-)
-
-
 class OverviewService:
     """Create a repo-specific onboarding guide without retaining source files."""
 
@@ -85,7 +64,7 @@ def build_overview(
 ) -> dict[str, Any]:
     """Summarize entry points, central files, packages and a dependency-first tour."""
     documents_by_path = {document.path: document for document in documents}
-    categories = {file.path: _category(file.path) for file in graph.files}
+    categories = {file.path: file_category(file.path) for file in graph.files}
     dependents: dict[str, set[str]] = defaultdict(set)
     dependencies: dict[str, set[str]] = defaultdict(set)
     for edge in graph.edges:
@@ -236,31 +215,6 @@ def _entry_point_reason(
     if name in _ENTRY_NAMES:
         return "Conventional application or command entry-point filename."
     return None
-
-
-def _category(path: str) -> str:
-    parts = tuple(part.casefold() for part in PurePosixPath(path).parts)
-    name = parts[-1] if parts else ""
-    if _TEST_DIRS.intersection(parts[:-1]) or name.startswith("test_") or name.endswith(
-        "_test.py"
-    ) or name == "conftest.py":
-        return "test"
-    if _DOC_DIRS.intersection(parts[:-1]) or name in {
-        "readme.md",
-        "changelog.md",
-        "contributing.md",
-    }:
-        return "docs"
-    if _EXAMPLE_DIRS.intersection(parts[:-1]):
-        return "example"
-    if _TOOL_DIRS.intersection(parts[:-1]):
-        return "tool"
-    if _MIGRATION_DIRS.intersection(parts[:-1]):
-        return "migration"
-    suffix = PurePosixPath(path).suffix.casefold()
-    if name in _CONFIG_NAMES or suffix in _CONFIG_SUFFIXES or name.startswith("."):
-        return "config"
-    return "source"
 
 
 def _page_rank(

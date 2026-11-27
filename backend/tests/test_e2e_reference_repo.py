@@ -189,6 +189,10 @@ def test_search_reading_order(
         range(1, len(search["readingOrder"]) + 1)
     )
     assert [result["orderReason"] for result in page["results"]] == search["orderReasons"]
+    if "roles" in search:
+        assert {result["path"]: result["role"] for result in page["results"]} == search["roles"]
+        assert page["testRecommendations"] == search["testRecommendations"]
+        assert not set(page["testRecommendations"]) & set(page["matchedPaths"])
 
 
 def test_reanalyzing_the_same_commit_reuses_the_analysis(

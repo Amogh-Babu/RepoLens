@@ -153,6 +153,53 @@ class SearchServiceTest(unittest.TestCase):
 
         self.assertEqual(["alpha/auth.py", "zeta/auth.py"], [result.path for result in page.results])
 
+    def test_task_roles_and_test_recommendations_do_not_change_search_paging(self) -> None:
+        documents = [
+            SearchDocument(path="src/cart_models.py", depended_on_by=("src/cart_checkout.py",)),
+            SearchDocument(
+                path="src/cart_checkout.py",
+                depended_on_by=("tests/test_checkout.py", "examples/cart_demo.py"),
+            ),
+            SearchDocument(path="src/cart_other.py"),
+            SearchDocument(path="tests/test_checkout.py"),
+            SearchDocument(path="examples/cart_demo.py"),
+            SearchDocument(path="tests/test_unrelated.py"),
+        ]
+        service = SearchService(InMemorySearchIndex({"analysis-1": documents}))
+        page = service.search("analysis-1", "cart", limit=1)
+        next_page = service.search("analysis-1", "cart", offset=1, limit=1)
+        full = service.search("analysis-1", "cart")
+
+        self.assertEqual(3, page.total)
+        self.assertEqual(full.matched_paths, page.matched_paths)
+        self.assertEqual(full.results[:1], page.results)
+        self.assertEqual(full.results[1:2], next_page.results)
+        roles = {result.path: result.role for result in full.results}
+        self.assertEqual("prerequisite", roles["src/cart_models.py"])
+        self.assertEqual("edit", roles["src/cart_checkout.py"])
+        self.assertIsNone(roles["src/cart_other.py"])
+        self.assertEqual(("tests/test_checkout.py",), page.test_recommendations)
+        self.assertEqual(page.test_recommendations, next_page.test_recommendations)
+        self.assertEqual((), service.search("analysis-1", "no_match").test_recommendations)
+        focused = service.search("analysis-1", "cart checkout", intent="tests")
+        focused_roles = {result.path: result.role for result in focused.results}
+        self.assertEqual("test", focused_roles["tests/test_checkout.py"])
+        self.assertNotEqual("test", focused_roles["examples/cart_demo.py"])
+
+    def test_task_roles_handle_cycles_and_test_only_search(self) -> None:
+        documents = [
+            SearchDocument(path="src/cart_a.py", depended_on_by=("src/cart_b.py",)),
+            SearchDocument(path="src/cart_b.py", depended_on_by=("src/cart_a.py",)),
+            SearchDocument(path="tests/test_only.py"),
+        ]
+        service = SearchService(InMemorySearchIndex({"analysis-1": documents}))
+        page = service.search("analysis-1", "cart")
+        self.assertEqual({"edit", "prerequisite"}, {result.role for result in page.results})
+        self.assertEqual((), page.test_recommendations)
+        test_only = service.search("analysis-1", "test_only", intent="tests")
+        self.assertEqual([None], [result.role for result in test_only.results])
+        self.assertEqual((), test_only.test_recommendations)
+
     def test_dependency_cycles_have_deterministic_order(self) -> None:
         documents = [
             SearchDocument(path="alpha/cycle.py", depended_on_by=("zeta/cycle.py",)),

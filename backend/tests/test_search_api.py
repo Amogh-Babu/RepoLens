@@ -31,6 +31,8 @@ class SearchApiTest(unittest.TestCase):
         self.assertTrue(result["results"][0]["reason"])
         self.assertTrue(result["results"][0]["order_reason"])
         self.assertTrue(result["results"][0]["matches"])
+        self.assertIn("role", result["results"][0])
+        self.assertIsInstance(result["test_recommendations"], list)
 
     def test_empty_query_returns_structured_error(self) -> None:
         response = self.client.get(

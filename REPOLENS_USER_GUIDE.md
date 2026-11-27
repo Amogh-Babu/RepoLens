@@ -91,6 +91,8 @@ After you search, RepoLens shows:
 ## Part 5: Using the Recommended Reading Order
  
 The reading list is the fastest way to learn a project. It shows the files most relevant to your search, in a suggested order to read them.
+
+The list highlights **Read first** dependencies and a possible **Edit here** starting point. **Tests to run** suggests test files that import that starting point; these are separate from search matches and the reading tour. Other matches remain available under **Other matches**. These suggestions are based on static imports and search scores, not guarantees; verify that they fit your task. Up to 20 related tests are shown.
  
 Use the filter to choose what you're looking for:
  
@@ -98,7 +100,7 @@ Use the filter to choose what you're looking for:
 - **Implementation:** the files where the main work happens.
 - **Configuration:** the files that set up how the project runs.
 - **Tests and examples:** files that show how the code is meant to be used.
-The filter changes the order of the results, but it doesn't hide anything. Other matches still appear further down the list.
+By default, test and example paths are excluded from search matches; choose **Tests and examples** to include them. The filter also changes how results are ranked.
  
 ---
  

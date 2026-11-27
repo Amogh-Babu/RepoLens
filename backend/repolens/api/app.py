@@ -151,6 +151,7 @@ class RankedFileContractResponse(BaseModel):
     score: float
     reason: str
     orderReason: str
+    role: Literal["prerequisite", "edit", "test"] | None
     matches: list[SearchMatchResponse]
 
 
@@ -162,6 +163,7 @@ class SearchContractResponse(BaseModel):
     hasMore: bool
     results: list[RankedFileContractResponse]
     matchedPaths: list[str]
+    testRecommendations: list[str]
     # Anything but "complete" means these results are keyword-only.
     semanticStatus: SemanticStatus | None = None
 
@@ -519,6 +521,7 @@ def create_analysis_router(
                     "score": ranked.score,
                     "reason": ranked.reason,
                     "orderReason": ranked.order_reason,
+                    "role": ranked.role,
                     "matches": matches,
                 }
             )
@@ -531,6 +534,7 @@ def create_analysis_router(
             "hasMore": page.has_more,
             "results": results,
             "matchedPaths": page.matched_paths,
+            "testRecommendations": page.test_recommendations,
             "semanticStatus": page.semantic_status,
         }
 

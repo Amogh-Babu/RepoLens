@@ -103,19 +103,62 @@ export function ReadingList({
             </p>
           </div>
           <KeywordOnlyNote status={search.semanticStatus} />
-          <ol className="reading-list__entries">
-            {results.map(entry => (
-              <ReadingListEntry
-                key={entry.path}
-                entry={entry}
-                selected={entry.path === selectedPath}
-                onSelect={() => {
-                  onSelectFile(entry.path);
-                  onStartTour?.();
-                }}
-              />
-            ))}
-          </ol>
+          <p className="reading-list__meta">
+            Suggestions are based on matches and imports; verify them for your
+            task.
+          </p>
+          {(
+            [
+              ['Read first', 'prerequisite'],
+              ['Edit here', 'edit'],
+              ['Other matches', null],
+              ['Tests to run', 'test'],
+            ] as const
+          ).map(([title, role]) => {
+            const entries = results.filter(entry => entry.role === role);
+            const extraTests =
+              role === 'test'
+                ? (search.testRecommendations ?? []).filter(
+                    path => !results.some(entry => entry.path === path),
+                  )
+                : [];
+            if (entries.length === 0 && extraTests.length === 0) return null;
+            return (
+              <section key={title} aria-label={title}>
+                <h3 className="reading-list__group-title">{title}</h3>
+                <ol className="reading-list__entries">
+                  {entries.map(entry => (
+                    <ReadingListEntry
+                      key={entry.path}
+                      entry={entry}
+                      selected={entry.path === selectedPath}
+                      onSelect={() => {
+                        onSelectFile(entry.path);
+                        onStartTour?.();
+                      }}
+                    />
+                  ))}
+                  {extraTests.map(path => (
+                    <li
+                      key={path}
+                      className={`reading-list__entry${path === selectedPath ? ' reading-list__entry--selected' : ''}`}
+                    >
+                      <button
+                        type="button"
+                        className="reading-list__select"
+                        aria-current={
+                          path === selectedPath ? 'true' : undefined
+                        }
+                        onClick={() => onSelectFile(path)}
+                      >
+                        <code>{path}</code>
+                      </button>
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            );
+          })}
           {failure?.request === 'more' && (
             <ErrorBanner error={failure.error} onRetry={onRetry} />
           )}

@@ -526,6 +526,13 @@
     },
     {
       "query": "cart total",
+      "roles": {
+        "bookshop/catalog/models.py": "prerequisite",
+        "bookshop/orders/checkout.py": "edit"
+      },
+      "testRecommendations": [
+        "tests/test_checkout.py"
+      ],
       "readingOrder": [
         "bookshop/catalog/models.py",
         "bookshop/orders/checkout.py"

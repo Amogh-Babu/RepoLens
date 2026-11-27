@@ -13,7 +13,7 @@ from repolens.search import (
     QueryValidationError,
     SearchService,
 )
-from repolens.search.models import MatchKind
+from repolens.search.models import MatchKind, SearchRole
 from repolens.search.service import SearchIntent
 
 
@@ -50,6 +50,7 @@ class RankedFileResponse(BaseModel):
     reason: str
     matches: list[MatchEvidenceResponse]
     order_reason: str
+    role: SearchRole | None
 
 
 class SearchPageResponse(BaseModel):
@@ -60,6 +61,7 @@ class SearchPageResponse(BaseModel):
     has_more: bool
     matched_paths: list[str]
     semantic_status: str | None = None
+    test_recommendations: list[str]
 
 
 def create_search_router(search_service: SearchService) -> APIRouter:

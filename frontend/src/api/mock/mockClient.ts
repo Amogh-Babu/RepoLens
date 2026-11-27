@@ -452,11 +452,22 @@ export class MockApiClient implements ApiClient {
     );
     const offset = request.offset ?? 0;
     const limit = request.limit ?? DEFAULT_PAGE_SIZE;
+    const editPath = ranked.find(result => result.role === 'edit')?.path;
     return {
       query,
       total: ranked.length,
       results: ranked.slice(offset, offset + limit),
       matchedPaths: ranked.map(file => file.path),
+      testRecommendations: this.repo.files
+        .filter(
+          file =>
+            editPath !== undefined &&
+            isTestCategory(file.path) &&
+            file.imports.some(imp => imp.targetPath === editPath),
+        )
+        .map(file => file.path)
+        .sort((a, b) => a.localeCompare(b))
+        .slice(0, 20),
     };
   }
 
@@ -916,6 +927,25 @@ function moduleName(moduleId: string): string {
  * moved ahead of them, so the list reads foundations first.
  */
 const TEST_PARTS = ['test', 'tests', 'spec', 'specs', 'example', 'examples'];
+function isTestLike(path: string): boolean {
+  const parts = path.toLowerCase().split(/[/_.-]+/);
+  return (
+    parts.some(part => TEST_PARTS.includes(part)) ||
+    path.toLowerCase().split('/').pop() === 'conftest.py'
+  );
+}
+
+function isTestCategory(path: string): boolean {
+  const parts = path.toLowerCase().split('/');
+  const name = parts[parts.length - 1] ?? '';
+  return (
+    parts.slice(0, -1).some(part => part === 'test' || part === 'tests') ||
+    name.startsWith('test_') ||
+    name.endsWith('_test.py') ||
+    name === 'conftest.py'
+  );
+}
+
 const CONFIG_PARTS = [
   'config',
   'configuration',
@@ -939,7 +969,7 @@ function readingGoal(
 ): {factor: number; note: string | null} {
   if (intent === undefined) return {factor: 1, note: null};
   const parts = path.toLowerCase().split(/[/_.-]+/);
-  const isTest = parts.some(part => TEST_PARTS.includes(part));
+  const isTest = isTestLike(path);
   const isConfig = !isTest && parts.some(part => CONFIG_PARTS.includes(part));
   if (intent === 'tests' && isTest) {
     return {factor: 2, note: 'Ranked higher: a test or example file.'};
@@ -962,6 +992,7 @@ function rankFiles(
   intent?: SearchIntent,
 ): RankedFile[] {
   const candidates = files.flatMap(file => {
+    if (intent !== 'tests' && isTestLike(file.path)) return [];
     const matches = matchFile(file, terms);
     if (matches.length === 0) return [];
     const termsMatched = terms.filter(term =>
@@ -994,6 +1025,43 @@ function rankFiles(
     (a, b) => b.score - a.score || a.file.path.localeCompare(b.file.path),
   );
   const order = scored.map(entry => entry.file);
+  const nonTests = scored.filter(
+    entry => !isTestLike(entry.file.path) && !isTestCategory(entry.file.path),
+  );
+  const dependencies = new Set(
+    nonTests.flatMap(entry =>
+      entry.file.imports.flatMap(imp =>
+        imp.targetPath !== entry.file.path &&
+        nonTests.some(other => other.file.path === imp.targetPath)
+          ? [imp.targetPath]
+          : [],
+      ),
+    ),
+  );
+  const target =
+    nonTests.find(entry => !dependencies.has(entry.file.path)) ?? nonTests[0];
+  const prerequisitePaths = new Set<string>();
+  const pending =
+    target?.file.imports.flatMap(imp =>
+      imp.targetPath ? [imp.targetPath] : [],
+    ) ?? [];
+  while (pending.length > 0) {
+    const path = pending.pop();
+    if (
+      path === undefined ||
+      path === target?.file.path ||
+      prerequisitePaths.has(path)
+    )
+      continue;
+    const dependency = nonTests.find(entry => entry.file.path === path);
+    if (dependency === undefined) continue;
+    prerequisitePaths.add(path);
+    pending.push(
+      ...dependency.file.imports.flatMap(imp =>
+        imp.targetPath ? [imp.targetPath] : [],
+      ),
+    );
+  }
   return scored.map((entry, index) => ({
     position: index + 1,
     path: entry.file.path,
@@ -1002,6 +1070,18 @@ function rankFiles(
       buildReason(entry.matches, entry.importers) +
       (entry.goalNote === null ? '' : ` ${entry.goalNote}`),
     orderReason: buildOrderReason(order, index),
+    role:
+      entry.file.path === target?.file.path
+        ? 'edit'
+        : prerequisitePaths.has(entry.file.path)
+          ? 'prerequisite'
+          : target !== undefined &&
+              isTestCategory(entry.file.path) &&
+              entry.file.imports.some(
+                imp => imp.targetPath === target?.file.path,
+              )
+            ? 'test'
+            : null,
     matches: entry.matches,
   }));
 }

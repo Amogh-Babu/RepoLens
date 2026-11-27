@@ -42,6 +42,7 @@ export interface SearchState {
   /** Results loaded so far, in reading order. */
   results: RankedFile[];
   matchedPaths?: string[];
+  testRecommendations?: string[];
   semanticStatus?: SemanticStatus | null;
   intent?: SearchIntent;
   /** Total number of matching files, including ones not loaded yet. */
@@ -294,6 +295,7 @@ export function createAnalysisStore(
             query,
             results: response.results,
             matchedPaths: response.matchedPaths,
+            testRecommendations: response.testRecommendations,
             semanticStatus: response.semanticStatus,
             intent,
             total: response.total,
@@ -545,6 +547,7 @@ export function createAnalysisStore(
             query: current?.query ?? '',
             results: current?.results ?? [],
             matchedPaths: current?.matchedPaths,
+            testRecommendations: current?.testRecommendations,
             semanticStatus: current?.semanticStatus,
             intent: current?.intent,
             total: current?.total ?? 0,

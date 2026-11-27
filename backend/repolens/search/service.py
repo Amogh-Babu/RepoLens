@@ -5,6 +5,7 @@ from collections.abc import Iterable
 from dataclasses import replace
 from typing import Literal
 
+from repolens.file_categories import file_category
 from repolens.search.embedding import (
     QUERY_MARKER,
     Embedder,
@@ -91,9 +92,10 @@ class SearchService:
     ) -> SearchPage:
         terms = self._topic_terms(self._parse_query(query))
         self._validate_pagination(offset, limit)
+        all_documents = list(self._index.get_search_documents(analysis_id))
         documents = [
             document
-            for document in self._index.get_search_documents(analysis_id)
+            for document in all_documents
             if intent == "tests" or not self._is_test_path(document.path)
         ]
         documents_by_path = {document.path: document for document in documents}
@@ -194,6 +196,7 @@ class SearchService:
         ordered = self._reading_order(
             ranked, candidates, prioritize_relevance=bool(semantic_scores or intent)
         )
+        ordered, test_recommendations = self._task_roles(ordered, all_documents)
         page_results = tuple(ordered[offset : offset + limit])
         return SearchPage(
             results=page_results,
@@ -203,7 +206,65 @@ class SearchService:
             has_more=offset + len(page_results) < len(ordered),
             matched_paths=tuple(result.path for result in ordered),
             semantic_status=self._semantic_status(analysis_id, include_semantic),
+            test_recommendations=test_recommendations,
         )
+
+    @staticmethod
+    def _task_roles(
+        ordered: list[RankedFile], documents: list[SearchDocument]
+    ) -> tuple[list[RankedFile], tuple[str, ...]]:
+        """Classify matching dependencies and suggest direct test importers."""
+        non_tests = {
+            result.path: result
+            for result in ordered
+            if not SearchService._is_test_path(result.path)
+            and file_category(result.path) != "test"
+        }
+        if not non_tests:
+            return ordered, ()
+        documents_by_path = {document.path: document for document in documents}
+        dependencies: dict[str, set[str]] = {path: set() for path in non_tests}
+        for path in non_tests:
+            for importer in documents_by_path[path].depended_on_by:
+                if importer in non_tests and importer != path:
+                    dependencies[importer].add(path)
+        used_as_dependency = set().union(*dependencies.values())
+        targets = [
+            result for path, result in non_tests.items()
+            if path not in used_as_dependency
+        ]
+        # A cycle has no leaf; choose its strongest matching file deterministically.
+        target = min(
+            targets or list(non_tests.values()),
+            key=lambda result: (-result.score, result.path.casefold(), result.path),
+        )
+        prerequisites: set[str] = set()
+        pending = list(dependencies[target.path])
+        while pending:
+            path = pending.pop()
+            if path == target.path or path in prerequisites:
+                continue
+            prerequisites.add(path)
+            pending.extend(dependencies[path])
+        tests = sorted(
+            (
+                path for path in documents_by_path[target.path].depended_on_by
+                if path in documents_by_path and file_category(path) == "test"
+            ),
+            key=lambda path: (path.casefold(), path),
+        )[:_MAX_READING_LIST_RESULTS]
+        classified = [
+            replace(
+                result,
+                role=(
+                    "edit" if result.path == target.path else
+                    "prerequisite" if result.path in prerequisites else
+                    "test" if result.path in tests else None
+                ),
+            )
+            for result in ordered
+        ]
+        return classified, tuple(tests)
 
     def _semantic_status(self, analysis_id: str, include_semantic: bool) -> str | None:
         """How far this search could use semantic matching, or None if unknown."""

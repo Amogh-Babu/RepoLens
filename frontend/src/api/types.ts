@@ -225,6 +225,8 @@ export interface RankedFile {
    * after (it imports them) or before (they import it).
    */
   orderReason: string;
+  /** Task guidance is heuristic; unrelated matches have no role. */
+  role: 'prerequisite' | 'edit' | 'test' | null;
   /** Every match in this file, for the expanded reason view. */
   matches: SearchMatch[];
 }
@@ -248,6 +250,8 @@ export interface SearchResponse {
   total: number;
   results: RankedFile[];
   matchedPaths?: string[];
+  /** Test files importing the suggested edit target, separate from matches. */
+  testRecommendations: string[];
   /**
    * Whether these results could match by meaning. Anything but 'complete'
    * means they are keyword-only.

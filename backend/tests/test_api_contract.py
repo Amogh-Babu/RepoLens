@@ -179,6 +179,8 @@ def test_completed_analysis_end_to_end_contract() -> None:
     assert search["total"] >= 2
     assert search["results"][0]["position"] == 1
     assert all(result["orderReason"] for result in search["results"])
+    assert all(result["role"] in (None, "edit", "prerequisite", "test") for result in search["results"])
+    assert isinstance(search["testRecommendations"], list)
     assert len(search["matchedPaths"]) == search["total"]
     assert search["hasMore"] is (search["total"] > 5)
     assert all(
@@ -186,6 +188,10 @@ def test_completed_analysis_end_to_end_contract() -> None:
         for result in search["results"]
         for match in result["matches"]
     )
+    all_results = client.get(
+        "/analyses/flask-1/search", params={"q": "login", "limit": 100}
+    ).json()
+    assert sum(result["role"] == "edit" for result in all_results["results"]) == 1
 
     focused = client.get(
         "/analyses/flask-1/search", params={"q": "login", "intent": "tests", "limit": 1}

@@ -5,6 +5,7 @@ from typing import Literal
 MatchKind = Literal[
     "filename", "symbol", "member", "reference", "docstring", "comment", "semantic"
 ]
+SearchRole = Literal["prerequisite", "edit", "test"]
 
 
 @dataclass(frozen=True)
@@ -45,6 +46,7 @@ class RankedFile:
     reason: str
     matches: tuple[MatchEvidence, ...]
     order_reason: str = ""
+    role: SearchRole | None = None
 
 
 @dataclass(frozen=True)
@@ -59,3 +61,4 @@ class SearchPage:
     # `repolens.graph.models.SemanticStatus`); anything but "complete" means
     # these results are keyword-only. None when the index does not say.
     semantic_status: str | None = None
+    test_recommendations: tuple[str, ...] = ()
