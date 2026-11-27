@@ -88,7 +88,7 @@ def test_fastembed_model_is_loaded_with_bounded_threads_and_batches(
 def test_fastembed_defaults_are_small() -> None:
     embedder = FastEmbedEmbedder()
 
-    assert embedder.batch_size == 32
+    assert embedder.batch_size == 16
     assert embedder.threads in (1, 2)
 
 

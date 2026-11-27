@@ -2,7 +2,6 @@
 
 import hashlib
 import logging
-import os
 import re
 from collections.abc import Mapping, Sequence
 from typing import Any, Literal, Protocol
@@ -33,6 +32,7 @@ from repolens.graph.endpoints import (
 from repolens.graph.models import (
     AnalysisRecord,
     AnalysisStage,
+    SemanticStatus,
     AnalysisStatus,
 )
 from repolens.graph.store import (
@@ -49,7 +49,7 @@ from repolens.search import (
     QueryValidationError,
     SearchService,
 )
-from repolens.search.embedding import FastEmbedEmbedder
+from repolens.resources import ResourceLimits, create_embedder
 from repolens.search.service import SearchIntent
 
 
@@ -115,6 +115,11 @@ class AnalysisSummaryResponse(BaseModel):
     filesUnparsed: int
 
 
+class SemanticSearchResponse(BaseModel):
+    status: SemanticStatus
+    chunks: int
+
+
 class AnalysisResponse(BaseModel):
     analysisId: str
     repoUrl: str
@@ -127,6 +132,9 @@ class AnalysisResponse(BaseModel):
     createdAt: str
     expiresAt: str
     error: ApiErrorBodyResponse | None
+    # Completed analyses only: whether search can match by meaning, or is
+    # keyword-only and why.
+    semanticSearch: SemanticSearchResponse | None = None
 
 
 class SearchMatchResponse(BaseModel):
@@ -154,6 +162,8 @@ class SearchContractResponse(BaseModel):
     hasMore: bool
     results: list[RankedFileContractResponse]
     matchedPaths: list[str]
+    # Anything but "complete" means these results are keyword-only.
+    semanticStatus: SemanticStatus | None = None
 
 
 class OverviewFileResponse(BaseModel):
@@ -521,6 +531,7 @@ def create_analysis_router(
             "hasMore": page.has_more,
             "results": results,
             "matchedPaths": page.matched_paths,
+            "semanticStatus": page.semantic_status,
         }
 
     @router.get(
@@ -655,13 +666,15 @@ def _error_response(
 
 # The server analyzes real repositories. `create_app()` without a runner keeps
 # the offline stub for tests.
+_LIMITS = ResourceLimits.from_environment()
 _STORE = SqliteGraphStore(
-    embedder=FastEmbedEmbedder(
-        cache_dir=os.environ.get("REPOLENS_EMBEDDING_CACHE") or None
-    )
+    embedder=create_embedder(_LIMITS),
+    max_embedding_chunks=_LIMITS.max_embedding_chunks,
 )
 app = create_app(
     store=_STORE,
-    runner=PipelineAnalysisRunner(),
+    runner=PipelineAnalysisRunner(
+        max_concurrent_analyses=_LIMITS.max_concurrent_analyses
+    ),
     summaries=CodeSummaryService(_STORE, load_ai_config()),
 )

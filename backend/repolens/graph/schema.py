@@ -6,10 +6,8 @@ built from the matching `Literal` in `repolens.graph.models`, so the database
 and the Python types cannot drift apart silently. Booleans are stored as
 `INTEGER` 0 or 1, and timestamps as `REAL` POSIX seconds.
 
-The store is a cache: an analysis expires after a day and can always be
-recomputed. So instead of migrations, the schema carries a version in
-`PRAGMA user_version`, and a database written by a different version is
-emptied and rebuilt (see `init_schema`).
+The schema carries a version in `PRAGMA user_version`. Known compatible
+versions are migrated; other versions are rebuilt (see `init_schema`).
 """
 
 import sqlite3
@@ -19,6 +17,7 @@ from repolens.graph.models import (
     AnalysisStage,
     AnalysisStatus,
     CommentKind,
+    SemanticStatus,
     ImportKind,
     MemberKind,
     SymbolKind,
@@ -27,7 +26,7 @@ from repolens.search.embedding import MODEL_NAME
 
 
 # Bump whenever a table, column, or constraint below changes.
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 # STRICT tables need SQLite 3.37 (2021). Older libraries still get every CHECK
 # constraint, just without SQLite's own column type enforcement.
@@ -85,7 +84,9 @@ CREATE TABLE IF NOT EXISTS analyses (
     unparsed_count INTEGER NOT NULL DEFAULT 0 {_non_negative("unparsed_count")},
     error_code TEXT,
     error_message TEXT,
-    error_hint TEXT
+    error_hint TEXT,
+    semantic_status TEXT {_one_of("semantic_status", SemanticStatus, nullable=True)},
+    semantic_chunks INTEGER NOT NULL DEFAULT 0 {_non_negative("semantic_chunks")}
 ){table_options};
 
 CREATE TABLE IF NOT EXISTS files (
@@ -237,14 +238,26 @@ def init_schema(conn: sqlite3.Connection) -> None:
     """Create the graph store tables, rebuilding them on a version mismatch.
 
     A fresh database is created at `SCHEMA_VERSION`. A database already at
-    that version is left as it is. A database at any other version, or one
-    holding tables but no version, was written by different code: its cached
-    analyses are dropped and the tables rebuilt, since every analysis can be
-    recomputed from its repository.
+    that version is left as it is. Version 7 is migrated without discarding
+    analyses or AI usage. Other versions are rebuilt.
     """
     conn.execute("PRAGMA foreign_keys = ON;")
     version = int(conn.execute("PRAGMA user_version;").fetchone()[0])
     if version == SCHEMA_VERSION:
+        conn.executescript(SCHEMA_SQL)
+        return
+
+    if version == 7:
+        conn.execute(
+            "ALTER TABLE analyses ADD COLUMN semantic_status TEXT "
+            + _one_of("semantic_status", SemanticStatus, nullable=True)
+        )
+        conn.execute(
+            "ALTER TABLE analyses ADD COLUMN semantic_chunks INTEGER NOT NULL "
+            "DEFAULT 0 " + _non_negative("semantic_chunks")
+        )
+        conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION};")
+        conn.commit()
         conn.executescript(SCHEMA_SQL)
         return
 

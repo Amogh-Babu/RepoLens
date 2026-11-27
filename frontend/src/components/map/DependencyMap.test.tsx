@@ -526,6 +526,73 @@ describe('DependencyMap', () => {
   });
 });
 
+describe('DependencyMap size limits', () => {
+  /** `small` with one file, `big` with `bigFiles` files importing it. */
+  function graphWithBigModule(bigFiles: number): DependencyGraph {
+    const bigPaths = Array.from({length: bigFiles}, (_, i) => `big/f${i}.py`);
+    return {
+      modules: [
+        {id: 'small', name: 'small', filePaths: ['small/a.py']},
+        {id: 'big', name: 'big', filePaths: bigPaths},
+      ],
+      files: [
+        {path: 'small/a.py', module: 'small', parsed: true, lineCount: 1},
+        ...bigPaths.map(path => ({
+          path,
+          module: 'big',
+          parsed: true,
+          lineCount: 1,
+        })),
+      ],
+      edges: bigPaths.map(path => ({source: path, target: 'small/a.py'})),
+    };
+  }
+
+  it('keeps a module closed when opening it would overflow the map', () => {
+    renderMap({
+      graph: graphWithBigModule(450),
+      expandedModules: new Set(['small', 'big']),
+    });
+
+    // `small` opened first and fits; `big` would make 453 boxes.
+    expect(
+      screen.getByRole('button', {name: /^Module small\. Collapse/}),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', {name: /^Module big, 450 files\. Expand/}),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', {name: /f0\.py/})).toBeNull();
+    const notice = screen.getByText(/^Kept big\/ closed/);
+    expect(notice).toHaveTextContent('453 boxes');
+    expect(notice).toHaveTextContent('use the list');
+  });
+
+  it('lists the files instead of laying out a map too large to draw', () => {
+    const modules = Array.from({length: 46}, (_, i) => `m${i}`);
+    const graph: DependencyGraph = {
+      modules: modules.map(id => ({id, name: id, filePaths: [`${id}/a.py`]})),
+      files: modules.map(id => ({
+        path: `${id}/a.py`,
+        module: id,
+        parsed: true,
+        lineCount: 1,
+      })),
+      edges: modules.flatMap(a =>
+        modules
+          .filter(b => b !== a)
+          .map(b => ({source: `${a}/a.py`, target: `${b}/a.py`})),
+      ),
+    };
+
+    const {onTooSlow} = renderMap({graph});
+
+    expect(onTooSlow).toHaveBeenCalledWith(
+      expect.stringContaining('even with every folder closed'),
+    );
+    expect(document.querySelectorAll('.react-flow__node')).toHaveLength(0);
+  });
+});
+
 describe('ListFallback', () => {
   it('lists files by module with import counts and selects them', async () => {
     const user = userEvent.setup();

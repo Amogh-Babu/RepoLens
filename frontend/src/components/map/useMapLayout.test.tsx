@@ -116,4 +116,19 @@ describe('useMapLayout', () => {
 
     expect(worker?.terminated).toBe(true);
   });
+
+  it('does not start a worker when disabled and stops an active layout', () => {
+    const graph = graphCopy();
+    const {rerender} = renderHook(
+      ({enabled}: {enabled: boolean}) =>
+        useMapLayout(graph, new Set(), true, {createWorker, enabled}),
+      {initialProps: {enabled: false}},
+    );
+
+    expect(FakeWorker.created).toHaveLength(0);
+    rerender({enabled: true});
+    expect(FakeWorker.created).toHaveLength(1);
+    rerender({enabled: false});
+    expect(FakeWorker.created[0]?.terminated).toBe(true);
+  });
 });

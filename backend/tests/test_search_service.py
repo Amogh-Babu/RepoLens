@@ -52,7 +52,7 @@ class SearchServiceTest(unittest.TestCase):
             texts = []
             batch_size = None
 
-            def embed(self, texts, batch_size=256):
+            def embed(self, texts, batch_size):
                 self.texts = list(texts)
                 self.batch_size = batch_size
                 # A vector that says which text it came from.
@@ -77,8 +77,8 @@ class SearchServiceTest(unittest.TestCase):
             [[float(len(query))], [23.0], [3.0]],
             [vector.tolist() for vector in vectors],
         )
-        # Batches stay small instead of fastembed's 256 (#118).
-        self.assertEqual(32, model.batch_size)
+        # FastEmbed's default batch of 256 is never used (#118).
+        self.assertEqual(16, model.batch_size)
         # Vectors stored with the earlier "passage: " format are not reused.
         self.assertNotEqual("BAAI/bge-small-en-v1.5", embedder.model_id)
 

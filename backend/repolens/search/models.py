@@ -55,3 +55,7 @@ class SearchPage:
     limit: int
     has_more: bool
     matched_paths: tuple[str, ...] = ()
+    # How far semantic matching was available (see
+    # `repolens.graph.models.SemanticStatus`); anything but "complete" means
+    # these results are keyword-only. None when the index does not say.
+    semantic_status: str | None = None

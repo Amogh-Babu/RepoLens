@@ -17,6 +17,13 @@ services:
     environment:
       # Optional: raises GitHub's API limit of 60 requests an hour.
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      # Resource limits, shown with their defaults. See
+      # docs/system-requirements.md.
+      REPOLENS_EMBEDDINGS_ENABLED: ${REPOLENS_EMBEDDINGS_ENABLED:-true}
+      REPOLENS_EMBEDDING_THREADS: ${REPOLENS_EMBEDDING_THREADS:-}
+      REPOLENS_EMBEDDING_BATCH_SIZE: ${REPOLENS_EMBEDDING_BATCH_SIZE:-16}
+      REPOLENS_MAX_EMBEDDING_CHUNKS: ${REPOLENS_MAX_EMBEDDING_CHUNKS:-10000}
+      REPOLENS_MAX_CONCURRENT_ANALYSES: ${REPOLENS_MAX_CONCURRENT_ANALYSES:-1}
       # Optional AI file summaries, off unless enabled with a key. See
       # backend/README.md ("AI File Summaries") and backend/.env.example.
       REPOLENS_AI_ENABLED: ${REPOLENS_AI_ENABLED:-false}

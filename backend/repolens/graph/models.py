@@ -18,6 +18,12 @@ AnalysisStage = Literal[
     "indexing",
     "storing",
 ]
+# How far semantic (vector) search is available for a completed analysis:
+# "complete" every chunk is embedded; "empty" nothing to embed; "disabled"
+# semantic indexing is turned off on this server; "over_budget" the
+# repository needs more chunks than the server's limit; "failed" the model
+# could not load or run. In every case but "complete", search is keyword-only.
+SemanticStatus = Literal["complete", "empty", "disabled", "over_budget", "failed"]
 
 
 @dataclass(frozen=True)
@@ -132,6 +138,17 @@ class FileEmbeddingRecord:
     text: str
     model: str
     vector: bytes
+@dataclass(frozen=True)
+class SemanticIndex:
+    """The outcome of semantic indexing for one analysis.
+
+    `chunk_count` is how many chunks the repository needed, whether or not
+    they were embedded, so an over-budget result can say by how much.
+    """
+
+    status: SemanticStatus
+    records: tuple[FileEmbeddingRecord, ...] = ()
+    chunk_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -153,6 +170,9 @@ class AnalysisRecord:
     # None: not built yet, so saving builds them. An empty tuple: built,
     # with nothing to embed or with semantic indexing unavailable.
     embeddings: tuple[FileEmbeddingRecord, ...] | None = None
+    # Set with `embeddings`; None while an analysis is still running.
+    semantic_status: SemanticStatus | None = None
+    semantic_chunks: int = 0
 
 
 @dataclass(frozen=True)

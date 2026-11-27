@@ -679,7 +679,10 @@ function MapPanel({
     [repoUrl],
   );
   const [fallbackMessage, setFallbackMessage] = useState<string | null>(null);
-  const onTooSlow = useCallback(() => setFallbackMessage(TOO_SLOW_MESSAGE), []);
+  const onTooSlow = useCallback(
+    (message?: string) => setFallbackMessage(message ?? TOO_SLOW_MESSAGE),
+    [],
+  );
   const onMapError = useCallback(() => setFallbackMessage(FAILED_MESSAGE), []);
   const showList = view === 'list' || fallbackMessage !== null;
   const visibleGraph = useMemo(

@@ -27,7 +27,7 @@ from repolens.analysis import (
     to_analyzed_files,
 )
 from repolens.graph.models import AnalysisErrorRecord, AnalysisRecord, AnalysisStage
-from repolens.graph.store import SqliteGraphStore
+from repolens.graph.store import IndexingCancelled, SqliteGraphStore
 from repolens.ingestion import (
     GitHubRefResolver,
     GitHubSource,
@@ -69,13 +69,16 @@ class PipelineAnalysisRunner:
           resolver: Resolves refs to commit SHAs; defaults to the GitHub API.
           source: Downloads snapshots; defaults to `GitHubSource`.
           analysis_service: Parses snapshots; defaults to Python only.
-          executor: Runs analyses in the background; defaults to a small
-            thread pool. Tests pass one that runs work inline.
+          executor: Runs analyses in the background; defaults to a pool of
+            `max_concurrent_analyses` threads, so later analyses wait in a
+            queue. Tests pass one that runs work inline.
           work_root: Parent directory for temporary snapshots; defaults to
             the system temporary directory.
           max_concurrent_analyses: How many analyses the default thread pool
             runs at once. Others wait in its queue. Ignored with `executor`.
         """
+        if max_concurrent_analyses < 1:
+            raise ValueError("max_concurrent_analyses must be at least 1.")
         self._resolver = resolver if resolver is not None else GitHubRefResolver()
         self._source = source if source is not None else GitHubSource()
         self._analysis_service = (
@@ -85,7 +88,7 @@ class PipelineAnalysisRunner:
             executor
             if executor is not None
             else ThreadPoolExecutor(
-                max_workers=max(1, max_concurrent_analyses),
+                max_workers=max_concurrent_analyses,
                 thread_name_prefix="repolens-analysis",
             )
         )
@@ -196,11 +199,15 @@ class PipelineAnalysisRunner:
 
         if not clock.enter(store, "indexing"):
             return
-        # Falls back to no vectors (keyword search only) if the model fails.
-        # Stops between batches once the analysis is cancelled.
-        embeddings = store.build_embeddings(
-            files, should_continue=lambda: store.is_active(analysis_id)
-        )
+        # Falls back to no vectors (keyword search only) if the model fails
+        # or the repository is over the chunk budget; the status says which.
+        # Stops between batches if the analysis is cancelled meanwhile.
+        try:
+            semantic = store.build_semantic_index(
+                files, should_continue=lambda: store.is_active(analysis_id)
+            )
+        except IndexingCancelled:
+            return
 
         if not clock.enter(store, "storing"):
             return
@@ -213,10 +220,12 @@ class PipelineAnalysisRunner:
                 status="completed",
                 counts=counts,
                 files=files,
-                embeddings=embeddings,
+                embeddings=semantic.records,
+                semantic_status=semantic.status,
+                semantic_chunks=semantic.chunk_count,
             )
         )
-        clock.finish(len(files), len(embeddings))
+        clock.finish(len(files), len(semantic.records))
 
 
 class _StageClock:

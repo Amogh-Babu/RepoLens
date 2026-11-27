@@ -66,25 +66,30 @@ export function useMapLayout(
   {
     createWorker = DEFAULT_WORKER_FACTORY,
     timeoutMs = LAYOUT_TIMEOUT_MS,
-  }: {createWorker?: LayoutWorkerFactory; timeoutMs?: number} = {},
+    enabled = true,
+  }: {
+    createWorker?: LayoutWorkerFactory;
+    timeoutMs?: number;
+    enabled?: boolean;
+  } = {},
 ): MapLayoutState {
   const key = layoutKey(expanded, collapsible);
   const synchronous = createWorker === null;
   const synchronousLayout = useMemo(() => {
-    if (!synchronous) return null;
+    if (!synchronous || !enabled) return null;
     const cached = readCached(graph, key);
     if (cached !== undefined) return cached;
     const [isCollapsible, open] = parseLayoutKey(key);
     const layout = layoutMap(graph, open, {collapsible: isCollapsible});
     cacheLayout(graph, key, layout);
     return layout;
-  }, [graph, key, synchronous]);
-  const cached = synchronous ? undefined : readCached(graph, key);
+  }, [enabled, graph, key, synchronous]);
+  const cached = synchronous || !enabled ? undefined : readCached(graph, key);
   const [settled, setSettled] = useState<SettledLayout | null>(null);
   const nextRequest = useRef(0);
 
   useEffect(() => {
-    if (createWorker === null || cached !== undefined) return;
+    if (createWorker === null || !enabled || cached !== undefined) return;
     const worker = createWorker();
     const id = ++nextRequest.current;
     let active = true;
@@ -131,7 +136,7 @@ export function useMapLayout(
       if (active) worker.terminate();
       active = false;
     };
-  }, [cached, createWorker, graph, key, timeoutMs]);
+  }, [cached, createWorker, enabled, graph, key, timeoutMs]);
 
   if (synchronousLayout !== null) {
     return {status: 'ready', layout: synchronousLayout};

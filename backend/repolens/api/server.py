@@ -20,10 +20,10 @@ Configuration comes from the environment:
   from elsewhere. Empty by default.
 - `GITHUB_TOKEN`: optional, raises GitHub's API rate limit (see the
   ingestion docs).
-- `REPOLENS_MAX_CONCURRENT_ANALYSES`: analyses run at once (default 1). Each
-  one adds its own indexing memory peak.
-- `REPOLENS_EMBED_BATCH_SIZE` and `REPOLENS_EMBED_THREADS`: see
-  `FastEmbedEmbedder`.
+- `REPOLENS_EMBEDDINGS_ENABLED`, `REPOLENS_EMBEDDING_THREADS`,
+  `REPOLENS_EMBEDDING_BATCH_SIZE`, `REPOLENS_MAX_EMBEDDING_CHUNKS`,
+  `REPOLENS_MAX_CONCURRENT_ANALYSES`: resource limits; see
+  `repolens.resources`.
 - `REPOLENS_AI_ENABLED`, `OPENAI_API_KEY`, and the other `REPOLENS_AI_*`
   variables: optional AI file summaries, off by default (see
   `repolens.ai.config`).
@@ -40,8 +40,8 @@ from fastapi.staticfiles import StaticFiles
 from repolens.ai import CodeSummaryService, load_ai_config
 from repolens.api.app import AnalysisRunner, create_app
 from repolens.graph.store import SqliteGraphStore
-from repolens.pipeline import DEFAULT_MAX_CONCURRENT_ANALYSES, PipelineAnalysisRunner
-from repolens.search.embedding import FastEmbedEmbedder
+from repolens.pipeline import PipelineAnalysisRunner
+from repolens.resources import ResourceLimits, create_embedder
 
 
 API_PREFIX = "/api"
@@ -109,6 +109,7 @@ def create_server_from_environment(
     runner: AnalysisRunner | None = None,
 ) -> FastAPI:
     """Build the production server from `REPOLENS_*` environment variables."""
+    limits = ResourceLimits.from_environment(environ)
     db_path = environ.get("REPOLENS_DB_PATH", "").strip() or ":memory:"
     if db_path != ":memory:":
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
@@ -121,11 +122,8 @@ def create_server_from_environment(
     )
     store = SqliteGraphStore(
         db_path,
-        embedder=FastEmbedEmbedder(
-            cache_dir=environ.get("REPOLENS_EMBEDDING_CACHE", "").strip() or None,
-            batch_size=_positive_int(environ, "REPOLENS_EMBED_BATCH_SIZE"),
-            threads=_positive_int(environ, "REPOLENS_EMBED_THREADS"),
-        ),
+        embedder=create_embedder(limits, environ),
+        max_embedding_chunks=limits.max_embedding_chunks,
     )
     return create_server(
         store=store,
@@ -133,10 +131,7 @@ def create_server_from_environment(
             runner
             if runner is not None
             else PipelineAnalysisRunner(
-                max_concurrent_analyses=_positive_int(
-                    environ, "REPOLENS_MAX_CONCURRENT_ANALYSES"
-                )
-                or DEFAULT_MAX_CONCURRENT_ANALYSES
+                max_concurrent_analyses=limits.max_concurrent_analyses
             )
         ),
         frontend_dir=Path(frontend) if frontend else None,

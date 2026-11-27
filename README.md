@@ -40,6 +40,11 @@ restarts until they expire after 24 hours. Press `Ctrl+C` to stop.
 * The API and its health check live under `/api` (for example
   `http://localhost:8000/api/health`).
 
+* RepoLens needs 2 CPU cores and 2 GB of memory at minimum, and runs
+  comfortably on 4 cores and 4 GB. Resource limits are set with
+  `REPOLENS_*` environment variables; see
+  [docs/system-requirements.md](docs/system-requirements.md).
+
 The Docker image includes the 67 MB local search model. A development server
 downloads it the first time an analysis is indexed; set
 `REPOLENS_EMBEDDING_CACHE` to choose where those model files are stored.
@@ -65,10 +70,10 @@ These settings trade speed for memory:
 
 * `REPOLENS_MAX_CONCURRENT_ANALYSES` (default 1): analyses that run at once.
   Each one adds its own indexing peak; others wait in a queue.
-* `REPOLENS_EMBED_BATCH_SIZE` (default 32): texts per model call. Larger
+* `REPOLENS_EMBEDDING_BATCH_SIZE` (default 16): texts per model call. Larger
   batches need more memory and are not faster on CPU.
-* `REPOLENS_EMBED_THREADS` (default: every core): model inference threads.
-  Fewer threads make indexing slower but do not lower memory.
+* `REPOLENS_EMBEDDING_THREADS` (default: at most 2, respecting CPU limits):
+  model inference threads.
 
 ### Using RepoLens in the browser
 

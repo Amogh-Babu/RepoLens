@@ -36,10 +36,11 @@ _PACKED_CHUNK_WORDS = 32
 _MAX_CHUNKS_PER_FILE = 16
 
 # Texts per model call. ONNX Runtime's activations grow with batch size times
-# the square of the longest text in the batch; 32 keeps a batch's peak in the
+# the square of the longest text in the batch; 16 keeps a batch's peak in the
 # low hundreds of megabytes, where fastembed's default of 256 can need
 # gigabytes.
-DEFAULT_EMBED_BATCH_SIZE = 32
+DEFAULT_EMBED_BATCH_SIZE = 16
+DEFAULT_BATCH_SIZE = DEFAULT_EMBED_BATCH_SIZE
 DEFAULT_MAX_EMBED_THREADS = 2
 
 
@@ -102,13 +103,8 @@ class Embedder(Protocol):
 class FastEmbedEmbedder:
     """CPU-only local embeddings from FastEmbed's ONNX BGE-small model.
 
-    Memory is bounded on purpose (#118): texts go to the model in batches of
-    `batch_size`. Threads do not change memory; by default ONNX Runtime uses
-    the machine's cores, and `threads` caps them on a shared host. ONNX Runtime
-    keeps its CPU memory arena at the largest batch's peak for the life of
-    the process. At fastembed's default batch of 256 that peak was gigabytes;
-    at 32 it is a few hundred megabytes. Turning the arena off saved only
-    about 50 MB more and made indexing about 45% slower, so it stays on.
+    One model is shared by every analysis and search in the process, and it
+    runs one call at a time. Batches and CPU threads are bounded by default.
     """
 
     def __init__(
@@ -118,6 +114,10 @@ class FastEmbedEmbedder:
         batch_size: int | None = None,
         threads: int | None = None,
     ) -> None:
+        if threads is not None and threads < 1:
+            raise ValueError("threads must be at least 1.")
+        if batch_size is not None and batch_size < 1:
+            raise ValueError("batch_size must be at least 1.")
         self._cache_dir = cache_dir
         self._batch_size = max(1, batch_size or DEFAULT_EMBED_BATCH_SIZE)
         self._threads = max(1, threads) if threads else min(
@@ -125,6 +125,7 @@ class FastEmbedEmbedder:
         )
         self._model = None
         self._lock = threading.Lock()
+        self._inference_lock = threading.Lock()
 
     @property
     def model_id(self) -> str:
@@ -165,14 +166,15 @@ class FastEmbedEmbedder:
         # vectors are put back in input order.
         order = sorted(range(len(inputs)), key=lambda index: len(inputs[index]))
         vectors: list[Embedding] = [()] * len(inputs)
-        for index, vector in zip(
-            order,
-            self._model.embed(
-                [inputs[index] for index in order], batch_size=self._batch_size
-            ),
-            strict=True,
-        ):
-            vectors[index] = np.asarray(vector, dtype=np.float32)
+        with self._inference_lock:
+            for index, vector in zip(
+                order,
+                self._model.embed(
+                    [inputs[index] for index in order], batch_size=self._batch_size
+                ),
+                strict=True,
+            ):
+                vectors[index] = np.asarray(vector, dtype=np.float32)
         return vectors
 
 

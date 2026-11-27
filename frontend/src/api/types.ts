@@ -248,7 +248,15 @@ export interface SearchResponse {
   total: number;
   results: RankedFile[];
   matchedPaths?: string[];
+  /**
+   * Whether these results could match by meaning. Anything but 'complete'
+   * means they are keyword-only.
+   */
+  semanticStatus?: SemanticStatus | null;
 }
+
+export type SemanticStatus =
+  'complete' | 'empty' | 'disabled' | 'over_budget' | 'failed';
 
 /** Today's AI usage, as reported by GET /ai/status. */
 export interface AiUsage {

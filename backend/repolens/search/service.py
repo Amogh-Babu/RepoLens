@@ -202,7 +202,15 @@ class SearchService:
             limit=limit,
             has_more=offset + len(page_results) < len(ordered),
             matched_paths=tuple(result.path for result in ordered),
+            semantic_status=self._semantic_status(analysis_id, include_semantic),
         )
+
+    def _semantic_status(self, analysis_id: str, include_semantic: bool) -> str | None:
+        """How far this search could use semantic matching, or None if unknown."""
+        if not include_semantic:
+            return None
+        get_status = getattr(self._index, "get_semantic_status", None)
+        return None if get_status is None else get_status(analysis_id)
 
     @staticmethod
     def _is_test_path(path: str) -> bool:
@@ -241,16 +249,29 @@ class SearchService:
         query: str,
         documents: list[SearchDocument],
     ) -> dict[str, tuple[float, str]]:
+        get_status = getattr(self._index, "get_semantic_status", None)
+        if get_status is not None and get_status(analysis_id) not in (None, "complete"):
+            # Nothing was embedded, so the query need not be either.
+            return {}
+        semantic_matches = getattr(self._index, "semantic_matches", None)
         get_embeddings = getattr(self._index, "get_search_embeddings", None)
-        if get_embeddings is None:
+        if semantic_matches is None and get_embeddings is None:
             return {}
         try:
-            embeddings = get_embeddings(analysis_id)
-            if not isinstance(embeddings, ChunkVectors):
-                embeddings = ChunkVectors.from_pairs(embeddings)
-            if not len(embeddings):
-                return {}
+            if semantic_matches is None:
+                embeddings = get_embeddings(analysis_id)
+                if not isinstance(embeddings, ChunkVectors):
+                    embeddings = ChunkVectors.from_pairs(embeddings)
+                if not len(embeddings):
+                    return {}
             query_vector = self._embedder.embed([f"{QUERY_MARKER}{query}"])[0]
+            if semantic_matches is not None:
+                paths = {document.path for document in documents}
+                return {
+                    path: match
+                    for path, match in semantic_matches(analysis_id, query_vector).items()
+                    if path in paths
+                }
         except Exception:
             _LOGGER.warning(
                 "Semantic search unavailable for analysis %s", analysis_id, exc_info=True

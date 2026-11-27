@@ -59,6 +59,7 @@ class SearchPageResponse(BaseModel):
     limit: int
     has_more: bool
     matched_paths: list[str]
+    semantic_status: str | None = None
 
 
 def create_search_router(search_service: SearchService) -> APIRouter:

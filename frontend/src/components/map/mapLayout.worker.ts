@@ -1,5 +1,8 @@
 /// <reference lib="webworker" />
-
+/**
+ * Lays out the dependency map off the main thread, so a large layout never
+ * freezes the page. See `useMapLayout`.
+ */
 import type {DependencyGraph} from '../../api/types.ts';
 import {layoutMap} from './mapLayout.ts';
 
@@ -16,12 +19,11 @@ export type LayoutResponse =
 
 self.onmessage = (event: MessageEvent<LayoutRequest>) => {
   const {id, graph, expanded, collapsible} = event.data;
+  let response: LayoutResponse;
   try {
-    self.postMessage({
-      id,
-      layout: layoutMap(graph, new Set(expanded), {collapsible}),
-    } satisfies LayoutResponse);
+    response = {id, layout: layoutMap(graph, new Set(expanded), {collapsible})};
   } catch (error) {
-    self.postMessage({id, error: String(error)} satisfies LayoutResponse);
+    response = {id, error: String(error)};
   }
+  self.postMessage(response);
 };

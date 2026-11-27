@@ -288,11 +288,9 @@ export function layoutMap(
       source,
       target,
       label: count > 1 ? String(count) : undefined,
-      markerEnd: {
-        type: 'arrowclosed' as MarkerType,
-        width: 24,
-        height: 24,
-      },
+      // MarkerType.ArrowClosed, written out so the layout worker does not
+      // load React Flow.
+      markerEnd: {type: 'arrowclosed' as MarkerType, width: 24, height: 24},
       data: {count},
     }),
   );
