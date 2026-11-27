@@ -24,6 +24,9 @@ Configuration comes from the environment:
   `REPOLENS_EMBEDDING_BATCH_SIZE`, `REPOLENS_MAX_EMBEDDING_CHUNKS`,
   `REPOLENS_MAX_CONCURRENT_ANALYSES`: resource limits; see
   `repolens.resources`.
+- `REPOLENS_AI_ENABLED`, `OPENAI_API_KEY`, and the other `REPOLENS_AI_*`
+  variables: optional AI file summaries, off by default (see
+  `repolens.ai.config`).
 """
 
 from collections.abc import Mapping
@@ -34,6 +37,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from repolens.ai import CodeSummaryService, load_ai_config
 from repolens.api.app import AnalysisRunner, create_app
 from repolens.graph.store import SqliteGraphStore
 from repolens.pipeline import PipelineAnalysisRunner
@@ -64,6 +68,7 @@ def create_server(
     runner: AnalysisRunner | None = None,
     frontend_dir: Path | None = None,
     cors_origins: tuple[str, ...] = (),
+    summaries: CodeSummaryService | None = None,
 ) -> FastAPI:
     """Mount the API under `/api` and, if built, the frontend at `/`.
 
@@ -74,7 +79,7 @@ def create_server(
     server = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     server.mount(
         API_PREFIX,
-        create_app(store, runner, cors_origins=cors_origins),
+        create_app(store, runner, cors_origins=cors_origins, summaries=summaries),
         name="api",
     )
 
@@ -115,12 +120,13 @@ def create_server_from_environment(
         for origin in environ.get("REPOLENS_CORS_ORIGINS", "").split(",")
         if origin.strip()
     )
+    store = SqliteGraphStore(
+        db_path,
+        embedder=create_embedder(limits, environ),
+        max_embedding_chunks=limits.max_embedding_chunks,
+    )
     return create_server(
-        store=SqliteGraphStore(
-            db_path,
-            embedder=create_embedder(limits, environ),
-            max_embedding_chunks=limits.max_embedding_chunks,
-        ),
+        store=store,
         runner=(
             runner
             if runner is not None
@@ -130,7 +136,20 @@ def create_server_from_environment(
         ),
         frontend_dir=Path(frontend) if frontend else None,
         cors_origins=origins,
+        summaries=CodeSummaryService(store, load_ai_config(environ)),
     )
+
+
+def _positive_int(environ: Mapping[str, str], name: str) -> int | None:
+    """Read a positive integer setting, or None when it is unset or invalid."""
+    raw = environ.get(name, "").strip()
+    if not raw:
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        return None
+    return value if value > 0 else None
 
 
 app = create_server_from_environment()

@@ -1,4 +1,9 @@
-import {encodeFilePath, HttpApiClient} from './client.ts';
+import {
+  DEFAULT_TIMEOUT_MS,
+  encodeFilePath,
+  HttpApiClient,
+  SUMMARY_TIMEOUT_MS,
+} from './client.ts';
 import {ApiError} from './errors.ts';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -188,5 +193,145 @@ describe('HttpApiClient', () => {
 describe('encodeFilePath', () => {
   it('encodes each segment but keeps the slashes', () => {
     expect(encodeFilePath('a b/c#d/e?.py')).toBe('a%20b/c%23d/e%3F.py');
+  });
+
+  it('reads the AI status', async () => {
+    const {calls, fetchFn} = stubFetch(() =>
+      jsonResponse({enabled: false, provider: null, model: null}),
+    );
+    const client = new HttpApiClient('/api', fetchFn);
+
+    const status = await client.getAiStatus();
+
+    expect(status.enabled).toBe(false);
+    expect(calls[0]?.url).toBe('/api/ai/status');
+    expect(calls[0]?.init.method).toBe('GET');
+  });
+
+  it('reads a cached AI summary without generating one', async () => {
+    const {calls, fetchFn} = stubFetch(() =>
+      jsonResponse({status: 'notGenerated', summary: null}),
+    );
+    const client = new HttpApiClient('/api', fetchFn);
+
+    await client.getFileSummary('a 1', 'app/my file.py');
+
+    expect(calls[0]?.url).toBe(
+      '/api/analyses/a%201/ai-summaries/app/my%20file.py',
+    );
+    expect(calls[0]?.init.method).toBe('GET');
+  });
+
+  it('generates and regenerates AI summaries with POST', async () => {
+    const {calls, fetchFn} = stubFetch(() =>
+      jsonResponse({status: 'completed'}),
+    );
+    const client = new HttpApiClient('/api', fetchFn);
+
+    await client.generateFileSummary('a1', 'app/x.py');
+    await client.generateFileSummary('a1', 'app/x.py', {regenerate: true});
+
+    expect(calls.map(call => [call.init.method, call.url])).toEqual([
+      ['POST', '/api/analyses/a1/ai-summaries/app/x.py'],
+      ['POST', '/api/analyses/a1/ai-summaries/app/x.py?regenerate=true'],
+    ]);
+  });
+
+  it('reports AI summary errors with their code and hint', async () => {
+    const {fetchFn} = stubFetch(() =>
+      jsonResponse(
+        {
+          code: 'AI_SUMMARY_UNVERIFIED',
+          message: 'The AI summary could not be verified.',
+          hint: 'The static description is still available.',
+        },
+        502,
+      ),
+    );
+    const client = new HttpApiClient('/api', fetchFn);
+
+    const error = await rejection(client.generateFileSummary('a1', 'x.py'));
+
+    expect(error.code).toBe('AI_SUMMARY_UNVERIFIED');
+    expect(error.hint).toBe('The static description is still available.');
+    expect(error.httpStatus).toBe(502);
+  });
+
+  it('reads a cached AI search overview with an encoded query', async () => {
+    const {calls, fetchFn} = stubFetch(() =>
+      jsonResponse({status: 'notGenerated', overview: null}),
+    );
+    const client = new HttpApiClient('/api', fetchFn);
+
+    await client.getSearchOverview('a 1', {q: 'log in&out #2/?'});
+    await client.getSearchOverview('a1', {q: 'login', intent: null});
+    await client.getSearchOverview('a1', {
+      q: 'café',
+      intent: 'configuration',
+    });
+
+    expect(calls.map(call => [call.init.method, call.url])).toEqual([
+      [
+        'GET',
+        '/api/analyses/a%201/ai-search-overview?q=log+in%26out+%232%2F%3F',
+      ],
+      ['GET', '/api/analyses/a1/ai-search-overview?q=login'],
+      [
+        'GET',
+        '/api/analyses/a1/ai-search-overview?q=caf%C3%A9&intent=configuration',
+      ],
+    ]);
+  });
+
+  it('generates and regenerates AI search overviews with POST', async () => {
+    const {calls, fetchFn} = stubFetch(() =>
+      jsonResponse({status: 'completed'}),
+    );
+    const client = new HttpApiClient('/api', fetchFn);
+
+    await client.generateSearchOverview('a1', {q: 'a&b', intent: 'tests'});
+    await client.generateSearchOverview('a1', {q: 'a b'}, {regenerate: true});
+
+    expect(calls.map(call => [call.init.method, call.url])).toEqual([
+      [
+        'POST',
+        '/api/analyses/a1/ai-search-overview?q=a%26b&intent=tests&regenerate=false',
+      ],
+      ['POST', '/api/analyses/a1/ai-search-overview?q=a+b&regenerate=true'],
+    ]);
+  });
+
+  it('gives AI search overview generation the long AI timeout', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    try {
+      const {fetchFn} = stubFetch(() => jsonResponse({status: 'completed'}));
+      const client = new HttpApiClient('/api', fetchFn);
+
+      await client.getSearchOverview('a1', {q: 'login'});
+      await client.generateSearchOverview('a1', {q: 'login'});
+
+      expect(timeout.mock.calls).toEqual([
+        [DEFAULT_TIMEOUT_MS],
+        [SUMMARY_TIMEOUT_MS],
+      ]);
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+
+  it('cancels AI search overview generation with the caller signal', async () => {
+    const client = new HttpApiClient('/api', hangingFetch());
+    const controller = new AbortController();
+
+    const pending = rejection(
+      client.generateSearchOverview(
+        'a1',
+        {q: 'login'},
+        {signal: controller.signal},
+      ),
+    );
+    controller.abort();
+
+    expect((await pending).code).toBe('ABORTED');
   });
 });

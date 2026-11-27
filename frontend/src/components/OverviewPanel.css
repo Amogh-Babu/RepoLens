@@ -229,3 +229,8 @@
 .overview__failure p {
   margin: 0;
 }
+
+.overview__ai-label {
+  color: var(--color-accent);
+  font-weight: 700;
+}

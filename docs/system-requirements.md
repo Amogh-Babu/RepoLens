@@ -3,8 +3,8 @@
 RepoLens runs as one process: the FastAPI backend, which also serves the
 frontend. Almost all of its memory and CPU goes to **semantic indexing**, which
 runs a small local embedding model (`BAAI/bge-small-en-v1.5` through FastEmbed
-and ONNX Runtime) on the CPU. RepoLens does not call a remote language model or
-any paid API; repository text never leaves the machine.
+and ONNX Runtime) on the CPU. Optional AI summaries use a remote provider
+when explicitly enabled; see the backend README for the data sent.
 
 ## Requirements
 
@@ -32,7 +32,7 @@ naming the variable.
 | Variable | Default | What it does |
 | --- | --- | --- |
 | `REPOLENS_EMBEDDINGS_ENABLED` | `true` | `false` skips semantic indexing; search is keyword-only. |
-| `REPOLENS_EMBEDDING_THREADS` | `2` | ONNX Runtime threads for the model. |
+| `REPOLENS_EMBEDDING_THREADS` | At most `2` | ONNX Runtime threads, bounded by CPU affinity and container quota by default. |
 | `REPOLENS_EMBEDDING_BATCH_SIZE` | `16` | Chunks per model call. Memory grows with this. |
 | `REPOLENS_MAX_EMBEDDING_CHUNKS` | `10000` | Most chunks one analysis embeds. A bigger repository keeps its map and keyword search, and search reports that semantic matching was skipped. |
 | `REPOLENS_MAX_CONCURRENT_ANALYSES` | `1` | Analyses that run at once; later ones wait in a queue. |
@@ -41,6 +41,9 @@ An analysis's response includes `semanticSearch: {status, chunks}` once it
 completes, and every search response includes `semanticStatus`. Any status other
 than `complete` (`empty`, `disabled`, `over_budget`, `failed`) means search
 results are keyword-only.
+
+The existing `REPOLENS_EMBED_THREADS` and `REPOLENS_EMBED_BATCH_SIZE`
+settings remain supported. The longer names above take precedence.
 
 ## Why it used to need so much (#118)
 

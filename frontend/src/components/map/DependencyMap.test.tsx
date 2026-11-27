@@ -35,6 +35,20 @@ const GRAPH: DependencyGraph = {
   ],
 };
 
+function bigGraph(fileCount: number): DependencyGraph {
+  const filePaths = Array.from({length: fileCount}, (_, i) => `big/f${i}.py`);
+  return {
+    modules: [{id: 'big', name: 'big', filePaths}],
+    files: filePaths.map(path => ({
+      path,
+      module: 'big',
+      parsed: true,
+      lineCount: 1,
+    })),
+    edges: [],
+  };
+}
+
 function renderMap(props: Partial<Parameters<typeof DependencyMap>[0]> = {}) {
   const handlers = {
     onSelectFile: vi.fn(),
@@ -497,6 +511,18 @@ describe('DependencyMap', () => {
       globalThis.ResizeObserver = original;
       vi.useRealTimers();
     }
+  });
+
+  it('keeps a folder too big to draw collapsed and says why', () => {
+    renderMap({graph: bigGraph(301), expandedModules: new Set(['big'])});
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'the map draws at most 300 files at once',
+    );
+    expect(screen.queryByRole('button', {name: /f0\.py/})).toBeNull();
+    expect(
+      screen.getByRole('button', {name: /Module big,/}),
+    ).toBeInTheDocument();
   });
 });
 

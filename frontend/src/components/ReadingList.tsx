@@ -1,9 +1,11 @@
 import type {RankedFile, SearchIntent, SemanticStatus} from '../api/types.ts';
 import type {SearchState} from '../state/analysisStore.ts';
 import {ErrorBanner} from './ErrorBanner.tsx';
+import {SearchAiOverview} from './SearchAiOverview.tsx';
 import './ReadingList.css';
 
 interface ReadingListProps {
+  analysisId: string;
   search: SearchState;
   selectedPath: string | null;
   onSelectFile: (path: string) => void;
@@ -19,6 +21,7 @@ interface ReadingListProps {
  * just the position and path per file, 20 at a time.
  */
 export function ReadingList({
+  analysisId,
   search,
   selectedPath,
   onSelectFile,
@@ -74,6 +77,12 @@ export function ReadingList({
 
       {hasResults && total > 0 && (
         <>
+          <SearchAiOverview
+            analysisId={analysisId}
+            query={query}
+            intent={search.intent}
+            onSelectFile={onSelectFile}
+          />
           {results[0] !== undefined && (
             <button
               type="button"

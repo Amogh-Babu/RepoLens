@@ -84,6 +84,18 @@ def test_reads_every_limit_from_the_environment() -> None:
     assert limits == ResourceLimits(False, 4, 8, 500, 2)
 
 
+def test_existing_setting_names_and_new_name_precedence() -> None:
+    limits = ResourceLimits.from_environment(
+        {
+            "REPOLENS_EMBED_THREADS": "3",
+            "REPOLENS_EMBED_BATCH_SIZE": "24",
+            "REPOLENS_EMBEDDING_BATCH_SIZE": "8",
+        }
+    )
+    assert limits.embedding_threads == 3
+    assert limits.embedding_batch_size == 8
+
+
 @pytest.mark.parametrize(
     ("name", "value"),
     [
@@ -407,8 +419,6 @@ def test_runner_rejects_a_zero_concurrency_limit() -> None:
 
 def test_streaming_scores_match_the_full_vector_scores() -> None:
     """`semantic_matches` ranks files the same as scoring every stored vector."""
-    from repolens.search.embedding import cosine_similarity
-
     embedder = HashEmbedder(dimensions=64)
     store = SqliteGraphStore(embedder=embedder)
     from test_graph_store import _sample_analysis
@@ -417,14 +427,7 @@ def test_streaming_scores_match_the_full_vector_scores() -> None:
     query = embedder.embed(["service handler main"])[0]
 
     streamed = store.semantic_matches("analysis-1", query)
-    expected: dict[str, tuple[float, str]] = {}
-    for path, chunks in store.get_search_embeddings("analysis-1").items():
-        score, text = max(
-            ((cosine_similarity(query, vector), text) for text, vector in chunks),
-            key=lambda item: item[0],
-        )
-        if score > 0:
-            expected[path] = (score, text)
+    expected = store.get_search_embeddings("analysis-1").best_by_path(query)
 
     assert streamed.keys() == expected.keys()
     for path, (score, text) in expected.items():

@@ -63,22 +63,6 @@ export function Workspace({
       : (state.fileDetails[state.selectedPath] ?? null),
   );
   const fileFailure = useAnalysisStore(state => state.fileFailure);
-  const aiSummary = useAnalysisStore(state =>
-    state.selectedPath === null
-      ? null
-      : (state.fileSummaries[state.selectedPath] ?? null),
-  );
-  const aiSummaryLoading = useAnalysisStore(state =>
-    state.selectedPath === null
-      ? false
-      : Boolean(state.fileSummaryLoading[state.selectedPath]),
-  );
-  const aiSummaryFailure = useAnalysisStore(state =>
-    state.selectedPath === null
-      ? null
-      : (state.fileSummaryFailures[state.selectedPath] ?? null),
-  );
-  const retryFileSummary = useAnalysisStore(state => state.retryFileSummary);
   const search = useAnalysisStore(state => state.search);
   const runSearch = useAnalysisStore(state => state.runSearch);
   const clearSearch = useAnalysisStore(state => state.clearSearch);
@@ -268,14 +252,11 @@ export function Workspace({
               ) : (
                 <FileDetailPanel
                   path={selectedPath}
+                  analysisId={analysis.analysisId}
                   repoUrl={analysis.repoUrl}
                   sha={analysis.sha}
                   detail={detail}
                   failure={fileFailure}
-                  aiSummary={aiSummary}
-                  aiSummaryLoading={aiSummaryLoading}
-                  aiSummaryFailure={aiSummaryFailure}
-                  onRetryAiSummary={() => retryFileSummary(selectedPath)}
                   onSelectFile={selectWorkspaceFile}
                   onRetry={() => selectWorkspaceFile(selectedPath)}
                   onClose={() => selectWorkspaceFile(null)}
@@ -551,7 +532,11 @@ function Sidebar({
             onTourLoaded={onTourLoaded}
           />
         ) : tab === 'reading' ? (
-          <ReadingPanel onSelectFile={onSelectFile} onStartTour={onStartTour} />
+          <ReadingPanel
+            analysisId={analysisId}
+            onSelectFile={onSelectFile}
+            onStartTour={onStartTour}
+          />
         ) : (
           <ExplorerPanel onSelectFile={onSelectFile} />
         )}
@@ -561,9 +546,11 @@ function Sidebar({
 }
 
 function ReadingPanel({
+  analysisId,
   onSelectFile,
   onStartTour,
 }: {
+  analysisId: string;
   onSelectFile: (path: string) => void;
   onStartTour: () => void;
 }) {
@@ -576,6 +563,7 @@ function ReadingPanel({
 
   return (
     <ReadingList
+      analysisId={analysisId}
       search={search}
       selectedPath={selectedPath}
       onSelectFile={onSelectFile}

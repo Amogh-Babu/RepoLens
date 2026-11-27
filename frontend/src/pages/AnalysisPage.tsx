@@ -5,6 +5,7 @@ import {describeError} from '../api/describeError.ts';
 import {ApiError} from '../api/errors.ts';
 import type {Analysis} from '../api/types.ts';
 import {ErrorBanner} from '../components/ErrorBanner.tsx';
+import {HelpMenu} from '../components/HelpMenu.tsx';
 import {ProgressIndicator} from '../components/ProgressIndicator.tsx';
 import {ReanalyzeButton} from '../components/ReanalyzeButton.tsx';
 import {SummaryBar} from '../components/SummaryBar.tsx';
@@ -131,6 +132,8 @@ function AnalysisContent() {
           onCloseHelpTour={() => setHelpTourOpen(false)}
         />
       )}
+
+      <HelpMenu />
     </main>
   );
 }

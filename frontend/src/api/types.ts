@@ -123,6 +123,8 @@ export interface OverviewFile {
   path: string;
   reason: string;
   summary: string;
+  /** Only verified AI descriptions are marked 'ai'. */
+  summarySource?: 'static' | 'ai';
   score?: number;
 }
 
@@ -199,13 +201,6 @@ export interface FileDetail {
   sourceUrl: string;
 }
 
-/** AI-generated overview of a single file. */
-export interface FileAiSummary {
-  path: string;
-  summary: string;
-  cached: boolean;
-}
-
 export type MatchKind =
   'filename' | 'symbol' | 'import' | 'comment' | 'semantic';
 
@@ -262,3 +257,163 @@ export interface SearchResponse {
 
 export type SemanticStatus =
   'complete' | 'empty' | 'disabled' | 'over_budget' | 'failed';
+
+/** Today's AI usage, as reported by GET /ai/status. */
+export interface AiUsage {
+  day: string;
+  modelCalls: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheHits: number;
+  cacheMisses: number;
+  cacheHitRate: number | null;
+  validationFailures: number;
+  providerFailures: number;
+  averageLatencyMs: number | null;
+  /** Null unless the backend was given token prices. */
+  estimatedCostUsd: number | null;
+}
+
+/** GET /ai/status response body. */
+export interface AiStatus {
+  enabled: boolean;
+  /** Who receives the source when a summary is generated, e.g. "OpenAI". */
+  provider: string | null;
+  model: string | null;
+  /** What generating a summary sends where; shown before generating. */
+  notice: string | null;
+  /**
+   * What generating a search overview sends where; shown before
+   * generating. Absent on backends without search overviews.
+   */
+  searchNotice?: string | null;
+  dailyCallLimit: number | null;
+  usage: AiUsage | null;
+}
+
+export type SummaryCoverage = 'complete' | 'partial';
+
+export interface SummaryKeySymbol {
+  /** Top-level name, or `Owner.member` for a method or attribute. */
+  name: string;
+  kind: 'function' | 'class' | 'variable' | 'method' | 'attribute';
+  description: string;
+  line: number;
+  /** GitHub link to the line at the analyzed commit. */
+  url: string;
+}
+
+export interface SummaryDependency {
+  path: string;
+  relationship: 'imports' | 'importedBy';
+  description: string;
+}
+
+export interface SummarySideEffect {
+  kind:
+    | 'database'
+    | 'filesystem'
+    | 'network'
+    | 'subprocess'
+    | 'environment'
+    | 'other';
+  description: string;
+  startLine: number;
+  endLine: number;
+  url: string;
+}
+
+export interface SummaryEvidence {
+  startLine: number;
+  endLine: number;
+  description: string;
+  /** GitHub link to the line range at the analyzed commit. */
+  url: string;
+}
+
+/** A verified AI summary. Every field is plain text, never HTML. */
+export interface CodeSummary {
+  summary: string;
+  purpose: string;
+  responsibilities: string[];
+  keySymbols: SummaryKeySymbol[];
+  dependencies: SummaryDependency[];
+  sideEffects: SummarySideEffect[];
+  uncertainties: string[];
+  evidence: SummaryEvidence[];
+  coverage: SummaryCoverage;
+}
+
+/** Provenance of a summary, filled in by RepoLens, not by the model. */
+export interface SummaryMetadata {
+  model: string;
+  promptVersion: string;
+  schemaVersion: string;
+  sourceHash: string;
+  /** ISO 8601. */
+  generatedAt: string;
+  /** True when served from the cache instead of generated now. */
+  cached: boolean;
+  cacheStatus: 'hit' | 'miss' | 'regenerated';
+  coverage: SummaryCoverage;
+  /** 1-based inclusive [start, end] line ranges the model was shown. */
+  inspectedLines: Array<[number, number]>;
+  lineCount: number;
+  sourceUrl: string;
+}
+
+/** GET and POST /analyses/{id}/ai-summaries/{path} response body. */
+export interface FileSummary {
+  analysisId: string;
+  path: string;
+  sha: string;
+  status: 'notGenerated' | 'completed';
+  summary: CodeSummary | null;
+  metadata: SummaryMetadata | null;
+}
+
+/** One file the AI search overview points the reader to. */
+export interface SearchOverviewStep {
+  path: string;
+  /** Why to read this file, in plain text. */
+  reason: string;
+}
+
+/** A verified AI overview of a search. Every field is plain text, never HTML. */
+export interface SearchOverview {
+  summary: string;
+  startHere: SearchOverviewStep;
+  readNext: SearchOverviewStep[];
+  uncertainties: string[];
+}
+
+/** Provenance of a search overview, filled in by RepoLens, not the model. */
+export interface SearchOverviewMetadata {
+  model: string;
+  promptVersion: string;
+  schemaVersion: string;
+  /** ISO 8601. */
+  generatedAt: string;
+  /** True when served from the cache instead of generated now. */
+  cached: boolean;
+  cacheStatus: 'hit' | 'miss' | 'regenerated';
+  /** Paths whose cached AI file summaries the model was shown. */
+  usedFileSummaries: string[];
+}
+
+/** GET and POST /analyses/{id}/ai-search-overview query parameters. */
+export interface SearchOverviewRequest {
+  q: string;
+  intent?: SearchIntent | null;
+}
+
+/** GET and POST /analyses/{id}/ai-search-overview response body. */
+export interface SearchOverviewResponse {
+  analysisId: string;
+  query: string;
+  intent: SearchIntent | null;
+  /** 'noResults' when the query matches no files, so there is nothing to summarize. */
+  status: 'notGenerated' | 'completed' | 'noResults';
+  overview: SearchOverview | null;
+  metadata: SearchOverviewMetadata | null;
+}

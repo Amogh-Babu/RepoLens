@@ -165,6 +165,23 @@ class ImportClassifier:
         `source_path` is dropped.
         """
         module = imported.raw_name[imported.level :]
+
+        # A dotted import cannot continue through an ordinary module file.
+        # Check every parent component before resolving the complete module.
+        parts = module.split(".")
+
+        for end in range(1, len(parts)):
+            parent_module = ".".join(parts[:end])
+            parent_target = self._resolve_module(root, parent_module)
+
+            if parent_target is not None and not _is_package_file(parent_target):
+                return ()
+
+        base_target = self._resolve_module(root, module)
+
+        names = tuple(name for name in imported.symbols if name != _STAR_IMPORT)
+        submodules: list[tuple[str, str]] = []
+
         base_target = self._resolve_module(root, module)
 
         names = tuple(name for name in imported.symbols if name != _STAR_IMPORT)

@@ -165,6 +165,32 @@ def test_reopening_a_database_at_the_same_version_keeps_its_analyses(tmp_path: P
     assert reopened.get_analysis("analysis-1")["analysisId"] == "analysis-1"
 
 
+def test_version_seven_migration_preserves_analysis_and_ai_usage() -> None:
+    conn = sqlite3.connect(":memory:")
+    conn.executescript(
+        """
+        CREATE TABLE analyses (
+            id TEXT PRIMARY KEY, repo TEXT, ref TEXT, sha TEXT, status TEXT,
+            stage TEXT, from_cache INTEGER, created_at REAL, expires_at REAL,
+            analyzed_count INTEGER, excluded_count INTEGER, unparsed_count INTEGER,
+            error_code TEXT, error_message TEXT, error_hint TEXT
+        );
+        INSERT INTO analyses (id, repo, sha, status) VALUES ('old', 'repo', 'sha', 'completed');
+        CREATE TABLE ai_usage (day TEXT PRIMARY KEY, calls INTEGER NOT NULL);
+        INSERT INTO ai_usage VALUES ('2026-01-01', 42);
+        PRAGMA user_version = 7;
+        """
+    )
+
+    init_schema(conn)
+
+    assert conn.execute("SELECT id, semantic_status, semantic_chunks FROM analyses").fetchone() == (
+        "old", None, 0
+    )
+    assert conn.execute("SELECT calls FROM ai_usage").fetchone() == (42,)
+    assert conn.execute("PRAGMA user_version").fetchone() == (SCHEMA_VERSION,)
+
+
 @pytest.mark.parametrize("old_version", [0, 1])
 def test_a_database_from_another_schema_version_is_rebuilt(
     tmp_path: Path, old_version: int

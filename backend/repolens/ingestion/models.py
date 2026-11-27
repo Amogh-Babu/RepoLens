@@ -48,7 +48,9 @@ class ArchiveLimits:
     timeout_seconds: float = 30.0
     max_file_bytes: int = 2 * 1024 * 1024
     max_analyzable_bytes: int = 128 * 1024 * 1024
-    max_analyzable_file_count: int = 20_000
+    # Indexing memory grows with the number of files; numpy's 774 analyzed
+    # files peak at about 0.5 GB (#118), which leaves headroom at this cap.
+    max_analyzable_file_count: int = 5_000
 
 
 @dataclass(frozen=True)

@@ -6,10 +6,8 @@ built from the matching `Literal` in `repolens.graph.models`, so the database
 and the Python types cannot drift apart silently. Booleans are stored as
 `INTEGER` 0 or 1, and timestamps as `REAL` POSIX seconds.
 
-The store is a cache: an analysis expires after a day and can always be
-recomputed. So instead of migrations, the schema carries a version in
-`PRAGMA user_version`, and a database written by a different version is
-emptied and rebuilt (see `init_schema`).
+The schema carries a version in `PRAGMA user_version`. Known compatible
+versions are migrated; other versions are rebuilt (see `init_schema`).
 """
 
 import sqlite3
@@ -28,13 +26,16 @@ from repolens.search.embedding import MODEL_NAME
 
 
 # Bump whenever a table, column, or constraint below changes.
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 8
 
 # STRICT tables need SQLite 3.37 (2021). Older libraries still get every CHECK
 # constraint, just without SQLite's own column type enforcement.
 _STRICT_MIN_VERSION = (3, 37, 0)
 
 _TABLES = (
+    "ai_search_overviews",
+    "ai_usage",
+    "ai_summaries",
     "embeddings",
     "members",
     "comments",
@@ -149,6 +150,69 @@ CREATE TABLE IF NOT EXISTS embeddings (
     PRIMARY KEY (file_id, chunk_index)
 ){table_options};
 
+-- Validated AI file summaries. A row is one summary's effective identity:
+-- repository, commit, path, source hash, model, prompt and schema version.
+-- It is deleted with its analysis, so it never outlives the analysis TTL.
+CREATE TABLE IF NOT EXISTS ai_summaries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    analysis_id TEXT NOT NULL,
+    repo TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    commit_sha TEXT NOT NULL,
+    source_hash TEXT NOT NULL,
+    model_id TEXT NOT NULL,
+    prompt_version TEXT NOT NULL,
+    schema_version TEXT NOT NULL,
+    coverage TEXT NOT NULL CHECK (coverage IN ('complete', 'partial')),
+    inspected_lines TEXT NOT NULL,
+    line_count INTEGER NOT NULL {_non_negative("line_count")},
+    summary_json TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    expires_at REAL NOT NULL,
+    FOREIGN KEY (analysis_id) REFERENCES analyses(id) ON DELETE CASCADE,
+    UNIQUE (
+        repo, commit_sha, file_path, source_hash,
+        model_id, prompt_version, schema_version
+    )
+){table_options};
+
+-- Validated AI overviews of one search's top results. A row is one
+-- overview's identity: analysis, normalized query, reading goal, the ordered
+-- top results it covers, model, prompt and schema version. It is deleted with
+-- its analysis, so it never outlives the analysis TTL.
+CREATE TABLE IF NOT EXISTS ai_search_overviews (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    analysis_id TEXT NOT NULL,
+    query_norm TEXT NOT NULL,
+    intent TEXT NOT NULL,
+    results_hash TEXT NOT NULL,
+    model_id TEXT NOT NULL,
+    prompt_version TEXT NOT NULL,
+    schema_version TEXT NOT NULL,
+    used_file_summaries TEXT NOT NULL,
+    overview_json TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    expires_at REAL NOT NULL,
+    FOREIGN KEY (analysis_id) REFERENCES analyses(id) ON DELETE CASCADE,
+    UNIQUE (
+        analysis_id, query_norm, intent, results_hash,
+        model_id, prompt_version, schema_version
+    )
+){table_options};
+
+-- Model usage per UTC day, for the daily call limit and cost logging.
+CREATE TABLE IF NOT EXISTS ai_usage (
+    day TEXT PRIMARY KEY,
+    calls INTEGER NOT NULL DEFAULT 0 {_non_negative("calls")},
+    input_tokens INTEGER NOT NULL DEFAULT 0 {_non_negative("input_tokens")},
+    output_tokens INTEGER NOT NULL DEFAULT 0 {_non_negative("output_tokens")},
+    cache_hits INTEGER NOT NULL DEFAULT 0 {_non_negative("cache_hits")},
+    cache_misses INTEGER NOT NULL DEFAULT 0 {_non_negative("cache_misses")},
+    validation_failures INTEGER NOT NULL DEFAULT 0 {_non_negative("validation_failures")},
+    provider_failures INTEGER NOT NULL DEFAULT 0 {_non_negative("provider_failures")},
+    latency_ms INTEGER NOT NULL DEFAULT 0 {_non_negative("latency_ms")}
+){table_options};
+
 CREATE INDEX IF NOT EXISTS idx_analyses_repo_sha ON analyses(repo, sha);
 CREATE INDEX IF NOT EXISTS idx_files_analysis_id ON files(analysis_id);
 CREATE INDEX IF NOT EXISTS idx_symbols_file_id ON symbols(file_id);
@@ -156,6 +220,9 @@ CREATE INDEX IF NOT EXISTS idx_imports_file_id ON imports(file_id);
 CREATE INDEX IF NOT EXISTS idx_imports_target_file_id ON imports(target_file_id);
 CREATE INDEX IF NOT EXISTS idx_comments_file_id ON comments(file_id);
 CREATE INDEX IF NOT EXISTS idx_members_file_id ON members(file_id);
+CREATE INDEX IF NOT EXISTS idx_embeddings_file_id ON embeddings(file_id);
+CREATE INDEX IF NOT EXISTS idx_ai_summaries_analysis_path
+    ON ai_summaries(analysis_id, file_path);
 """
 
 
@@ -171,14 +238,26 @@ def init_schema(conn: sqlite3.Connection) -> None:
     """Create the graph store tables, rebuilding them on a version mismatch.
 
     A fresh database is created at `SCHEMA_VERSION`. A database already at
-    that version is left as it is. A database at any other version, or one
-    holding tables but no version, was written by different code: its cached
-    analyses are dropped and the tables rebuilt, since every analysis can be
-    recomputed from its repository.
+    that version is left as it is. Version 7 is migrated without discarding
+    analyses or AI usage. Other versions are rebuilt.
     """
     conn.execute("PRAGMA foreign_keys = ON;")
     version = int(conn.execute("PRAGMA user_version;").fetchone()[0])
     if version == SCHEMA_VERSION:
+        conn.executescript(SCHEMA_SQL)
+        return
+
+    if version == 7:
+        conn.execute(
+            "ALTER TABLE analyses ADD COLUMN semantic_status TEXT "
+            + _one_of("semantic_status", SemanticStatus, nullable=True)
+        )
+        conn.execute(
+            "ALTER TABLE analyses ADD COLUMN semantic_chunks INTEGER NOT NULL "
+            "DEFAULT 0 " + _non_negative("semantic_chunks")
+        )
+        conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION};")
+        conn.commit()
         conn.executescript(SCHEMA_SQL)
         return
 

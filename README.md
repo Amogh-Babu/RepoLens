@@ -6,6 +6,8 @@ Given a public GitHub repository and a branch, tag, or commit, RepoLens statical
 
 RepoLens does not import, execute, or build code from analyzed repositories.
 
+![Screenshot of RepoLens graph view and search](docs/images/search.png)
+
 ## Try RepoLens
 
 Once RepoLens releases, you'll be able to access the tool online.
@@ -23,7 +25,11 @@ Next, from the repository root, run:
 docker compose up --build
 ```
 
-Then open **http://localhost:8000**. The first build takes a few minutes; later
+Then open **http://localhost:8000**. You'll see the home page, where you can enter a repository URL and press **Analyze**.
+
+![RepoLens home page](docs/images/index.png)
+
+The first build takes a few minutes; later
 starts take seconds. Analyses are kept in a Docker volume, so they survive
 restarts until they expire after 24 hours. Press `Ctrl+C` to stop.
 
@@ -43,13 +49,41 @@ The Docker image includes the 67 MB local search model. A development server
 downloads it the first time an analysis is indexed; set
 `REPOLENS_EMBEDDING_CACHE` to choose where those model files are stored.
 
-### Using RepoLens in the Browser
+### System requirements
+
+Plan for **1 GB of free memory** for the server. Indexing files for semantic
+search is the memory peak of an analysis; the rest of the time the server
+holds a few hundred megabytes. Measured peak
+resident memory of the whole server process, analyzing a repository and then
+running five searches (`python -m benchmarks.memory_profile <url>` from
+`backend/`, 12-core Windows machine, Python 3.11):
+
+| Repository | Files analyzed | Analysis time | Peak memory | Search |
+| ---------- | -------------: | ------------: | ----------: | -----: |
+| RepoLens itself | 152 | 9 s | 450 MB | ~10 ms |
+| `vmware/pyvmomi` | 112 | 15 s | 459 MB | ~15 ms |
+| `numpy/numpy` | 774 | 66 s | 689 MB | ~20 ms |
+
+Analysis time includes downloading the archive from GitHub. A repository may
+hold at most 5,000 analyzable Python files and 128 MiB of analyzable source.
+These settings trade speed for memory:
+
+* `REPOLENS_MAX_CONCURRENT_ANALYSES` (default 1): analyses that run at once.
+  Each one adds its own indexing peak; others wait in a queue.
+* `REPOLENS_EMBEDDING_BATCH_SIZE` (default 16): texts per model call. Larger
+  batches need more memory and are not faster on CPU.
+* `REPOLENS_EMBEDDING_THREADS` (default: at most 2, respecting CPU limits):
+  model inference threads.
+
+### Using RepoLens in the browser
 
 1. Open **http://localhost:8000** (or **http://localhost:5173** when running the development servers below).
-2. Paste any public Python GitHub repository URL (for example, `https://github.com/pallets/itsdangerous` or `https://github.com/pallets/click`) and optionally specify a branch, tag, or commit SHA.
+2. Paste any public Python GitHub repository URL (for example, [`https://github.com/pallets/click`](https://github.com/pallets/click) or [`https://github.com/pallets/itsdangerous`](https://github.com/pallets/itsdangerous)) and optionally specify a branch, tag, or commit SHA.
 3. Click **Analyze** to download, filter, parse, and store the repository's dependency graph.
 4. Start with a task in the **Search Bar**, in your own words (for example, "where do I start if I'm working on production?"). RepoLens combines exact matches with a local embedding model, then gives you a ranked reading order with explanations. Search runs locally; repository text is not sent to an embedding service.
 5. In the reading list, choose whether you want the overall topic, implementation, configuration, or tests and examples. The choice prioritizes files based on their paths without excluding other results. The dependency map can show only search matches, including matches beyond the current reading-list page.
+
+![Browsing a reading list](docs/images/readinglist.png)
 
 ---
 
@@ -90,7 +124,7 @@ backend on port 8000, and the API's interactive docs are at
 | **Frontend** | `Vitest` + React Testing Library | `npm --prefix frontend test` (also `run lint`, `run format:check`, `run typecheck`) | Add `<Component>.test.tsx` or `<module>.test.ts` next to the code under test |
 | **Image** | `pytest` inside Docker | `docker build --target test .` | Runs the backend suite in the exact production environment |
 
-### Update Dependencies
+### Update dependencies
 
 Backend dependencies are locked. To upgrade them, move `exclude-newer` in
 [`backend/pyproject.toml`](backend/pyproject.toml) to a recent date (keep it a
@@ -100,6 +134,38 @@ requirements files:
 ```bash
 cd backend && uv lock && uv export --locked --no-dev --format requirements-txt --no-emit-project -o requirements.txt && uv export --locked --format requirements-txt --no-emit-project -o requirements-dev.txt
 ```
+
+## Optional: AI file summaries and search overviews
+
+RepoLens can add an AI-generated summary to the file panel, written from the
+file's actual source (not just its docstrings) and checked against the static
+analysis before it is shown. It is **off by default**; everything else works
+without it. To turn it on, set these before `docker compose up` (or in a
+`.env` file at the repository root):
+
+```bash
+REPOLENS_AI_ENABLED=true OPENAI_API_KEY=sk-... docker compose up --build
+```
+
+Summaries are generated one file at a time, only when you click **Generate AI
+summary**, and cached for the life of the analysis. Generating one sends that
+file's source to OpenAI. The model (`REPOLENS_AI_MODEL`, default
+`gpt-5.4-mini`), limits, and cost controls are described in
+[`backend/README.md`](backend/README.md#ai-file-summaries-repolensai) and
+[`backend/.env.example`](backend/.env.example).
+
+With AI on, a search can also get a short **AI overview** above its reading
+list: what that part of the code does, which file to open first, and what to
+read next. Like file summaries, it is generated only when you click
+**Generate AI overview** and cached for that query and reading goal. It sends
+OpenAI the file names, symbol names, docstring lines and any cached AI file
+summaries of the top search results, but no source code.
+
+If you host RepoLens with AI on, every visitor can generate summaries and
+overviews on your key. Both share the same limits. A server-wide daily limit (`REPOLENS_AI_DAILY_CALL_LIMIT`, default 100)
+and a per-visitor hourly limit (`REPOLENS_AI_CLIENT_HOURLY_LIMIT`, default 10)
+keep that bounded; see
+[Hosting publicly](backend/README.md#hosting-publicly) before deploying.
 
 ---
 
@@ -132,8 +198,8 @@ First-version implementations of all major system components (**React Frontend**
 ### Current Prototype Limitations & Ongoing Work
 Because this is an initial end-to-end prototype, several areas are still being hardened and may exhibit bugs:
 * **Import Resolution Edge Cases**: Non-standard `sys.path` manipulations, dynamic imports, and complex multi-package/namespace repository layouts may classify some internal imports as `unresolved` or `external`.
-* **Large Repository Performance & Layout**: Repositories approaching the 1,000-file cap or containing dense cross-module import graphs are still being benchmarked against the 3-minute ingestion target and 2-second map layout target.
-* **Semantic Indexing Time**: Embedding files for semantic search is the slowest step. Measured on a 12-core CPU, it takes about 0.3 seconds per file for typical project code and about 0.5 seconds per file for docstring-heavy code (Python standard library). A repository near the 1,000-file cap therefore spends roughly 5 to 8 minutes indexing, over the 3-minute target. If the embedding model cannot load, the analysis still completes and search uses keywords only.
+* **Large Repository Performance & Layout**: Repositories with thousands of files or dense cross-module import graphs are still being benchmarked against the 3-minute ingestion target and 2-second map layout target. See [System requirements](#system-requirements) for measured memory and time.
+* **Semantic Indexing Time**: Embedding files for semantic search is the slowest step, at roughly 0.03 seconds per file on a 12-core machine (numpy's 774 files index in about 25 seconds). If the embedding model cannot load, the analysis still completes and search uses keywords only.
 * **Search Ranking Calibration**: Field weights and dependency tie-breaking heuristics are functional but still undergoing precision evaluation and tuning against hand-labeled queries.
 * **Synchronous Pipeline Execution**: Analysis currently runs within the request lifecycle; concurrent request deduplication and background progress streaming are still being refined.
 
@@ -154,11 +220,11 @@ Interested in improving RepoLens?
 - Start with [docs/DEVELOPERS.md](https://github.com/Amogh-Babu/RepoLens/tree/main/docs/DEVELOPERS.md) for architecture, setup, tests, benchmarks, and guidance for extending the analyzer.
 - Discuss bugs and proposed changes at the [issue tracker](https://github.com/Amogh-Babu/RepoLens/issues).
 
-## Reporting Issues
+## Reporting issues
  
 Found a bug or have an idea for RepoLens? Open an issue on the [issue tracker](../../issues) and include the details below. Clear reports help us fix problems faster.
  
-### Issue Template
+### Issue template
  
 Copy this into a new issue and fill in each section:
  

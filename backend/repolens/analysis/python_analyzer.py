@@ -349,11 +349,9 @@ def _extract_comments(source: str) -> list[ParsedComment]:
     block of its own. Shebangs, encoding cookies, and tool directives such as
     `# noqa` or `# type: ignore` are dropped.
     """
-    try:
-        tokens = list(tokenize.generate_tokens(io.StringIO(source).readline))
-    except (tokenize.TokenError, SyntaxError):
-        return []
-
+    # Tokens are read one at a time: a list of every token in a large
+    # generated file can take tens of times the file's size (#118).
+    tokens = tokenize.generate_tokens(io.StringIO(source).readline)
     comments: list[ParsedComment] = []
     block: list[str] = []
     block_start = block_end = 0
@@ -363,23 +361,27 @@ def _extract_comments(source: str) -> list[ParsedComment]:
             comments.append(ParsedComment(line=block_start, text=_clip(" ".join(block))))
             block.clear()
 
-    for token in tokens:
-        if token.type != tokenize.COMMENT:
-            continue
-        text = token.string.lstrip("#").strip()
-        if not text or _DIRECTIVE_COMMENT.match(text):
-            continue
-        line = token.start[0]
-        standalone = token.line.lstrip().startswith("#")
-        if standalone and block and line == block_end + 1:
-            block.append(text)
-            block_end = line
-            continue
-        flush()
-        block.append(text)
-        block_start = block_end = line
-        if not standalone:
+    try:
+        for token in tokens:
+            if token.type != tokenize.COMMENT:
+                continue
+            text = token.string.lstrip("#").strip()
+            if not text or _DIRECTIVE_COMMENT.match(text):
+                continue
+            line = token.start[0]
+            standalone = token.line.lstrip().startswith("#")
+            if standalone and block and line == block_end + 1:
+                block.append(text)
+                block_end = line
+                continue
             flush()
+            block.append(text)
+            block_start = block_end = line
+            if not standalone:
+                flush()
+    except (tokenize.TokenError, SyntaxError):
+        # As before, a file that does not tokenize contributes no comments.
+        return []
     flush()
     return comments
 

@@ -9,7 +9,7 @@ from repolens.search.embedding import (
     QUERY_MARKER,
     Embedder,
     HashEmbedder,
-    cosine_similarity,
+    ChunkVectors,
 )
 from repolens.search.models import (
     MatchEvidence,
@@ -91,7 +91,11 @@ class SearchService:
     ) -> SearchPage:
         terms = self._topic_terms(self._parse_query(query))
         self._validate_pagination(offset, limit)
-        documents = list(self._index.get_search_documents(analysis_id))
+        documents = [
+            document
+            for document in self._index.get_search_documents(analysis_id)
+            if intent == "tests" or not self._is_test_path(document.path)
+        ]
         documents_by_path = {document.path: document for document in documents}
         keyword_matches: dict[str, tuple[MatchEvidence, ...]] = {}
         keyword_scores: dict[str, float] = {}
@@ -209,6 +213,12 @@ class SearchService:
         return None if get_status is None else get_status(analysis_id)
 
     @staticmethod
+    def _is_test_path(path: str) -> bool:
+        parts = re.split(r"[/_.-]+", path.casefold())
+        filename = path.rsplit("/", 1)[-1].casefold()
+        return any(part in _TEST_PARTS for part in parts) or filename == "conftest.py"
+
+    @staticmethod
     def _reading_goal(
         path: str, intent: SearchIntent | None
     ) -> tuple[float, str | None]:
@@ -221,7 +231,7 @@ class SearchService:
         if intent is None:
             return 1.0, None
         parts = re.split(r"[/_.-]+", path.casefold())
-        is_test = any(part in _TEST_PARTS for part in parts)
+        is_test = SearchService._is_test_path(path)
         is_config = not is_test and any(part in _CONFIG_PARTS for part in parts)
         if intent == "tests" and is_test:
             return _GOAL_BOOST, "Ranked higher: a test or example file."
@@ -248,6 +258,12 @@ class SearchService:
         if semantic_matches is None and get_embeddings is None:
             return {}
         try:
+            if semantic_matches is None:
+                embeddings = get_embeddings(analysis_id)
+                if not isinstance(embeddings, ChunkVectors):
+                    embeddings = ChunkVectors.from_pairs(embeddings)
+                if not len(embeddings):
+                    return {}
             query_vector = self._embedder.embed([f"{QUERY_MARKER}{query}"])[0]
             if semantic_matches is not None:
                 paths = {document.path for document in documents}
@@ -256,27 +272,18 @@ class SearchService:
                     for path, match in semantic_matches(analysis_id, query_vector).items()
                     if path in paths
                 }
-            embeddings = get_embeddings(analysis_id)
         except Exception:
             _LOGGER.warning(
                 "Semantic search unavailable for analysis %s", analysis_id, exc_info=True
             )
             return {}
-        scores: dict[str, tuple[float, str]] = {}
-        for document in documents:
-            chunks = embeddings.get(document.path)
-            if not chunks:
-                continue
-            best_score, best_text = max(
-                (
-                    (cosine_similarity(query_vector, vector), text)
-                    for text, vector in chunks
-                ),
-                key=lambda item: item[0],
-            )
-            if best_score > 0:
-                scores[document.path] = (best_score, best_text)
-        return scores
+        # One matrix product scores the query against every chunk.
+        best = embeddings.best_by_path(query_vector)
+        return {
+            document.path: best[document.path]
+            for document in documents
+            if document.path in best
+        }
 
     @staticmethod
     def _reading_order(

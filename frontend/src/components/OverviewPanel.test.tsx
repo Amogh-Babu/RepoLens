@@ -10,6 +10,7 @@ const OVERVIEW: RepositoryOverview = {
       path: 'app/main.py',
       reason: 'Start here.',
       summary: 'Creates the application.',
+      summarySource: 'ai',
     },
   ],
   coreFiles: [],
@@ -55,7 +56,8 @@ describe('OverviewPanel', () => {
     );
 
     await screen.findByRole('button', {name: /Start reading tour/});
-    expect(screen.queryByText('Creates the application.')).toBeNull();
+    expect(screen.getByText(/Creates the application/)).toBeInTheDocument();
+    expect(screen.getByText(/AI-generated/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', {name: /Start reading tour/}));
     fireEvent.click(screen.getByRole('button', {name: /app.*1 files/}));
 

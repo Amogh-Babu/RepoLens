@@ -3,7 +3,7 @@
 import hashlib
 import logging
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any, Literal, Protocol
 from urllib.parse import urlparse
 import uuid
@@ -15,6 +15,13 @@ from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from pydantic import BaseModel
 
+from repolens.ai import (
+    AiConfig,
+    CodeSummaryService,
+    SearchOverviewService,
+    create_ai_router,
+    load_ai_config,
+)
 from repolens.graph.endpoints import (
     AnalysisIdPath,
     DependencyGraphResponse,
@@ -164,6 +171,7 @@ class OverviewFileResponse(BaseModel):
     reason: str
     summary: str
     score: float | None = None
+    summarySource: Literal['static', 'ai'] = 'static'
 
 
 class OverviewPackageResponse(BaseModel):
@@ -377,6 +385,7 @@ async def _contract_validation_handler(
 def create_analysis_router(
     store: SqliteGraphStore,
     runner: AnalysisRunner | None = None,
+    summaries: CodeSummaryService | None = None,
 ) -> APIRouter:
     """Create routes for starting, polling, cancelling, and searching analyses."""
     active_runner = runner or DefaultAnalysisRunner()
@@ -533,16 +542,34 @@ def create_analysis_router(
     def get_overview(analysis_id: AnalysisIdPath, request: Request) -> Any:
         try:
             payload = overview_service.get_overview(analysis_id)
+            if summaries is not None and summaries.active:
+                _apply_cached_summaries(payload, summaries.cached_summary_texts(analysis_id))
         except GraphStoreError as exc:
             return JSONResponse(
                 status_code=exc.status_code,
                 content=exc.to_dict(),
             )
         return cached_json_response(
-            request, payload, f"{analysis_id}-overview"
+            request, payload, f"{analysis_id}-overview",
+            cache_control="private, no-cache" if summaries is not None and summaries.active
+            else "private, immutable",
         )
 
     return router
+
+
+def _apply_cached_summaries(
+    overview: dict[str, Any], cached: Mapping[str, str]
+) -> None:
+    """Overlay verified, already-cached AI text without triggering model calls."""
+    for collection in ('entryPoints', 'coreFiles', 'tour'):
+        for item in overview.get(collection, []):
+            text = cached.get(item['path'])
+            if text:
+                item['summary'] = text
+                item['summarySource'] = 'ai'
+            else:
+                item['summarySource'] = 'static'
 
 
 class HealthResponse(BaseModel):
@@ -579,6 +606,8 @@ def create_app(
     runner: AnalysisRunner | None = None,
     *,
     cors_origins: Sequence[str] = ("*",),
+    summaries: CodeSummaryService | None = None,
+    search_overviews: SearchOverviewService | None = None,
 ) -> FastAPI:
     """Create the RepoLens FastAPI application matching the frontend contract.
 
@@ -586,8 +615,19 @@ def create_app(
     another origin. The default allows any, which suits local development;
     `repolens.api.server` serves the frontend from the same origin and passes
     none, so no CORS headers are sent at all.
+
+    `summaries` serves AI file summaries. Without one, AI summaries are off
+    and every route answers as it did before they existed.
+
+    `search_overviews` serves AI overviews of search results. Without one, it
+    is built on `summaries`, so it shares their model, limits and cache.
     """
     graph_store = store if store is not None else SqliteGraphStore()
+    summary_service = (
+        summaries
+        if summaries is not None
+        else CodeSummaryService(graph_store, AiConfig())
+    )
 
     application = FastAPI(
         title="RepoLens API",
@@ -605,7 +645,8 @@ def create_app(
     application.add_exception_handler(RequestValidationError, _contract_validation_handler)
     application.state.store = graph_store
     application.include_router(create_health_router(graph_store))
-    application.include_router(create_analysis_router(graph_store, runner=runner))
+    application.include_router(create_analysis_router(graph_store, runner=runner, summaries=summary_service))
+    application.include_router(create_ai_router(summary_service, search_overviews))
     application.include_router(create_graph_router(graph_store))
 
     return application
@@ -626,12 +667,14 @@ def _error_response(
 # The server analyzes real repositories. `create_app()` without a runner keeps
 # the offline stub for tests.
 _LIMITS = ResourceLimits.from_environment()
+_STORE = SqliteGraphStore(
+    embedder=create_embedder(_LIMITS),
+    max_embedding_chunks=_LIMITS.max_embedding_chunks,
+)
 app = create_app(
-    store=SqliteGraphStore(
-        embedder=create_embedder(_LIMITS),
-        max_embedding_chunks=_LIMITS.max_embedding_chunks,
-    ),
+    store=_STORE,
     runner=PipelineAnalysisRunner(
         max_concurrent_analyses=_LIMITS.max_concurrent_analyses
     ),
+    summaries=CodeSummaryService(_STORE, load_ai_config()),
 )

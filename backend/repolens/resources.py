@@ -23,7 +23,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 import os
 
-from repolens.search.embedding import DEFAULT_BATCH_SIZE, FastEmbedEmbedder
+from repolens.search.embedding import (
+    DEFAULT_BATCH_SIZE,
+    DEFAULT_MAX_EMBED_THREADS,
+    FastEmbedEmbedder,
+    effective_cpu_count,
+)
 
 
 class ResourceConfigError(ValueError):
@@ -58,11 +63,13 @@ class ResourceLimits:
             embeddings_enabled=_boolean(
                 environ, "REPOLENS_EMBEDDINGS_ENABLED", defaults.embeddings_enabled
             ),
-            embedding_threads=_positive(
-                environ, "REPOLENS_EMBEDDING_THREADS", defaults.embedding_threads
+            embedding_threads=_positive_alias(
+                environ, "REPOLENS_EMBEDDING_THREADS", "REPOLENS_EMBED_THREADS",
+                min(DEFAULT_MAX_EMBED_THREADS, effective_cpu_count()),
             ),
-            embedding_batch_size=_positive(
-                environ, "REPOLENS_EMBEDDING_BATCH_SIZE", defaults.embedding_batch_size
+            embedding_batch_size=_positive_alias(
+                environ, "REPOLENS_EMBEDDING_BATCH_SIZE", "REPOLENS_EMBED_BATCH_SIZE",
+                defaults.embedding_batch_size,
             ),
             max_embedding_chunks=_positive(
                 environ, "REPOLENS_MAX_EMBEDDING_CHUNKS", defaults.max_embedding_chunks
@@ -94,6 +101,13 @@ def create_embedder(
 
 _TRUE = frozenset({"1", "true", "yes", "on"})
 _FALSE = frozenset({"0", "false", "no", "off"})
+
+
+def _positive_alias(
+    environ: Mapping[str, str], name: str, alias: str, default: int
+) -> int:
+    selected = name if environ.get(name, "").strip() else alias
+    return _positive(environ, selected, default)
 
 
 def _boolean(environ: Mapping[str, str], name: str, default: bool) -> bool:

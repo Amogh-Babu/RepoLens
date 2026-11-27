@@ -173,6 +173,7 @@ def build_overview(
         dependencies,
         documents_by_path,
         dependents,
+        categories,
     )
 
     return {
@@ -387,6 +388,7 @@ def _reading_tour(
     dependencies: dict[str, set[str]],
     documents: dict[str, SearchDocument],
     dependents: dict[str, set[str]],
+    categories: dict[str, str],
 ) -> list[dict[str, str]]:
     ordered: list[str] = []
     visited: set[str] = set()
@@ -410,6 +412,8 @@ def _reading_tour(
     for file in sorted(graph.files, key=lambda item: item.path.casefold()):
         if len(ordered) >= target_count:
             break
+        if categories.get(file.path) == "test":
+            continue
         visit(file.path)
 
     entry_set = set(entry_paths)
@@ -429,6 +433,12 @@ def _reading_tour(
     ]
 
 
+def first_docstring_line(document: SearchDocument) -> str:
+    """Return the first line of a file's first non-empty docstring, or ''."""
+    docstring = next((line.strip() for line in document.docstrings if line.strip()), "")
+    return docstring.splitlines()[0][:180] if docstring else ""
+
+
 def _summary(
     path: str,
     documents: dict[str, SearchDocument],
@@ -436,9 +446,9 @@ def _summary(
 ) -> str:
     document = documents.get(path)
     if document is not None:
-        docstring = next((line.strip() for line in document.docstrings if line.strip()), "")
+        docstring = first_docstring_line(document)
         if docstring:
-            return docstring.splitlines()[0][:180]
+            return docstring
         symbol_count = len(document.symbols) + len(document.members)
     else:
         symbol_count = 0

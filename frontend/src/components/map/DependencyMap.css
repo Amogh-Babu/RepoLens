@@ -1,6 +1,26 @@
+/* Dimmed items use solid colors blended toward the background rather than
+   `opacity`. Every see-through element is painted into its own offscreen
+   buffer on each frame, and with hundreds of them Safari ran out of memory
+   while panning or zooming (#118). */
 .map {
   --map-imports-color: #1a7f37;
   --map-imported-by-color: #9a6700;
+  --map-dimmed-text: color-mix(in srgb, var(--color-text) 30%, var(--color-bg));
+  --map-dimmed-muted: color-mix(
+    in srgb,
+    var(--color-muted) 30%,
+    var(--color-bg)
+  );
+  --map-dimmed-border: color-mix(
+    in srgb,
+    var(--color-border) 40%,
+    var(--color-bg)
+  );
+  --map-dimmed-edge: color-mix(
+    in srgb,
+    var(--color-muted) 18%,
+    var(--color-bg)
+  );
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -226,7 +246,6 @@
   border-radius: 8px;
   background: var(--color-bg);
   color: var(--color-text);
-  transition: opacity 120ms ease;
 }
 
 .map-key__box {
@@ -241,7 +260,7 @@
 .react-flow__node.map-node--moduleGroup,
 .map-key__box.map-node--moduleGroup {
   border-style: dashed;
-  background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+  background: color-mix(in srgb, var(--color-surface) 60%, var(--color-bg));
 }
 
 .map-node__body {
@@ -316,11 +335,20 @@
 
 .react-flow__node.map-node--dimmed,
 .map-key__box.map-node--dimmed {
-  opacity: 0.3;
+  border-color: var(--map-dimmed-border);
+  background: var(--color-bg);
+  color: var(--map-dimmed-text);
 }
 
+.react-flow__node.map-node--dimmed .map-node__meta,
+.react-flow__node.map-node--dimmed .map-node__badge,
+.map-key__box.map-node--dimmed .map-node__meta {
+  color: var(--map-dimmed-muted);
+}
+
+/* Hidden but still measured: edges are drawn to the handles' positions. */
 .map .react-flow__handle {
-  opacity: 0;
+  visibility: hidden;
   pointer-events: none;
 }
 
@@ -339,8 +367,12 @@
   stroke-width: 2.5;
 }
 
-.react-flow__edge.map-edge--dimmed {
-  opacity: 0.15;
+.react-flow__edge.map-edge--dimmed path.react-flow__edge-path {
+  stroke: var(--map-dimmed-edge);
+}
+
+.react-flow__edge.map-edge--dimmed .react-flow__edge-text {
+  fill: var(--map-dimmed-muted);
 }
 
 @media (prefers-color-scheme: dark) {

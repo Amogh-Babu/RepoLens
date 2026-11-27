@@ -128,8 +128,9 @@ class AnalysisErrorRecord:
 class FileEmbeddingRecord:
     """One vectorized text chunk belonging to an analyzed file.
 
-    `vector` is packed little-endian float32, as stored in SQLite: 1.5 KB for
-    a 384-dimension vector instead of about 12 KB as a tuple of floats.
+    `vector` is the unit-length vector packed as little-endian float32, the
+    form it is stored in: 1.5 KB for BGE-small's 384 dimensions, against
+    about 12 KB as a tuple of Python floats.
     """
 
     path: str
@@ -137,8 +138,6 @@ class FileEmbeddingRecord:
     text: str
     model: str
     vector: bytes
-
-
 @dataclass(frozen=True)
 class SemanticIndex:
     """The outcome of semantic indexing for one analysis.

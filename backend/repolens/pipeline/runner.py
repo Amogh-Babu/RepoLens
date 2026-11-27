@@ -17,8 +17,8 @@ from pathlib import Path
 import shutil
 import sys
 import tempfile
+import time
 from typing import Any
-import uuid
 
 from repolens.analysis import (
     AnalysisService,
@@ -26,7 +26,7 @@ from repolens.analysis import (
     to_analysis_counts,
     to_analyzed_files,
 )
-from repolens.graph.models import AnalysisErrorRecord, AnalysisRecord
+from repolens.graph.models import AnalysisErrorRecord, AnalysisRecord, AnalysisStage
 from repolens.graph.store import IndexingCancelled, SqliteGraphStore
 from repolens.ingestion import (
     GitHubRefResolver,
@@ -39,8 +39,9 @@ from repolens.ingestion import (
 
 _LOGGER = logging.getLogger(__name__)
 
-# One at a time: semantic indexing already uses the machine's cores, and two
-# at once took about four times as long as one after the other (#118).
+# One analysis at a time by default: indexing is the memory peak, and two at
+# once would double it. `REPOLENS_MAX_CONCURRENT_ANALYSES` raises it on hosts
+# with memory to spare.
 DEFAULT_MAX_CONCURRENT_ANALYSES = 1
 
 _UNEXPECTED_FAILURE = AnalysisErrorRecord(
@@ -73,8 +74,8 @@ class PipelineAnalysisRunner:
             queue. Tests pass one that runs work inline.
           work_root: Parent directory for temporary snapshots; defaults to
             the system temporary directory.
-          max_concurrent_analyses: Analyses that run at once when no
-            `executor` is given.
+          max_concurrent_analyses: How many analyses the default thread pool
+            runs at once. Others wait in its queue. Ignored with `executor`.
         """
         if max_concurrent_analyses < 1:
             raise ValueError("max_concurrent_analyses must be at least 1.")
@@ -167,29 +168,36 @@ class PipelineAnalysisRunner:
         work_dir: Path,
     ) -> None:
         """Download, filter, parse, classify, and store one analysis."""
-        if not store.update_stage(analysis_id, "downloading"):
+        clock = _StageClock(analysis_id)
+        if not clock.enter(store, "downloading"):
             return
         snapshot = self._source.fetch_snapshot(repo_url, sha, work_dir / "snapshot")
 
-        if not store.update_stage(analysis_id, "filtering"):
+        if not clock.enter(store, "filtering"):
             return
         if not any(self._analysis_service.supports(path) for path in snapshot.files):
             raise NoPythonFilesError()
 
-        if not store.update_stage(analysis_id, "parsing"):
+        if not clock.enter(store, "parsing"):
             return
         analysis = self._analysis_service.analyze_repository(snapshot.root)
+        if not analysis.files:
+            raise NoPythonFilesError()
         # Everything later stages need is in memory now. Removing the source
         # before the analysis is marked completed means a completed analysis
         # never has a snapshot left on disk (#73), and source is never kept
         # longer than parsing needs it.
         _remove_snapshot(work_dir)
 
-        if not store.update_stage(analysis_id, "classifying"):
+        if not clock.enter(store, "classifying"):
             return
+        counts = to_analysis_counts(analysis)
         files = classify_imports(to_analyzed_files(analysis))
+        # The parsed files are copied into `files`; letting them go before
+        # indexing keeps the peak down on large repositories.
+        del analysis
 
-        if not store.update_stage(analysis_id, "indexing"):
+        if not clock.enter(store, "indexing"):
             return
         # Falls back to no vectors (keyword search only) if the model fails
         # or the repository is over the chunk budget; the status says which.
@@ -201,7 +209,7 @@ class PipelineAnalysisRunner:
         except IndexingCancelled:
             return
 
-        if not store.update_stage(analysis_id, "storing"):
+        if not clock.enter(store, "storing"):
             return
         store.complete_analysis(
             AnalysisRecord(
@@ -210,13 +218,54 @@ class PipelineAnalysisRunner:
                 ref=ref,
                 sha=sha,
                 status="completed",
-                counts=to_analysis_counts(analysis),
+                counts=counts,
                 files=files,
                 embeddings=semantic.records,
                 semantic_status=semantic.status,
                 semantic_chunks=semantic.chunk_count,
             )
         )
+        clock.finish(len(files), len(semantic.records))
+
+
+class _StageClock:
+    """Move an analysis through its stages and log how long each one took."""
+
+    def __init__(self, analysis_id: str) -> None:
+        self._analysis_id = analysis_id
+        self._started = time.perf_counter()
+        self._stage: str | None = None
+        self._stage_started = self._started
+
+    def enter(self, store: SqliteGraphStore, stage: AnalysisStage) -> bool:
+        """Log the stage that just ended, then mark `stage` as running.
+
+        Returns False when the analysis is no longer active.
+        """
+        self._log_finished_stage()
+        self._stage = stage
+        self._stage_started = time.perf_counter()
+        return store.update_stage(self._analysis_id, stage)
+
+    def finish(self, file_count: int, chunk_count: int) -> None:
+        """Log the last stage and the whole analysis."""
+        self._log_finished_stage()
+        _LOGGER.info(
+            "Analysis %s completed in %.1fs: %d files, %d search chunks",
+            self._analysis_id,
+            time.perf_counter() - self._started,
+            file_count,
+            chunk_count,
+        )
+
+    def _log_finished_stage(self) -> None:
+        if self._stage is not None:
+            _LOGGER.info(
+                "Analysis %s: %s took %.1fs",
+                self._analysis_id,
+                self._stage,
+                time.perf_counter() - self._stage_started,
+            )
 
 
 def _remove_snapshot(work_dir: Path) -> None:

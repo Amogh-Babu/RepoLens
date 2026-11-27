@@ -1,9 +1,10 @@
 """SQLite implementation of the RepoLens graph store."""
 
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
 import functools
+import json
 import logging
 import sqlite3
 import threading
@@ -34,8 +35,9 @@ from repolens.graph.models import (
 )
 from repolens.graph.schema import init_schema
 from repolens.search.embedding import (
-    DEFAULT_BATCH_SIZE,
+    ChunkVectors,
     Embedder,
+    as_unit_vector,
     document_chunks,
 )
 from repolens.search.models import SearchDocument
@@ -45,6 +47,15 @@ from repolens.search.ports import AnalysisUnavailableError
 _LOGGER = logging.getLogger(__name__)
 
 DEFAULT_TTL_SECONDS = 24 * 60 * 60
+
+# Chunks per embedder call while indexing. Cancellation is checked between
+# calls, so a cancelled analysis stops within one group. The embedder batches
+# further inside a group.
+EMBEDDING_GROUP_SIZE = 512
+
+# Completed analyses whose search documents and vectors stay loaded. Searching
+# one analysis repeatedly is the common case; a few entries bound the memory.
+SEARCH_CACHE_SIZE = 2
 
 _ACTIVE_STATUSES = ("queued", "running")
 
@@ -251,6 +262,8 @@ class SqliteGraphStore:
         self._max_embedding_chunks = max_embedding_chunks
         self._lock = threading.RLock()
         self._waiters: dict[str, int] = {}
+        # analysis id -> {"documents": [...], "vectors": ChunkVectors}
+        self._search_cache: OrderedDict[str, dict[str, object]] = OrderedDict()
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         if db_path != ":memory:":
@@ -269,10 +282,15 @@ class SqliteGraphStore:
         self._conn.close()
 
     def build_embeddings(
-        self, files: tuple[AnalyzedFile, ...]
+        self,
+        files: tuple[AnalyzedFile, ...],
+        should_continue: Callable[[], bool] | None = None,
     ) -> tuple[FileEmbeddingRecord, ...]:
         """Create bounded search vectors for parsed files (see below)."""
-        return self.build_semantic_index(files).records
+        try:
+            return self.build_semantic_index(files, should_continue=should_continue).records
+        except IndexingCancelled:
+            return ()
 
     def build_semantic_index(
         self,
@@ -315,13 +333,13 @@ class SqliteGraphStore:
             )
             return SemanticIndex(status="over_budget", chunk_count=len(chunks))
 
-        batch_size = getattr(self.embedder, "batch_size", DEFAULT_BATCH_SIZE)
         model_id = self.embedder.model_id
         # The model pads a batch to its longest text, so batches of similar
         # lengths do the least padding.
         order = sorted(range(len(chunks)), key=lambda index: len(chunks[index][2]))
         packed: list[bytes] = [b""] * len(chunks)
         try:
+            batch_size = getattr(self.embedder, "batch_size", EMBEDDING_GROUP_SIZE)
             for start in range(0, len(order), batch_size):
                 if should_continue is not None and not should_continue():
                     raise IndexingCancelled()
@@ -332,7 +350,7 @@ class SqliteGraphStore:
                         "The embedder returned a different number of vectors than chunks."
                     )
                 for index, vector in zip(batch, vectors, strict=True):
-                    packed[index] = np.asarray(vector, dtype="<f4").tobytes()
+                    packed[index] = _pack_vector(vector)
         except IndexingCancelled:
             raise
         except Exception:
@@ -541,6 +559,7 @@ class SqliteGraphStore:
                         ],
                     )
 
+        self._search_cache.pop(analysis.analysis_id, None)
         if analysis.status in _ACTIVE_STATUSES:
             self._waiters[analysis.analysis_id] = 1
         else:
@@ -681,6 +700,15 @@ class SqliteGraphStore:
                 (stage, analysis_id),
             )
         return cursor.rowcount == 1
+
+    @_locked
+    def is_active(self, analysis_id: str) -> bool:
+        """Return whether the analysis is still queued or running."""
+        row = self._conn.execute(
+            "SELECT status FROM analyses WHERE id = ?;",
+            (analysis_id,),
+        ).fetchone()
+        return row is not None and str(row["status"]) in _ACTIVE_STATUSES
 
     @_locked
     def fail_analysis(self, analysis_id: str, error: AnalysisErrorRecord) -> bool:
@@ -994,12 +1022,23 @@ class SqliteGraphStore:
     def get_search_documents(self, analysis_id: str) -> list[SearchDocument]:
         """Return SearchDocument records for SearchService.
 
+        Six queries cover the whole analysis, and the result is cached along
+        with the analysis's vectors (see `SEARCH_CACHE_SIZE`): search and the
+        overview both read every document on every request.
+
         Raises AnalysisUnavailableError (via AnalysisNotFoundError,
         AnalysisExpiredError, or AnalysisNotReadyError) if the analysis is
         unavailable.
         """
         self._get_valid_analysis_row(analysis_id, require_completed=True)
+        entry = self._search_cache_entry(analysis_id)
+        documents = entry.get("documents")
+        if documents is None:
+            documents = self._load_search_documents(analysis_id)
+            entry["documents"] = documents
+        return list(documents)  # type: ignore[call-overload]
 
+    def _load_search_documents(self, analysis_id: str) -> list[SearchDocument]:
         file_rows = self._conn.execute(
             """
             SELECT id, path, entry_markers
@@ -1010,102 +1049,153 @@ class SqliteGraphStore:
             (analysis_id,),
         ).fetchall()
 
+        def grouped(query: str) -> dict[int, list[str]]:
+            """Run `query` and group its second column by its first (file id)."""
+            values: dict[int, list[str]] = defaultdict(list)
+            for row in self._conn.execute(query, (analysis_id,)):
+                values[int(row[0])].append(str(row[1]))
+            return values
+
+        symbols = grouped(
+            """
+            SELECT s.file_id, s.name FROM symbols s
+            JOIN files f ON f.id = s.file_id
+            WHERE f.analysis_id = ? ORDER BY s.id ASC;
+            """
+        )
+        references = grouped(
+            """
+            SELECT i.file_id, i.raw_name FROM imports i
+            JOIN files f ON f.id = i.file_id
+            WHERE f.analysis_id = ? ORDER BY i.id ASC;
+            """
+        )
+        members = grouped(
+            """
+            SELECT m.file_id, m.owner || '.' || m.name FROM members m
+            JOIN files f ON f.id = m.file_id
+            WHERE f.analysis_id = ? ORDER BY m.id ASC;
+            """
+        )
+        comments: dict[int, list[str]] = defaultdict(list)
+        docstrings: dict[int, list[str]] = defaultdict(list)
+        for row in self._conn.execute(
+            """
+            SELECT c.file_id, c.text, c.kind FROM comments c
+            JOIN files f ON f.id = c.file_id
+            WHERE f.analysis_id = ?
+            ORDER BY c.file_id ASC, c.line ASC, c.id ASC;
+            """,
+            (analysis_id,),
+        ):
+            target = docstrings if row["kind"] == "docstring" else comments
+            target[int(row["file_id"])].append(str(row["text"]))
+        depended_on_by = grouped(
+            """
+            SELECT DISTINCT i.target_file_id, f.path FROM imports i
+            JOIN files f ON i.file_id = f.id
+            WHERE f.analysis_id = ? AND i.kind = 'internal' AND f.parsed = 1
+              AND i.target_file_id IS NOT NULL
+            ORDER BY i.target_file_id ASC, f.path ASC;
+            """
+        )
+
         documents: list[SearchDocument] = []
         for file_row in file_rows:
             file_id = int(file_row["id"])
-            path = str(file_row["path"])
             raw_markers = str(file_row["entry_markers"] or "")
-            entry_markers = tuple(m for m in raw_markers.split(",") if m)
-
-            symbols = tuple(
-                str(r["name"])
-                for r in self._conn.execute(
-                    "SELECT name FROM symbols WHERE file_id = ? ORDER BY id ASC;",
-                    (file_id,),
-                ).fetchall()
-            )
-            references = tuple(
-                str(r["raw_name"])
-                for r in self._conn.execute(
-                    "SELECT raw_name FROM imports WHERE file_id = ? ORDER BY id ASC;",
-                    (file_id,),
-                ).fetchall()
-            )
-            prose = self._conn.execute(
-                "SELECT text, kind FROM comments WHERE file_id = ? ORDER BY line ASC;",
-                (file_id,),
-            ).fetchall()
-            comments = tuple(str(r["text"]) for r in prose if r["kind"] == "comment")
-            docstrings = tuple(
-                str(r["text"]) for r in prose if r["kind"] == "docstring"
-            )
-            members = tuple(
-                f"{r['owner']}.{r['name']}"
-                for r in self._conn.execute(
-                    "SELECT owner, name FROM members WHERE file_id = ? ORDER BY id ASC;",
-                    (file_id,),
-                ).fetchall()
-            )
-            depended_on_by = tuple(
-                str(r["importer_path"])
-                for r in self._conn.execute(
-                    """
-                    SELECT DISTINCT f.path AS importer_path
-                    FROM imports i
-                    JOIN files f ON i.file_id = f.id
-                    WHERE i.target_file_id = ? AND i.kind = 'internal' AND f.parsed = 1
-                    ORDER BY f.path ASC;
-                    """,
-                    (file_id,),
-                ).fetchall()
-            )
-
             documents.append(
                 SearchDocument(
-                    path=path,
-                    symbols=symbols,
-                    references=references,
-                    comments=comments,
-                    members=members,
-                    docstrings=docstrings,
-                    depended_on_by=depended_on_by,
-                    entry_markers=entry_markers,
+                    path=str(file_row["path"]),
+                    symbols=tuple(symbols.get(file_id, ())),
+                    references=tuple(references.get(file_id, ())),
+                    comments=tuple(comments.get(file_id, ())),
+                    members=tuple(members.get(file_id, ())),
+                    docstrings=tuple(docstrings.get(file_id, ())),
+                    depended_on_by=tuple(depended_on_by.get(file_id, ())),
+                    entry_markers=tuple(m for m in raw_markers.split(",") if m),
                 )
             )
-
         return documents
 
     @_locked
-    def get_search_embeddings(
-        self, analysis_id: str
-    ) -> dict[str, list[tuple[str, tuple[float, ...]]]]:
-        """Return current-model chunk text and vectors for a completed analysis.
+    def get_search_embeddings(self, analysis_id: str) -> ChunkVectors:
+        """Return every current-model chunk vector of a completed analysis.
 
-        Holds every vector as Python floats; search uses `semantic_matches`,
-        which does not.
+        The vectors come back as one float32 matrix and stay cached for the
+        next search of the same analysis (see `SEARCH_CACHE_SIZE`).
         """
         self._get_valid_analysis_row(analysis_id, require_completed=True)
         if self.embedder is None:
-            return {}
+            return ChunkVectors.empty()
+        entry = self._search_cache_entry(analysis_id)
+        vectors = entry.get("vectors")
+        if vectors is None:
+            vectors = self._load_chunk_vectors(analysis_id, self.embedder.model_id)
+            entry["vectors"] = vectors
+        return vectors  # type: ignore[return-value]
+
+    def _load_chunk_vectors(self, analysis_id: str, model: str) -> ChunkVectors:
         rows = self._conn.execute(
             """
             SELECT f.path, e.chunk_text, e.vector
             FROM embeddings e
             JOIN files f ON f.id = e.file_id
             WHERE f.analysis_id = ? AND e.model = ?
-            ORDER BY f.path ASC;
+            ORDER BY f.path ASC, e.chunk_index ASC;
             """,
-            (analysis_id, self.embedder.model_id),
-        ).fetchall()
-        embeddings: dict[str, list[tuple[str, tuple[float, ...]]]] = defaultdict(list)
+            (analysis_id, model),
+        )
+        path_index: dict[str, int] = {}
+        path_ids: list[int] = []
+        texts: list[str] = []
+        blobs: list[bytes] = []
+        row_bytes: int | None = None
         for row in rows:
             data = bytes(row["vector"])
-            if len(data) % 4 != 0:
+            if not data or len(data) % 4 != 0:
                 continue
-            embeddings[str(row["path"])].append(
-                (str(row["chunk_text"]), tuple(np.frombuffer(data, dtype="<f4").tolist()))
-            )
-        return dict(embeddings)
+            if row_bytes is None:
+                row_bytes = len(data)
+            if len(data) != row_bytes:
+                continue
+            path = str(row["path"])
+            path_ids.append(path_index.setdefault(path, len(path_index)))
+            texts.append(str(row["chunk_text"]))
+            blobs.append(data)
+        if not blobs or row_bytes is None:
+            return ChunkVectors.empty()
+        matrix = np.frombuffer(b"".join(blobs), dtype="<f4").reshape(
+            len(blobs), row_bytes // 4
+        )
+        del blobs
+        # Stored vectors are unit length already; this keeps rows written by
+        # older versions comparable too.
+        norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+        matrix = np.divide(
+            matrix,
+            norms,
+            out=np.zeros(matrix.shape, dtype=np.float32),
+            where=norms > 0,
+        )
+        return ChunkVectors(
+            paths=tuple(path_index),
+            path_ids=np.asarray(path_ids, dtype=np.int32),
+            texts=tuple(texts),
+            matrix=matrix,
+        )
+
+    def _search_cache_entry(self, analysis_id: str) -> dict[str, object]:
+        """Return the cache entry for a completed analysis, evicting the oldest."""
+        entry = self._search_cache.get(analysis_id)
+        if entry is None:
+            entry = {}
+            self._search_cache[analysis_id] = entry
+            while len(self._search_cache) > SEARCH_CACHE_SIZE:
+                self._search_cache.popitem(last=False)
+        else:
+            self._search_cache.move_to_end(analysis_id)
+        return entry
 
     @_locked
     def semantic_matches(
@@ -1130,7 +1220,8 @@ class SqliteGraphStore:
             SELECT f.path, e.chunk_text, e.vector
             FROM embeddings e
             JOIN files f ON f.id = e.file_id
-            WHERE f.analysis_id = ? AND e.model = ?;
+            WHERE f.analysis_id = ? AND e.model = ?
+            ORDER BY f.path ASC, e.chunk_index ASC;
             """,
             (analysis_id, self.embedder.model_id),
         )
@@ -1159,14 +1250,6 @@ class SqliteGraphStore:
         row = self._get_valid_analysis_row(analysis_id, require_completed=True)
         status = row["semantic_status"]
         return None if status is None else status
-
-    @_locked
-    def is_active(self, analysis_id: str) -> bool:
-        """Return whether an analysis is still queued or running."""
-        row = self._conn.execute(
-            "SELECT status FROM analyses WHERE id = ?;", (analysis_id,)
-        ).fetchone()
-        return row is not None and str(row["status"]) in _ACTIVE_STATUSES
 
     @_locked
     def get_file_match_lines(
@@ -1216,6 +1299,326 @@ class SqliteGraphStore:
         return lines
 
     @_locked
+    def get_ai_summary(
+        self,
+        analysis_id: str,
+        path: str,
+        *,
+        model_id: str,
+        prompt_version: str,
+        schema_version: str,
+    ) -> sqlite3.Row | None:
+        """Return the cached AI summary row for one file, or None.
+
+        Only a row for this analysis's repository and commit, made with the
+        given model, prompt, and schema version, is returned, so changing
+        any of them is a cache miss.
+        """
+        row = self._get_valid_analysis_row(analysis_id, require_completed=True)
+        return self._conn.execute(
+            """
+            SELECT * FROM ai_summaries
+            WHERE analysis_id = ? AND repo = ? AND commit_sha = ? AND file_path = ?
+              AND model_id = ? AND prompt_version = ? AND schema_version = ?
+              AND expires_at > ?
+            ORDER BY created_at DESC
+            LIMIT 1;
+            """,
+            (
+                analysis_id,
+                str(row["repo"]),
+                str(row["sha"]),
+                path,
+                model_id,
+                prompt_version,
+                schema_version,
+                time.time(),
+            ),
+        ).fetchone()
+
+    @_locked
+    def get_ai_summary_texts(
+        self,
+        analysis_id: str,
+        *,
+        model_id: str,
+        prompt_version: str,
+        schema_version: str,
+    ) -> dict[str, str]:
+        """Return `{path: one-line summary}` for every cached summary of an analysis."""
+        rows = self._conn.execute(
+            """
+            SELECT s.file_path, s.summary_json
+            FROM ai_summaries s
+            JOIN analyses a ON a.id = s.analysis_id
+            WHERE s.analysis_id = ? AND s.repo = a.repo AND s.commit_sha = a.sha
+              AND s.model_id = ? AND s.prompt_version = ? AND s.schema_version = ?
+              AND s.expires_at > ?
+            ORDER BY s.created_at ASC;
+            """,
+            (analysis_id, model_id, prompt_version, schema_version, time.time()),
+        ).fetchall()
+        texts: dict[str, str] = {}
+        for row in rows:
+            try:
+                summary = json.loads(str(row["summary_json"]))["summary"]
+            except (ValueError, KeyError, TypeError):
+                continue
+            if isinstance(summary, str) and summary.strip():
+                texts[str(row["file_path"])] = summary.strip()
+        return texts
+
+    @_locked
+    def save_ai_summary(
+        self,
+        analysis_id: str,
+        path: str,
+        *,
+        source_hash: str,
+        model_id: str,
+        prompt_version: str,
+        schema_version: str,
+        coverage: str,
+        inspected_lines: str,
+        line_count: int,
+        summary_json: str,
+        created_at: float | None = None,
+    ) -> sqlite3.Row:
+        """Insert or replace a validated summary; it expires with its analysis.
+
+        Raises:
+          GraphStoreError: The analysis is missing, expired, or not complete.
+        """
+        row = self._get_valid_analysis_row(analysis_id, require_completed=True)
+        now = created_at if created_at is not None else time.time()
+        with self._conn:
+            self._conn.execute(
+                """
+                INSERT INTO ai_summaries (
+                    analysis_id, repo, file_path, commit_sha, source_hash,
+                    model_id, prompt_version, schema_version, coverage,
+                    inspected_lines, line_count, summary_json, created_at, expires_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (
+                    repo, commit_sha, file_path, source_hash,
+                    model_id, prompt_version, schema_version
+                ) DO UPDATE SET
+                    analysis_id = excluded.analysis_id,
+                    coverage = excluded.coverage,
+                    inspected_lines = excluded.inspected_lines,
+                    line_count = excluded.line_count,
+                    summary_json = excluded.summary_json,
+                    created_at = excluded.created_at,
+                    expires_at = excluded.expires_at;
+                """,
+                (
+                    analysis_id,
+                    str(row["repo"]),
+                    path,
+                    str(row["sha"]),
+                    source_hash,
+                    model_id,
+                    prompt_version,
+                    schema_version,
+                    coverage,
+                    inspected_lines,
+                    line_count,
+                    summary_json,
+                    now,
+                    float(row["expires_at"]),
+                ),
+            )
+            # A file has one summary per model, prompt and schema version: drop
+            # rows for a different source hash of the same file and commit.
+            self._conn.execute(
+                """
+                DELETE FROM ai_summaries
+                WHERE analysis_id = ? AND file_path = ? AND model_id = ?
+                  AND prompt_version = ? AND schema_version = ? AND source_hash != ?;
+                """,
+                (analysis_id, path, model_id, prompt_version, schema_version, source_hash),
+            )
+        saved = self.get_ai_summary(
+            analysis_id,
+            path,
+            model_id=model_id,
+            prompt_version=prompt_version,
+            schema_version=schema_version,
+        )
+        assert saved is not None
+        return saved
+
+    @_locked
+    def get_ai_search_overview(
+        self,
+        analysis_id: str,
+        *,
+        query_norm: str,
+        intent: str,
+        results_hash: str,
+        model_id: str,
+        prompt_version: str,
+        schema_version: str,
+    ) -> sqlite3.Row | None:
+        """Return the cached AI overview of one search, or None.
+
+        `intent` is '' for the topic overall. Any change to the query, the
+        reading goal, the ordered top results, the model, the prompt or the
+        schema version is a cache miss.
+
+        Raises:
+          GraphStoreError: The analysis is missing, expired, or not complete.
+        """
+        self._get_valid_analysis_row(analysis_id, require_completed=True)
+        return self._conn.execute(
+            """
+            SELECT * FROM ai_search_overviews
+            WHERE analysis_id = ? AND query_norm = ? AND intent = ?
+              AND results_hash = ? AND model_id = ? AND prompt_version = ?
+              AND schema_version = ? AND expires_at > ?
+            LIMIT 1;
+            """,
+            (
+                analysis_id,
+                query_norm,
+                intent,
+                results_hash,
+                model_id,
+                prompt_version,
+                schema_version,
+                time.time(),
+            ),
+        ).fetchone()
+
+    @_locked
+    def save_ai_search_overview(
+        self,
+        analysis_id: str,
+        *,
+        query_norm: str,
+        intent: str,
+        results_hash: str,
+        model_id: str,
+        prompt_version: str,
+        schema_version: str,
+        used_file_summaries: str,
+        overview_json: str,
+        created_at: float | None = None,
+    ) -> sqlite3.Row:
+        """Insert or replace a validated overview; it expires with its analysis.
+
+        Raises:
+          GraphStoreError: The analysis is missing, expired, or not complete.
+        """
+        row = self._get_valid_analysis_row(analysis_id, require_completed=True)
+        now = created_at if created_at is not None else time.time()
+        with self._conn:
+            self._conn.execute(
+                """
+                INSERT INTO ai_search_overviews (
+                    analysis_id, query_norm, intent, results_hash, model_id,
+                    prompt_version, schema_version, used_file_summaries,
+                    overview_json, created_at, expires_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (
+                    analysis_id, query_norm, intent, results_hash,
+                    model_id, prompt_version, schema_version
+                ) DO UPDATE SET
+                    used_file_summaries = excluded.used_file_summaries,
+                    overview_json = excluded.overview_json,
+                    created_at = excluded.created_at,
+                    expires_at = excluded.expires_at;
+                """,
+                (
+                    analysis_id,
+                    query_norm,
+                    intent,
+                    results_hash,
+                    model_id,
+                    prompt_version,
+                    schema_version,
+                    used_file_summaries,
+                    overview_json,
+                    now,
+                    float(row["expires_at"]),
+                ),
+            )
+        saved = self.get_ai_search_overview(
+            analysis_id,
+            query_norm=query_norm,
+            intent=intent,
+            results_hash=results_hash,
+            model_id=model_id,
+            prompt_version=prompt_version,
+            schema_version=schema_version,
+        )
+        assert saved is not None
+        return saved
+
+    @_locked
+    def reserve_ai_call(self, day: str, limit: int) -> bool:
+        """Count one model call against `day`'s budget, if any is left.
+
+        Checking and counting happen in one transaction, so concurrent
+        requests can never overspend the limit.
+        """
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO ai_usage (day) VALUES (?) ON CONFLICT (day) DO NOTHING;",
+                (day,),
+            )
+            cursor = self._conn.execute(
+                "UPDATE ai_usage SET calls = calls + 1 WHERE day = ? AND calls < ?;",
+                (day, limit),
+            )
+        return cursor.rowcount == 1
+
+    @_locked
+    def record_ai_usage(self, day: str, **counts: int) -> None:
+        """Add to `day`'s usage counters (see the `ai_usage` table)."""
+        allowed = {
+            "input_tokens",
+            "output_tokens",
+            "cache_hits",
+            "cache_misses",
+            "validation_failures",
+            "provider_failures",
+            "latency_ms",
+        }
+        unknown = counts.keys() - allowed
+        if unknown:
+            raise ValueError(f"Unknown AI usage counters: {sorted(unknown)}")
+        updates = {name: max(0, int(value)) for name, value in counts.items() if value}
+        if not updates:
+            return
+        assignments = ", ".join(f"{name} = {name} + ?" for name in updates)
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO ai_usage (day) VALUES (?) ON CONFLICT (day) DO NOTHING;",
+                (day,),
+            )
+            self._conn.execute(
+                f"UPDATE ai_usage SET {assignments} WHERE day = ?;",
+                (*updates.values(), day),
+            )
+
+    @_locked
+    def get_ai_usage(self, day: str) -> dict[str, int]:
+        """Return `day`'s usage counters (all zero when nothing was recorded)."""
+        row = self._conn.execute("SELECT * FROM ai_usage WHERE day = ?;", (day,)).fetchone()
+        names = (
+            "calls",
+            "input_tokens",
+            "output_tokens",
+            "cache_hits",
+            "cache_misses",
+            "validation_failures",
+            "provider_failures",
+            "latency_ms",
+        )
+        return {name: int(row[name]) if row is not None else 0 for name in names}
+
+    @_locked
     def evict_expired(self, now: float | None = None) -> int:
         """Delete analyses whose expires_at timestamp has passed."""
         cutoff = now if now is not None else time.time()
@@ -1224,7 +1627,10 @@ class SqliteGraphStore:
                 "DELETE FROM analyses WHERE expires_at <= ?;",
                 (cutoff,),
             )
-            return int(cursor.rowcount)
+            removed = int(cursor.rowcount)
+        if removed:
+            self._search_cache.clear()
+        return removed
 
     def _get_valid_analysis_row(
         self,
@@ -1243,3 +1649,27 @@ class SqliteGraphStore:
         if require_completed and str(row["status"]) != "completed":
             raise AnalysisNotReadyError(analysis_id)
         return row
+
+
+def _search_document(file: AnalyzedFile) -> SearchDocument:
+    """Return the searchable record of one analyzed file."""
+    return SearchDocument(
+        path=file.path,
+        symbols=tuple(symbol.name for symbol in file.symbols),
+        references=tuple(imported.raw_name for imported in file.imports),
+        comments=tuple(
+            comment.text for comment in file.comments if comment.kind == "comment"
+        ),
+        members=tuple(member.qualified_name for member in file.members),
+        docstrings=tuple(
+            comment.text for comment in file.comments if comment.kind == "docstring"
+        ),
+    )
+
+
+def _pack_vector(vector: object) -> bytes:
+    """Pack a vector as unit-length little-endian float32 bytes."""
+    if isinstance(vector, (bytes, bytearray, memoryview)):
+        return bytes(vector)
+    unit = as_unit_vector(vector)  # type: ignore[arg-type]
+    return unit.astype("<f4", copy=False).tobytes()

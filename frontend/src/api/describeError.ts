@@ -33,6 +33,21 @@ const TITLES: Record<string, string> = {
   NETWORK_ERROR: 'Cannot reach RepoLens',
   TIMEOUT: 'RepoLens is taking too long',
   ABORTED: 'Request cancelled',
+  // Shared by AI file summaries and AI search overviews.
+  AI_DISABLED: 'AI features are off',
+  AI_BUSY: 'The AI is busy',
+  AI_DAILY_LIMIT: "Today's AI budget is used up",
+  AI_CLIENT_LIMIT: 'AI generation limit reached',
+  AI_REGENERATE_COOLDOWN: 'Generated moments ago',
+  AI_TIMEOUT: 'The AI took too long',
+  AI_UNAVAILABLE: 'AI is unavailable',
+  AI_SUMMARY_UNVERIFIED: 'The AI answer could not be verified',
+  AI_SUMMARY_FAILED: 'AI is unavailable',
+  SOURCE_UNSUPPORTED: 'This file cannot be summarized',
+  SOURCE_UNAVAILABLE: 'Cannot fetch the source from GitHub',
+  SOURCE_NOT_FOUND: 'Source not found on GitHub',
+  SOURCE_RATE_LIMITED: 'GitHub is limiting requests',
+  SOURCE_MISMATCH: 'The source changed',
 };
 
 /** Errors caused by the input, where retrying unchanged cannot help. */
@@ -50,6 +65,12 @@ const NOT_RETRYABLE = new Set([
   'FILE_NOT_FOUND',
   'INVALID_QUERY',
   'ABORTED',
+  'AI_DISABLED',
+  'AI_DAILY_LIMIT',
+  'AI_CLIENT_LIMIT',
+  'SOURCE_UNSUPPORTED',
+  'SOURCE_NOT_FOUND',
+  'SOURCE_MISMATCH',
 ]);
 
 /**
