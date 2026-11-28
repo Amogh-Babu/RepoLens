@@ -62,7 +62,7 @@ def effective_cpu_count(
         host_count = os.cpu_count()
     if affinity_count is None:
         try:
-            affinity_count = len(os.sched_getaffinity(0))
+            affinity_count = len(getattr(os, "sched_getaffinity")(0))
         except (AttributeError, OSError):
             affinity_count = None
 
