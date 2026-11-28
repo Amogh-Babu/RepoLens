@@ -40,6 +40,9 @@ _RRF_K = 60
 _KEYWORD_RRF_WEIGHT = 8
 _SEMANTIC_RRF_WEIGHT = 4
 _SEMANTIC_RESULT_LIMIT = 100
+# BGE similarities are not probabilities; weak positive values are common
+# even for unrelated queries. Keyword matches remain eligible independently.
+_MIN_SEMANTIC_SIMILARITY = 0.55
 _MAX_READING_LIST_RESULTS = 20
 SearchIntent = Literal["implementation", "configuration", "tests"]
 # How much a reading goal moves the files it is about, up or down.
@@ -121,6 +124,10 @@ class SearchService:
             if include_semantic
             else {}
         )
+        semantic_scores = {
+            path: match for path, match in semantic_scores.items()
+            if match[0] >= _MIN_SEMANTIC_SIMILARITY
+        }
         keyword_paths = set(keyword_scores)
         keyword_order = sorted(
             keyword_scores,
@@ -194,7 +201,14 @@ class SearchService:
             candidates = [c for c in candidates if c[0].path in top_paths]
 
         ordered = self._reading_order(
-            ranked, candidates, prioritize_relevance=bool(semantic_scores or intent)
+            ranked,
+            candidates,
+            prioritize_relevance=bool(semantic_scores or intent),
+            semantic_only_scores={
+                path: score for path, (score, _) in semantic_scores.items()
+                if path not in keyword_paths and intent is None
+            },
+            keyword_scores=keyword_scores if semantic_scores and intent is None else {},
         )
         ordered, test_recommendations = self._task_roles(ordered, all_documents)
         page_results = tuple(ordered[offset : offset + limit])
@@ -352,6 +366,8 @@ class SearchService:
         candidates: list[tuple[SearchDocument, tuple[MatchEvidence, ...], float]],
         *,
         prioritize_relevance: bool = False,
+        semantic_only_scores: dict[str, float] | None = None,
+        keyword_scores: dict[str, float] | None = None,
     ) -> list[RankedFile]:
         """Order results by relevance and dependencies, explaining each position.
 
@@ -365,6 +381,8 @@ class SearchService:
         prerequisites: dict[str, set[str]] = {path: set() for path in results_by_path}
         deferred: dict[str, set[str]] = {path: set() for path in results_by_path}
         deferred_by: dict[str, set[str]] = {path: set() for path in results_by_path}
+        semantic_only_scores = semantic_only_scores or {}
+        keyword_scores = keyword_scores or {}
 
         for document, _, _ in candidates:
             dependency_path = document.path
@@ -373,7 +391,19 @@ class SearchService:
                     continue
                 if dependent_path == dependency_path:
                     continue
-                if (
+                weaker_semantic_dependency = (
+                    dependency_path in semantic_only_scores
+                    and dependent_path in semantic_only_scores
+                    and semantic_only_scores[dependency_path]
+                    < semantic_only_scores[dependent_path] * 0.9
+                )
+                weaker_keyword_dependency = (
+                    dependency_path in keyword_scores
+                    and dependent_path in keyword_scores
+                    and keyword_scores[dependency_path]
+                    < keyword_scores[dependent_path] * 0.55
+                )
+                if weaker_semantic_dependency or weaker_keyword_dependency or (
                     prioritize_relevance
                     and results_by_path[dependency_path].score
                     < results_by_path[dependent_path].score * 0.55
@@ -626,7 +656,7 @@ class SearchService:
     def _build_reason(matches: tuple[MatchEvidence, ...], dependency_count: int) -> str:
         if matches and matches[0].kind == "semantic":
             reason = (
-                "Semantically related prose or symbols: "
+                "Possible semantic match in indexed names: "
                 f"'{SearchService._one_line(matches[0].value)}'"
             )
             return reason + "."

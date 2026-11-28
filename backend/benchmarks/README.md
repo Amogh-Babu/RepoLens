@@ -15,26 +15,29 @@ python -m pytest tests/test_search_precision.py  # check labels and recorded gat
 
 | repository           | queries | indexed files | keyword | hybrid | grep  | grep+rank | ideal |
 | -------------------- | ------: | ------------: | ------: | -----: | ----: | --------: | ----: |
-| `search_mini_repo`   |       6 |             8 |   0.200 |  0.267 | 0.033 |     0.033 | 0.267 |
-| `analysis_mini_repo` |       6 |             7 |   0.233 |  0.233 | 0.000 |     0.000 | 0.233 |
-| `e2e_reference`      |       8 |            14 |   0.300 |  0.400 | 0.075 |     0.125 | 0.475 |
-| **overall**           | **20** |               | **0.250** | **0.310** | **0.040** | **0.060** | **0.340** |
+| `search_mini_repo`   |       6 |             8 |   0.167 |  0.200 | 0.033 |     0.033 | 0.267 |
+| `analysis_mini_repo` |       6 |             7 |   0.200 |  0.233 | 0.000 |     0.000 | 0.233 |
+| `e2e_reference`      |       8 |            14 |   0.250 |  0.325 | 0.075 |     0.125 | 0.475 |
+| **overall**           | **20** |               | **0.210** | **0.260** | **0.040** | **0.060** | **0.340** |
 
-Hybrid is no worse than keyword-only on every query and improves overall
-precision@5 from 0.250 to 0.310. It finds a labeled file for the vague
-production-onboarding query and for `tax`, both of which keyword-only search
-could not answer. The model is `BAAI/bge-small-en-v1.5`; its vectors and query
-inference are local.
+The model is `BAAI/bge-small-en-v1.5` with its retrieval query instruction;
+its vectors and query inference are local. Hybrid meets keyword-only hits on
+every query in this recorded run.
 
 ### History
 
 | change | keyword precision@5 | hybrid precision@5 |
 | ------ | ------------------: | -----------------: |
-| Keyword index, class members, docstrings and comments | 0.250 | 0.310 |
+| Before weak-match filtering, current index and BGE query instruction | 0.210 | 0.280 |
+| Weak-match filtering and relevance-aware reading order | 0.210 | 0.260 |
 
-The recorded hybrid results preserve the keyword-only top-five on every query.
-Semantic-only results are appended after those exact hits so their graph edges
-cannot push a strong keyword match below the fold.
+The cutoff removes irrelevant results but also loses relevant low-similarity
+matches: `tax`, `http request handler`, `secret key`'s token dependency, and
+the vague onboarding query. It returns 26 labeled hits among 55 results,
+against 28 among 100 before the change: returned-result precision improves
+from 0.280 to 0.473, while fixed-denominator precision@5 drops from 0.280 to
+0.260. The two metrics answer different questions; neither demonstrates
+general-purpose accuracy.
 
 Per-query results, including every path each system returned, are in
 `measured_precision.json`. Its precision and non-regression checks run in CI
@@ -49,18 +52,47 @@ queries have one or two labeled files, so no system can reach 1.000. The
 every system shares that ceiling. Compare systems to each other and to
 `ideal`; the absolute values do not transfer to a large repository.
 
-### Where Hybrid Helps
+### Where Hybrid Helps and Misses
 
-Hybrid search recovers files that do not repeat the query wording: `tax` finds
-`app/billing/service.py`, `password verification` finds the user repository,
-and `login` finds the token and user-model dependencies. The vague production
-onboarding query returns `bookshop/config.py`; conventional entry-point
-identification and the repo-wide guided tour are handled separately by #79.
+Hybrid search recovers files that do not repeat the query wording: `password
+verification` finds the user repository and `command line arguments` finds
+`app/main.py`. Other valid searches, including `tax`, now return no result.
+Semantic cosine scores are not calibrated probabilities; no single threshold
+reliably separates relevance from irrelevance across all queries.
 
-The benchmark remains small and Python-only. Its 0.310 precision@5 is a
+The benchmark remains small and Python-only. Its 0.260 precision@5 is a
 comparison on these fixture labels, not a prediction for every large
-repository. Semantic-only suggestions are added after exact-match results, so
-they can improve recall without displacing existing keyword hits.
+repository. Reading order can still change which results appear in the top five.
+
+## Independent repository checks
+
+`external_search.py` uses the production index and model on three local
+checkouts without executing their code. Guide-backed paths are starting points,
+not exhaustive relevance labels, so these checks are not a precision estimate.
+Use pinned revisions and run from `backend/`:
+
+```bash
+git clone https://github.com/lgeeklee/pyvmomi-tools.git /tmp/repolens-pyvmomi
+git -C /tmp/repolens-pyvmomi checkout 1f9129a42a2c477d18b15f438aeedb1a2ec4c1fe
+git clone https://github.com/pallets/flask.git /tmp/repolens-flask
+git -C /tmp/repolens-flask checkout 49943b5a94413a530761350f04e896f76e8d620e
+git clone https://github.com/borh-lab/natsume-simple.git /tmp/repolens-natsume
+git -C /tmp/repolens-natsume checkout ddc74c92d10bdb7750cbf20e1dd66e2a17b0d357
+python -m benchmarks.external_search --issue /tmp/repolens-pyvmomi --flask /tmp/repolens-flask --natsume /tmp/repolens-natsume
+```
+
+The [Flask request walkthrough](https://github.com/sangameshh31/flask-request-lifecycle-investigation/blob/d826e14a90217d8cca1a3d98fb3e26c2166d7cae/README.md)
+identifies request dispatch in `src/flask/app.py` and its test; the
+[natsume walkthrough](https://github.com/borh-lab/natsume-simple/blob/ddc74c92d10bdb7750cbf20e1dd66e2a17b0d357/README.md)
+identifies its pipeline, extraction, registry and API files. In the recorded
+run, nine of eleven negative queries returned no results; `marine biology`
+still returned results in Flask and natsume. Nine of eleven positive queries
+returned at least one named starting point in the top five. The Flask callback
+and server queries each missed one of their two named files, and the natsume
+stored-corpus validation query missed its named registry file. The issue
+repository's snapshot query missed `py-snaplist.py`: its Python 2 exception
+syntax fails the Python 3 parser, leaving it without searchable symbols.
+Search cannot recover content that was not parsed.
 
 ## Method
 

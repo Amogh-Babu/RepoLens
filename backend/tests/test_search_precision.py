@@ -37,7 +37,7 @@ from benchmarks.search_precision import (
     ranked_baseline_top_paths,
 )
 from repolens.search import SearchService
-from repolens.search.embedding import HashEmbedder
+from repolens.search.embedding import FastEmbedEmbedder, HashEmbedder
 
 
 TOP_K, QUERY_SETS = load_query_sets()
@@ -183,13 +183,13 @@ def test_keyword_measurement_matches_the_recorded_rankings(
             recorded_result = next(
                 item for item in recorded_repo["queries"] if item["query"] == result.query
             )
-            assert isinstance(list(result.rankings[REPOLENS]), list)
+            assert list(result.rankings[REPOLENS]) == recorded_result["top"][REPOLENS]
 
 
 def test_recorded_hybrid_meets_keyword_precision_on_every_query() -> None:
     record = load_record()
 
-    assert record["embedding_model"] == "BAAI/bge-small-en-v1.5"
+    assert record["embedding_model"] == FastEmbedEmbedder().model_id
     for repo in record["repos"]:
         for result in repo["queries"]:
             assert result["hits"][REPOLENS_HYBRID] >= result["hits"][REPOLENS], (
@@ -198,13 +198,13 @@ def test_recorded_hybrid_meets_keyword_precision_on_every_query() -> None:
             )
 
 
-def test_vague_onboarding_query_returns_labeled_files() -> None:
+def test_semantic_search_recovers_a_labeled_file_without_keyword_matches() -> None:
     record = load_record()
-    repo = next(item for item in record["repos"] if item["id"] == "e2e_reference")
+    repo = next(item for item in record["repos"] if item["id"] == "analysis_mini_repo")
     result = next(
         item
         for item in repo["queries"]
-        if item["query"] == "if I'm meant to work on prod, where do I start?"
+        if item["query"] == "command line arguments"
     )
 
     assert result["hits"][REPOLENS] == 0

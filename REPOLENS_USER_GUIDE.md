@@ -80,7 +80,7 @@ Examples of questions you can type:
 - `serializer`
 - `where is a signature checked?`
 - `where do I start if I'm working on production?`
-RepoLens searches file paths, class and function names, imports, and comments and docstrings (the descriptions written inside the code). It combines exact keyword matches with a local search model that understands meaning, so it can find related code even when the words don't match exactly. All searching happens on your computer. Your repository text is not sent to any outside service.
+RepoLens searches file paths, class and function names, members, and imports. It combines keyword matches with a local search model to find related code even when the words don't match exactly. Weak semantic matches are omitted, so a search can return no results even when relevant code exists; try more specific terms or identifiers. Files that could not be parsed may also be missing searchable content. All searching happens on your computer. Your repository text is not sent to any outside service.
  
 After you search, RepoLens shows:
  

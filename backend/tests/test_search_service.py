@@ -1,3 +1,4 @@
+import math
 import unittest
 
 from repolens.search import (
@@ -320,7 +321,95 @@ class SearchServiceTest(unittest.TestCase):
 
         self.assertEqual("app/runtime.py", page.results[0].path)
         self.assertEqual("semantic", page.results[0].matches[0].kind)
+        self.assertIn("Possible semantic match", page.results[0].reason)
         self.assertIn("live web application", page.results[0].reason)
+
+    def test_weak_semantic_matches_do_not_become_results(self) -> None:
+        documents = [
+            SearchDocument(path="app/matching.py"),
+            SearchDocument(path="app/unrelated.py"),
+        ]
+        index = InMemorySearchIndex({"analysis-1": documents})
+        index._embeddings["analysis-1"] = {
+            "app/matching.py": [("matching", (0.54, math.sqrt(1 - 0.54**2)))],
+            "app/unrelated.py": [("unrelated", (0.3, math.sqrt(1 - 0.3**2)))],
+        }
+        service = SearchService(index, FixedEmbedder())
+
+        self.assertEqual((), service.search("analysis-1", "concertina").results)
+        # A weak embedding must not suppress a real keyword match.
+        self.assertEqual(
+            ["app/matching.py"],
+            [result.path for result in service.search("analysis-1", "matching").results],
+        )
+
+    def test_streamed_semantic_matches_are_filtered_too(self) -> None:
+        class StreamingIndex(InMemorySearchIndex):
+            def semantic_matches(self, analysis_id, query_vector):
+                return {
+                    "app/strong.py": (0.8, "service startup"),
+                    "app/weak.py": (0.4, "unrelated"),
+                }
+
+        service = SearchService(
+            StreamingIndex({"analysis-1": [
+                SearchDocument(path="app/strong.py"),
+                SearchDocument(path="app/weak.py"),
+            ]}),
+            FixedEmbedder(),
+        )
+
+        self.assertEqual(
+            ["app/strong.py"], [r.path for r in service.search("analysis-1", "boot").results]
+        )
+
+    def test_semantic_only_order_prefers_a_much_stronger_match_to_its_dependency(self) -> None:
+        documents = [
+            SearchDocument(path="app/start.py"),
+            SearchDocument(path="app/utility.py", depended_on_by=("app/start.py",)),
+        ]
+        index = InMemorySearchIndex({"analysis-1": documents})
+        index._embeddings["analysis-1"] = {
+            "app/start.py": [("start server", (0.8, 0.6))],
+            "app/utility.py": [("general utility", (0.6, 0.8))],
+        }
+
+        page = SearchService(index, FixedEmbedder()).search("analysis-1", "boot")
+
+        self.assertEqual(["app/start.py", "app/utility.py"], [r.path for r in page.results])
+        self.assertIn("stronger starting point", page.results[0].order_reason)
+
+    def test_comparably_relevant_semantic_dependency_is_still_read_first(self) -> None:
+        documents = [
+            SearchDocument(path="app/start.py"),
+            SearchDocument(path="app/utility.py", depended_on_by=("app/start.py",)),
+        ]
+        index = InMemorySearchIndex({"analysis-1": documents})
+        index._embeddings["analysis-1"] = {
+            "app/start.py": [("start server", (0.8, 0.6))],
+            "app/utility.py": [("server utilities", (0.76, 0.649923))],
+        }
+
+        page = SearchService(index, FixedEmbedder()).search("analysis-1", "boot")
+
+        self.assertEqual(["app/utility.py", "app/start.py"], [r.path for r in page.results])
+        self.assertIn("which it imports", page.results[1].order_reason)
+
+    def test_keyword_order_prefers_strong_match_to_weak_matching_dependency(self) -> None:
+        documents = [
+            SearchDocument(path="bookshop/search.py", symbols=("search_books", "book_title")),
+            SearchDocument(path="bookshop/shared.py", depended_on_by=("bookshop/search.py",)),
+        ]
+        index = InMemorySearchIndex({"analysis-1": documents})
+        index._embeddings["analysis-1"] = {
+            "bookshop/search.py": [("book search title", (1.0, 0.0))],
+            "bookshop/shared.py": [("book utility", (0.8, 0.6))],
+        }
+
+        page = SearchService(index, FixedEmbedder()).search("analysis-1", "book search title")
+
+        self.assertEqual(["bookshop/search.py", "bookshop/shared.py"], [r.path for r in page.results])
+        self.assertIn("stronger starting point", page.results[0].order_reason)
 
     def test_keyword_hits_are_fused_with_semantic_candidates(self) -> None:
         documents = [
